@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.npm
+
+# Environment variables - NEVER push these
+.env
+.env.local
+.env.production
+
+# Next.js build
+.next/
+out/
+
+# Build files
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploads folder
+backend/uploads/*
+!backend/uploads/.gitkeep
