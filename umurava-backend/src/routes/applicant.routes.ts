@@ -8,8 +8,8 @@ import {
 } from "../controllers/applicant.controller";
 import { protect } from "../middleware/auth.middleware";
 import { upload } from "../middleware/upload.middleware";
-import Applicant from "../models/Applicant.model";  // ← ADD THIS
-import Job from "../models/Job.model";               // ← ADD THIS
+import Applicant from "../models/Applicant.model";  
+import Job from "../models/Job.model";               
 
 const router = Router();
 
