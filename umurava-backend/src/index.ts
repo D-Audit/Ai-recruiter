@@ -6,7 +6,7 @@ import authRoutes from "./routes/auth.routes";
 import jobRoutes from "./routes/job.routes";
 import applicantRoutes from "./routes/applicant.routes";
 import screeningRoutes from "./routes/screening.routes";
-import morgan from 'morgan'
+import morgan from 'morgan';
 dotenv.config();
 
 const app = express();
