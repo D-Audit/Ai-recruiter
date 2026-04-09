@@ -10,19 +10,52 @@ export interface JobInput {
 
 export interface ApplicantInput {
   id: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  skills: string[];
-  yearsOfExperience: number;
-  education: string;
+  headline: string;
   location: string;
-  languages: string[];
-  pastProjects: {
-    title: string;
-    description: string;
-    techUsed: string[];
+  skills: {
+    name: string;
+    level: string;
+    yearsOfExperience: number;
   }[];
-  source: "umurava" | "external";
+  languages: {
+    name: string;
+    proficiency: string;
+  }[];
+  experience: {
+    company: string;
+    role: string;
+    startDate: string;
+    endDate: string;
+    description: string;
+    technologies: string[];
+    isCurrent: boolean;
+  }[];
+  education: {
+    institution: string;
+    degree: string;
+    fieldOfStudy: string;
+    startYear: number;
+    endYear: number;
+  }[];
+  certifications: {
+    name: string;
+    issuer: string;
+    issueDate: string;
+  }[];
+  projects: {
+    name: string;
+    description: string;
+    technologies: string[];
+    role: string;
+  }[];
+  availability: {
+    status: string;
+    type: string;
+  };
+  source: string;
 }
 
 export interface CandidateResult {
@@ -34,6 +67,7 @@ export interface CandidateResult {
   recommendation: string;
   skillsMatched: string[];
   skillsMissing: string[];
+  confidence: string;
 }
 
 export interface ScreeningOutput {
