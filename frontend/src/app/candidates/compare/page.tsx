@@ -1,12 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Sidebar from "../../../components/Sidebar";
 import { compareCandidates } from "../../../services/screeningService";
 import toast from "react-hot-toast";
 import { Trophy, ArrowLeft } from "lucide-react";
 
-export default function ComparePage() {
+// Separate component that uses useSearchParams
+function CompareContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const jobId = searchParams.get("jobId") || "";
@@ -20,6 +22,8 @@ export default function ComparePage() {
         .then((d) => setResult(d.data))
         .catch(() => toast.error("Comparison failed"))
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, []);
 
@@ -33,7 +37,15 @@ export default function ComparePage() {
   return (
     <div style={{ display: "flex" }}>
       <Sidebar />
-      <main style={{ marginLeft: "260px", minHeight: "100vh", padding: "32px", background: "#f8fafc", flex: 1 }}>
+      <main
+        style={{
+          marginLeft: "260px",
+          minHeight: "100vh",
+          padding: "32px",
+          background: "#f8fafc",
+          flex: 1,
+        }}
+      >
         <button
           onClick={() => router.back()}
           style={{
@@ -51,7 +63,14 @@ export default function ComparePage() {
           <ArrowLeft size={18} /> Back to Results
         </button>
 
-        <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#1e293b", marginBottom: "8px" }}>
+        <h1
+          style={{
+            fontSize: "28px",
+            fontWeight: "700",
+            color: "#1e293b",
+            marginBottom: "8px",
+          }}
+        >
           Candidate Comparison
         </h1>
         <p style={{ color: "#64748b", marginBottom: "32px" }}>
@@ -59,7 +78,15 @@ export default function ComparePage() {
         </p>
 
         {loading && (
-          <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "64px", textAlign: "center" }}>
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
+              padding: "64px",
+              textAlign: "center",
+            }}
+          >
             <div
               style={{
                 width: "48px",
@@ -73,6 +100,22 @@ export default function ComparePage() {
             />
             <p style={{ color: "#64748b" }}>AI is comparing candidates...</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {!loading && !result && (
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              border: "1px solid #e2e8f0",
+              padding: "48px",
+              textAlign: "center",
+            }}
+          >
+            <p style={{ color: "#64748b" }}>
+              No comparison data found. Please go back and select candidates.
+            </p>
           </div>
         )}
 
@@ -96,11 +139,13 @@ export default function ComparePage() {
                 <p style={{ fontWeight: "700", fontSize: "20px" }}>
                   Recommended Candidate
                 </p>
-                <p style={{ opacity: 0.9, marginTop: "4px" }}>{result.winnerReason}</p>
+                <p style={{ opacity: 0.9, marginTop: "4px" }}>
+                  {result.winnerReason}
+                </p>
               </div>
             </div>
 
-            {/* Table */}
+            {/* Comparison Table */}
             <div
               style={{
                 background: "white",
@@ -113,12 +158,22 @@ export default function ComparePage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: `180px repeat(${result.comparison?.length || 2}, 1fr)`,
+                  gridTemplateColumns: `180px repeat(${
+                    result.comparison?.length || 2
+                  }, 1fr)`,
                   background: "#f8fafc",
                   borderBottom: "1px solid #e2e8f0",
                 }}
               >
-                <div style={{ padding: "16px", fontWeight: "600", color: "#64748b", fontSize: "12px", textTransform: "uppercase" }}>
+                <div
+                  style={{
+                    padding: "16px",
+                    fontWeight: "600",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    textTransform: "uppercase",
+                  }}
+                >
                   Category
                 </div>
                 {result.comparison?.map((c: any, i: number) => (
@@ -128,8 +183,14 @@ export default function ComparePage() {
                       padding: "16px",
                       textAlign: "center",
                       fontWeight: "700",
-                      color: c.candidateId === result.winner ? "#d97706" : "#1e293b",
-                      background: c.candidateId === result.winner ? "#fffbeb" : "transparent",
+                      color:
+                        c.candidateId === result.winner
+                          ? "#d97706"
+                          : "#1e293b",
+                      background:
+                        c.candidateId === result.winner
+                          ? "#fffbeb"
+                          : "transparent",
                       borderLeft: "1px solid #e2e8f0",
                     }}
                   >
@@ -140,72 +201,168 @@ export default function ComparePage() {
               </div>
 
               {/* Score Row */}
-              {[
-                {
-                  label: "Match Score",
-                  render: (c: any) => (
-                    <div style={{ textAlign: "center" }}>
-                      <span style={{ fontSize: "28px", fontWeight: "700", color: c.score >= 70 ? "#16a34a" : c.score >= 50 ? "#d97706" : "#dc2626" }}>
-                        {c.score}
-                      </span>
-                      <span style={{ color: "#94a3b8", fontSize: "13px" }}>/100</span>
-                    </div>
-                  ),
-                  bg: "white",
-                },
-                {
-                  label: "Verdict",
-                  render: (c: any) => (
-                    <div style={{ textAlign: "center" }}>
-                      <span
-                        style={{
-                          padding: "6px 14px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          ...(verdictColors[c.verdict] || { background: "#f1f5f9", color: "#64748b" }),
-                        }}
-                      >
-                        {c.verdict}
-                      </span>
-                    </div>
-                  ),
-                  bg: "#f8fafc",
-                },
-                {
-                  label: "Top Strength",
-                  render: (c: any) => (
-                    <p style={{ fontSize: "13px", color: "#475569", padding: "0 8px" }}>{c.topStrength}</p>
-                  ),
-                  bg: "white",
-                },
-                {
-                  label: "Main Gap",
-                  render: (c: any) => (
-                    <p style={{ fontSize: "13px", color: "#475569", padding: "0 8px" }}>{c.biggestGap}</p>
-                  ),
-                  bg: "#f8fafc",
-                },
-              ].map((row) => (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `180px repeat(${
+                    result.comparison?.length || 2
+                  }, 1fr)`,
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
                 <div
-                  key={row.label}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: `180px repeat(${result.comparison?.length || 2}, 1fr)`,
-                    borderBottom: "1px solid #e2e8f0",
-                    background: row.bg,
+                    padding: "16px",
+                    fontWeight: "600",
+                    color: "#374151",
                   }}
                 >
-                  <div style={{ padding: "16px", fontWeight: "600", color: "#374151", fontSize: "14px" }}>
-                    {row.label}
-                  </div>
-                  {result.comparison?.map((c: any, i: number) => (
-                    <div key={i} style={{ padding: "16px", borderLeft: "1px solid #e2e8f0" }}>
-                      {row.render(c)}
-                    </div>
-                  ))}
+                  Match Score
                 </div>
-              ))}
+                {result.comparison?.map((c: any, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "16px",
+                      textAlign: "center",
+                      borderLeft: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "28px",
+                        fontWeight: "700",
+                        color:
+                          c.score >= 70
+                            ? "#16a34a"
+                            : c.score >= 50
+                            ? "#d97706"
+                            : "#dc2626",
+                      }}
+                    >
+                      {c.score}
+                    </span>
+                    <span style={{ color: "#94a3b8", fontSize: "13px" }}>
+                      /100
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Verdict Row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `180px repeat(${
+                    result.comparison?.length || 2
+                  }, 1fr)`,
+                  background: "#f8fafc",
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "16px",
+                    fontWeight: "600",
+                    color: "#374151",
+                  }}
+                >
+                  Verdict
+                </div>
+                {result.comparison?.map((c: any, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "16px",
+                      textAlign: "center",
+                      borderLeft: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <span
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        ...(verdictColors[c.verdict] || {
+                          background: "#f1f5f9",
+                          color: "#64748b",
+                        }),
+                      }}
+                    >
+                      {c.verdict}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Strength Row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `180px repeat(${
+                    result.comparison?.length || 2
+                  }, 1fr)`,
+                  borderBottom: "1px solid #e2e8f0",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "16px",
+                    fontWeight: "600",
+                    color: "#374151",
+                  }}
+                >
+                  Top Strength
+                </div>
+                {result.comparison?.map((c: any, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "16px",
+                      fontSize: "13px",
+                      color: "#475569",
+                      borderLeft: "1px solid #e2e8f0",
+                    }}
+                  >
+                    {c.topStrength}
+                  </div>
+                ))}
+              </div>
+
+              {/* Gap Row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `180px repeat(${
+                    result.comparison?.length || 2
+                  }, 1fr)`,
+                  background: "#f8fafc",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "16px",
+                    fontWeight: "600",
+                    color: "#374151",
+                  }}
+                >
+                  Main Gap
+                </div>
+                {result.comparison?.map((c: any, i: number) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "16px",
+                      fontSize: "13px",
+                      color: "#475569",
+                      borderLeft: "1px solid #e2e8f0",
+                    }}
+                  >
+                    {c.biggestGap}
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Bias Notice */}
@@ -218,11 +375,46 @@ export default function ComparePage() {
                 marginTop: "20px",
               }}
             >
-              <p style={{ color: "#92400e", fontSize: "13px" }}>⚠️ {result.biasNotice}</p>
+              <p style={{ color: "#92400e", fontSize: "13px" }}>
+                ⚠️ {result.biasNotice}
+              </p>
             </div>
           </>
         )}
       </main>
     </div>
+  );
+}
+
+// Main page wraps content in Suspense
+export default function ComparePage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "100vh",
+            background: "#f8fafc",
+          }}
+        >
+          <div
+            style={{
+              width: "48px",
+              height: "48px",
+              border: "4px solid #e9d5ff",
+              borderTop: "4px solid #7c3aed",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      }
+    >
+      <CompareContent />
+    </Suspense>
   );
 }

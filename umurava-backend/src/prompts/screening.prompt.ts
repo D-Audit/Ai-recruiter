@@ -52,7 +52,7 @@ RETURN THIS FORMAT ONLY:
   {
     "candidateId": "exact_id_from_input",
     "rank": 1,
-    "score": 87,
+    "score": 87,z
     "strengths": "2-3 sentences about why good fit",
     "gaps": "1-2 sentences about weaknesses",
     "recommendation": "1 sentence final advice",

@@ -7,11 +7,11 @@ import { parseScreeningResponse, parseComparisonResponse } from "../utils/ai.par
 import { validateResults, normalizeScores } from "../utils/ai.validator";
 import { JobInput, ApplicantInput, ScreeningOutput } from "../types/index";
 
-const BIAS_NOTICE =
-  "⚠️ AI screening is a support tool only. Final hiring decisions " +
-  "must always be made by qualified human recruiters. AI may not " +
-  "capture soft skills, cultural fit, or personal context.";
-
+// Replace simple bias notice with detailed one
+const BIAS_NOTICE = `⚠️ AI Bias Notice: This screening may favor candidates 
+with formal education degrees over self-taught developers. 
+Skills and project experience should be weighted equally to 
+formal credentials. Final decisions must be made by human recruiters.`;
 export async function screenCandidates(
   job: JobInput,
   applicants: ApplicantInput[]
