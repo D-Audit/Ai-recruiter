@@ -6,14 +6,13 @@ import { parsePDFResume } from "../services/pdf.service";
 
 export const getApplicants = async (req: any, res: Response): Promise<void> => {
   try {
-    const applicants = await Applicant.find({ jobId: req.params.jobId });
+    // Match any applicant whose jobIds array contains the given jobId
+    const applicants = await Applicant.find({ jobIds: req.params.jobId });
     res.json({ success: true, count: applicants.length, applicants });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to get applicants" });
   }
 };
-
-
 
 export const getUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
@@ -34,13 +33,11 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
     const { jobId } = req.body;
     const parsed = await parseCSVFile(req.file.path);
 
-    const applicants = parsed.map((p) => ({ ...p, jobId }));
+    // Store jobId inside jobIds array so future jobs can be appended
+    const applicants = parsed.map((p) => ({ ...p, jobIds: [jobId] }));
     const inserted = await Applicant.insertMany(applicants);
 
-
-    // Update job applicants count
     await Job.findByIdAndUpdate(jobId, {
-
       $inc: { applicantsCount: inserted.length },
     });
 
@@ -54,7 +51,6 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-
 export const uploadPDF = async (req: any, res: Response): Promise<void> => {
   try {
     if (!req.file) {
@@ -64,7 +60,9 @@ export const uploadPDF = async (req: any, res: Response): Promise<void> => {
 
     const { jobId } = req.body;
     const parsed = await parsePDFResume(req.file.path);
-    const applicant = await Applicant.create({ ...parsed, jobId });
+
+    // Store jobId inside jobIds array
+    const applicant = await Applicant.create({ ...parsed, jobIds: [jobId] });
 
     await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
 
@@ -77,28 +75,18 @@ export const uploadPDF = async (req: any, res: Response): Promise<void> => {
 export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, profileIds } = req.body;
+    console.log("Selecting profiles", { jobId, profileIds });
 
-    const profiles = await Applicant.find({ _id: { $in: profileIds } });
+    // $addToSet appends the new jobId without overwriting existing ones
+    // and prevents duplicates if the same profile is selected twice
+    await Applicant.updateMany(
+      { _id: { $in: profileIds } },
+      { $addToSet: { jobIds: jobId } }
+    );
 
-    const newApplicants = profiles.map((p) => ({
-      fullName: p.fullName,
-      email: p.email,
-      skills: p.skills,
-      yearsOfExperience: p.yearsOfExperience,
-      education: p.education,
-      location: p.location,
-      languages: p.languages,
-      pastProjects: p.pastProjects,
-      source: "umurava",
-      jobId,
-    }));
+    await Job.updateOne({ _id: jobId }, { $inc: { applicantsCount: profileIds.length } });
 
-    const inserted = await Applicant.insertMany(newApplicants);
-    await Job.findByIdAndUpdate(jobId, {
-      $inc: { applicantsCount: inserted.length },
-    });
-
-    res.json({ success: true, count: inserted.length, message: "Profiles selected" });
+    res.json({ success: true, count: profileIds.length, message: "Profiles selected" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Selection failed", error });
   }

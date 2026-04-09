@@ -6,11 +6,138 @@ import { fetchJobs, removeJob } from "../../store/slices/jobSlice";
 import { AppDispatch, RootState } from "../../store";
 import Sidebar from "../../components/Sidebar";
 import toast from "react-hot-toast";
-import { Plus, MapPin, Users, Trash2, Eye, Brain } from "lucide-react";
+import { Plus, MapPin, Users, Trash2, Eye, Brain, AlertTriangle, X } from "lucide-react";
+
+function DeleteConfirmModal({
+  jobTitle,
+  onConfirm,
+  onCancel,
+}: {
+  jobTitle: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  // Inject keyframe animation once into <head>
+  useEffect(() => {
+    const id = "delete-modal-anim";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      @keyframes popIn {
+        from { opacity: 0; transform: scale(0.95) translateY(8px); }
+        to   { opacity: 1; transform: scale(1)    translateY(0);   }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "white",
+          borderRadius: "20px",
+          padding: "32px",
+          width: "100%",
+          maxWidth: "420px",
+          margin: "16px",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
+          animation: "popIn 0.2s ease",
+        }}
+      >
+        {/* Icon */}
+        <div
+          style={{
+            width: "56px",
+            height: "56px",
+            borderRadius: "16px",
+            background: "#fee2e2",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: "20px",
+          }}
+        >
+          <AlertTriangle size={28} color="#ef4444" />
+        </div>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: "700", color: "#1e293b", marginBottom: "8px" }}>
+            Delete Job
+          </h2>
+         
+        </div>
+
+        <p style={{ color: "#64748b", fontSize: "14px", lineHeight: "1.6", marginBottom: "24px" }}>
+          Are you sure you want to delete{" "}
+          <span style={{ fontWeight: "600", color: "#1e293b" }}>"{jobTitle}"</span>? This action
+          cannot be undone and all associated applicants will be affected.
+        </p>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: "12px" }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: "12px",
+              borderRadius: "12px",
+              border: "1px solid #e2e8f0",
+              background: "white",
+              color: "#64748b",
+              fontWeight: "600",
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1,
+              padding: "12px",
+              borderRadius: "12px",
+              border: "none",
+              background: "linear-gradient(135deg, #ef4444, #dc2626)",
+              color: "white",
+              fontWeight: "600",
+              fontSize: "14px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+            }}
+          >
+            <Trash2 size={15} /> Delete Job
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function JobsPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { jobs, loading } = useSelector((state: RootState) => state.jobs);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   useEffect(() => {
     dispatch(fetchJobs());
@@ -20,10 +147,11 @@ export default function JobsPage() {
     j.title.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this job?")) return;
-    await dispatch(removeJob(id));
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    await dispatch(removeJob(deleteTarget.id));
     toast.success("Job deleted");
+    setDeleteTarget(null);
   };
 
   return (
@@ -47,12 +175,8 @@ export default function JobsPage() {
           }}
         >
           <div>
-            <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#1e293b" }}>
-              Jobs
-            </h1>
-            <p style={{ color: "#64748b", marginTop: "4px" }}>
-              {jobs.length} total positions
-            </p>
+            <h1 style={{ fontSize: "28px", fontWeight: "700", color: "#1e293b" }}>Jobs</h1>
+            <p style={{ color: "#64748b", marginTop: "4px" }}>{jobs.length} total positions</p>
           </div>
           <Link href="/jobs/create">
             <button
@@ -202,7 +326,7 @@ export default function JobsPage() {
                       </button>
                     </Link>
                     <button
-                      onClick={() => handleDelete(job._id)}
+                      onClick={() => setDeleteTarget({ id: job._id, title: job.title })}
                       style={{
                         padding: "10px",
                         borderRadius: "10px",
@@ -221,6 +345,14 @@ export default function JobsPage() {
           </div>
         )}
       </main>
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          jobTitle={deleteTarget.title}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

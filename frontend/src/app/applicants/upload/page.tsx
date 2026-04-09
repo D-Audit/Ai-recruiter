@@ -22,7 +22,11 @@ export default function UploadPage() {
 
   useEffect(() => {
     getAllJobs().then((d) => setJobs(d.jobs || []));
-    getUmuravaProfiles().then((d) => setProfiles(d.profiles || []));
+    getUmuravaProfiles().then((d) => {
+      const raw: any[] = d.profiles || [];
+      const unique = Array.from(new Map(raw.map((p) => [p._id, p])).values());
+      setProfiles(unique);
+    });
   }, []);
 
   const onDropCSV = useCallback(
@@ -115,7 +119,6 @@ export default function UploadPage() {
           Add candidates from Umurava platform or upload from external sources
         </p>
 
-        {/* Job Selector */}
         <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px", marginBottom: "24px" }}>
           <label style={{ display: "block", fontSize: "14px", fontWeight: "600", color: "#374151", marginBottom: "8px" }}>
             Select Job Position *
@@ -132,7 +135,6 @@ export default function UploadPage() {
           </select>
         </div>
 
-        {/* Tabs */}
         <div style={{ display: "flex", background: "white", border: "1px solid #e2e8f0", borderRadius: "16px", padding: "4px", marginBottom: "24px", width: "fit-content" }}>
           {(["umurava", "external"] as const).map((tab) => (
             <button
@@ -155,7 +157,6 @@ export default function UploadPage() {
           ))}
         </div>
 
-        {/* Umurava Tab */}
         {activeTab === "umurava" && (
           <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -250,10 +251,8 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* External Tab */}
         {activeTab === "external" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-            {/* CSV */}
             <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <h3 style={{ fontWeight: "700", color: "#1e293b" }}>Upload CSV Spreadsheet</h3>
@@ -299,7 +298,6 @@ export default function UploadPage() {
               </div>
             </div>
 
-            {/* PDF */}
             <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px" }}>
               <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "16px" }}>
                 Upload PDF Resumes
