@@ -26,4 +26,3 @@ Thumbs.db
 # Uploads folder
 backend/uploads/*
 !backend/uploads/.gitkeep
-umurava-backend
