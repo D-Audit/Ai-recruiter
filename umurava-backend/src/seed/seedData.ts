@@ -10,7 +10,7 @@ const fakeProfiles = [
     yearsOfExperience: 4, education: "Bachelor in Computer Science",
     location: "Kigali, Rwanda", languages: ["English", "Kinyarwanda", "French"],
     pastProjects: [{ title: "E-commerce App", description: "Full stack app", techUsed: ["React", "Node.js"] }],
-    source: "umurava", jobId: new mongoose.Types.ObjectId("69d13ec5c96a0d2318d7a74b"),
+    source: "umurava", 
   },
   {
     fullName: "Bob Mutabazi", email: "bob@email.com",
@@ -18,14 +18,14 @@ const fakeProfiles = [
     yearsOfExperience: 5, education: "Master in Software Engineering",
     location: "Kigali, Rwanda", languages: ["English", "Kinyarwanda"],
     pastProjects: [{ title: "Bank API", description: "REST API for banking", techUsed: ["Python", "Django"] }],
-    source: "umurava", jobId: new mongoose.Types.ObjectId("69d13ec5c96a0d2318d7a74b"),
+    source: "umurava", 
   },
   {
     fullName: "Carol Ingabire", email: "carol@email.com",
     skills: ["React", "CSS", "JavaScript", "Figma"],
     yearsOfExperience: 2, education: "Bachelor in IT",
     location: "Musanze, Rwanda", languages: ["English", "Kinyarwanda"],
-    pastProjects: [], source: "umurava", jobId: new mongoose.Types.ObjectId("69d13ec5c96a0d2318d7a74b"),
+    pastProjects: [], source: "umurava", 
   },
   {
     fullName: "David Nkurunziza", email: "david@email.com",
@@ -33,7 +33,7 @@ const fakeProfiles = [
     yearsOfExperience: 6, education: "Bachelor in Computer Science",
     location: "Kigali, Rwanda", languages: ["English", "Kinyarwanda", "French"],
     pastProjects: [{ title: "Logistics Platform", description: "Delivery tracking", techUsed: ["Node.js", "AWS"] }],
-    source: "umurava", jobId: new mongoose.Types.ObjectId("69d13ec5c96a0d2318d7a74b"),
+    source: "umurava",
   },
   {
     fullName: "Eva Mukamana", email: "eva@email.com",
@@ -41,7 +41,7 @@ const fakeProfiles = [
     yearsOfExperience: 3, education: "Bachelor in Computer Science",
     location: "Kigali, Rwanda", languages: ["English", "Kinyarwanda"],
     pastProjects: [{ title: "Mobile Banking App", description: "Cross platform app", techUsed: ["Flutter", "Firebase"] }],
-    source: "umurava", jobId: new mongoose.Types.ObjectId("69d13ec5c96a0d2318d7a74b"),
+    source: "umurava"
   },
 ];
 

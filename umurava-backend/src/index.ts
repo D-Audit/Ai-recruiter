@@ -6,7 +6,7 @@ import authRoutes from "./routes/auth.routes";
 import jobRoutes from "./routes/job.routes";
 import applicantRoutes from "./routes/applicant.routes";
 import screeningRoutes from "./routes/screening.routes";
-
+import morgan from 'morgan'
 dotenv.config();
 
 const app = express();
@@ -19,7 +19,7 @@ app.use(cors({
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
+app.use(morgan('dev'))
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/applicants", applicantRoutes);

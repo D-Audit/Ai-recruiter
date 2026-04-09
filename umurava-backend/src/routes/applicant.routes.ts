@@ -8,7 +8,7 @@ import { upload } from "../middleware/upload.middleware";
 
 const router = Router();
 
-router.use(protect);
+
 router.get("/umurava", getUmuravaProfiles);
 router.get("/:jobId", getApplicants);
 router.post("/upload/csv", upload.single("file"), uploadCSV);

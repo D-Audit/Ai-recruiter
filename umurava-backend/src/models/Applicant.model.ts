@@ -16,7 +16,7 @@ export interface IApplicant extends Document {
   }[];
   resumeUrl: string;
   source: string;
-  jobId: mongoose.Types.ObjectId;
+  jobIds: mongoose.Types.ObjectId[];
   createdAt: Date;
 }
 
@@ -76,12 +76,10 @@ const ApplicantSchema = new Schema<IApplicant>(
       enum: ["umurava", "external"],
       default: "umurava",
     },
-
-    jobId: {
-      type: Schema.Types.ObjectId,
+    jobIds: {
+      type: [Schema.Types.ObjectId],
       ref: "Job",
-      required: true,
-      
+      default: [],
     },
   },
   { timestamps: true }
