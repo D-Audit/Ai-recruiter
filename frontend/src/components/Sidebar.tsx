@@ -17,6 +17,7 @@ export default function Sidebar() {
   const router = useRouter();
   const dispatch = useDispatch();
   const [isOpen, setIsOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -29,9 +30,18 @@ export default function Sidebar() {
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
-  const handleLogout = () => {
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
     dispatch(logout());
     router.push("/");
+    setShowLogoutConfirm(false);
+  };
+
+  const cancelLogout = () => {
+    setShowLogoutConfirm(false);
   };
 
   return (
@@ -220,6 +230,70 @@ export default function Sidebar() {
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .version-text { color: #334155; font-size: 10.5px; font-weight: 500; }
 
+        /* ── Logout Confirmation Modal ── */
+        .logout-modal {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.7);
+          backdrop-filter: blur(4px);
+          z-index: 300;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .modal-content {
+          background: #0f1f38;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 16px;
+          width: 100%;
+          max-width: 360px;
+          padding: 28px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-title {
+          color: #f1f5f9;
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 8px;
+        }
+        .modal-message {
+          color: #94a3b8;
+          font-size: 14.5px;
+          line-height: 1.5;
+          margin-bottom: 24px;
+        }
+        .modal-actions {
+          display: flex;
+          gap: 12px;
+        }
+        .modal-btn {
+          flex: 1;
+          padding: 12px 16px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          transition: all 0.18s ease;
+          font-family: 'DM Sans', sans-serif;
+        }
+        .modal-cancel {
+          background: transparent;
+          color: #94a3b8;
+          border: 1px solid rgba(255,255,255,0.1);
+        }
+        .modal-cancel:hover {
+          background: rgba(255,255,255,0.05);
+          color: #cbd5e1;
+        }
+        .modal-confirm {
+          background: #ef4444;
+          color: white;
+          border: none;
+        }
+        .modal-confirm:hover {
+          background: #dc2626;
+        }
+
         /* ── Responsive breakpoints ── */
 
         /* Tablet: collapse to icon-only rail */
@@ -309,7 +383,7 @@ export default function Sidebar() {
               <p className="user-role">Administrator</p>
             </div>
           </div>
-          <button className="logout-btn" onClick={handleLogout}>
+          <button className="logout-btn" onClick={handleLogoutClick}>
             <span className="logout-icon">
               <LogOut size={17} />
             </span>
@@ -321,6 +395,26 @@ export default function Sidebar() {
           </div>
         </div>
       </aside>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="logout-modal">
+          <div className="modal-content">
+            <p className="modal-title">Confirm Logout</p>
+            <p className="modal-message">
+              Are you sure you want to logout? You will need to sign in again to access the dashboard.
+            </p>
+            <div className="modal-actions">
+              <button className="modal-btn modal-cancel" onClick={cancelLogout}>
+                Cancel
+              </button>
+              <button className="modal-btn modal-confirm" onClick={confirmLogout}>
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
