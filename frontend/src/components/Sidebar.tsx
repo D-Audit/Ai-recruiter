@@ -230,68 +230,104 @@ export default function Sidebar() {
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .version-text { color: #334155; font-size: 10.5px; font-weight: 500; }
 
-        /* ── Logout Confirmation Modal ── */
+        /* ── Logout Confirmation Modal - Title now clearly visible ── */
         .logout-modal {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,0.7);
-          backdrop-filter: blur(4px);
+          background: rgba(0,0,0,0.72);
+          backdrop-filter: blur(8px);
           z-index: 300;
           display: flex;
           align-items: center;
           justify-content: center;
+          padding: 20px;
         }
-        .modal-content {
-          background: #0f1f38;
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 16px;
+        .logout-modal-content {
+          background: white;
+          border-radius: 20px;
+          padding: 36px 32px;
           width: 100%;
-          max-width: 360px;
-          padding: 28px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+          max-width: 400px;
+          box-shadow: 0 30px 80px rgba(0,0,0,0.35);
+          position: relative;
+          animation: fadeIn 0.25s ease;
         }
-        .modal-title {
-          color: #f1f5f9;
-          font-size: 18px;
-          font-weight: 600;
-          margin-bottom: 8px;
-        }
-        .modal-message {
+        .logout-modal-close {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          background: none;
+          border: none;
+          cursor: pointer;
           color: #94a3b8;
-          font-size: 14.5px;
-          line-height: 1.5;
+          padding: 6px;
+          border-radius: 8px;
+        }
+        .logout-modal-close:hover {
+          color: #475569;
+          background: #f8fafc;
+        }
+        .logout-modal-icon {
+          width: 60px;
+          height: 60px;
+          border-radius: 16px;
+          background: #fef2f2;
+          border: 2px solid #fecaca;
+          display: flex;
+          align-items: center;
+          justify-content: center;
           margin-bottom: 24px;
         }
-        .modal-actions {
+        .logout-modal-title {
+          font-family: 'Sora', sans-serif;
+          font-size: 21px;
+          font-weight: 800;
+          color: #0f172a !important;
+          margin-bottom: 12px;
+          line-height: 1.3;
+          letter-spacing: -0.4px;
+        }
+        .logout-modal-text {
+          color: #64748b;
+          font-size: 14.8px;
+          line-height: 1.65;
+          margin-bottom: 32px;
+        }
+        .logout-modal-actions {
           display: flex;
-          gap: 12px;
+          gap: 14px;
         }
-        .modal-btn {
+        .logout-modal-btn {
           flex: 1;
-          padding: 12px 16px;
-          border-radius: 10px;
+          padding: 14px 20px;
+          border-radius: 12px;
           font-weight: 600;
-          font-size: 14px;
+          font-size: 14.8px;
           cursor: pointer;
-          transition: all 0.18s ease;
           font-family: 'DM Sans', sans-serif;
+          transition: all 0.2s ease;
         }
-        .modal-cancel {
-          background: transparent;
-          color: #94a3b8;
-          border: 1px solid rgba(255,255,255,0.1);
+        .logout-modal-cancel {
+          border: 1.5px solid #e2e8f0;
+          background: white;
+          color: #64748b;
         }
-        .modal-cancel:hover {
-          background: rgba(255,255,255,0.05);
-          color: #cbd5e1;
+        .logout-modal-cancel:hover {
+          background: #f8fafc;
         }
-        .modal-confirm {
-          background: #ef4444;
+        .logout-modal-confirm {
+          background: linear-gradient(135deg, #ef4444, #dc2626);
           color: white;
           border: none;
+          box-shadow: 0 4px 16px rgba(239,68,68,0.35);
         }
-        .modal-confirm:hover {
-          background: #dc2626;
+        .logout-modal-confirm:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 24px rgba(239,68,68,0.45);
+        }
+        .logout-modal-confirm:disabled {
+          opacity: 0.75;
+          cursor: not-allowed;
         }
 
         /* ── Responsive breakpoints ── */
@@ -396,19 +432,32 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Logout Confirmation Modal */}
+      {/* Logout Confirmation Modal - Title is now clearly visible */}
       {showLogoutConfirm && (
         <div className="logout-modal">
-          <div className="modal-content">
-            <p className="modal-title">Confirm Logout</p>
-            <p className="modal-message">
+          <div className="logout-modal-content">
+            <button className="logout-modal-close" onClick={cancelLogout}>
+              <X size={20} />
+            </button>
+
+            <div className="logout-modal-icon">
+              <LogOut size={28} color="#ef4444" />
+            </div>
+
+            <h3 className="logout-modal-title">Confirm Logout</h3>
+            
+            <p className="logout-modal-text">
               Are you sure you want to logout? You will need to sign in again to access the dashboard.
             </p>
-            <div className="modal-actions">
-              <button className="modal-btn modal-cancel" onClick={cancelLogout}>
+
+            <div className="logout-modal-actions">
+              <button className="logout-modal-btn logout-modal-cancel" onClick={cancelLogout}>
                 Cancel
               </button>
-              <button className="modal-btn modal-confirm" onClick={confirmLogout}>
+              <button 
+                className="logout-modal-btn logout-modal-confirm" 
+                onClick={confirmLogout}
+              >
                 Yes, Logout
               </button>
             </div>
