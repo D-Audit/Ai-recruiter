@@ -20,7 +20,6 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    // Format job for AI
     const jobInput = {
       id: job.id,
       title: job.title,
@@ -31,40 +30,54 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
       location: job.location,
     };
 
-    // Format applicants for AI
-    const applicantInputs = applicants.map((a) => ({
+    const applicantInputs = applicants.map((a: any) => ({
       id: a.id,
-      fullName: a.fullName,
-      email: a.email,
-      skills: a.skills,
-      yearsOfExperience: a.yearsOfExperience,
-      education: a.education,
-      location: a.location,
-      languages: a.languages,
-      pastProjects: a.pastProjects,
-      source: a.source as "umurava" | "external",
+      firstName: a.firstName || "",
+      lastName: a.lastName || "",
+      email: a.email || "",
+      headline: a.headline || "",
+      bio: a.bio || "",
+      location: a.location || "",
+      skills: a.skills || [],
+      languages: a.languages || [],
+      experience: a.experience || [],
+      education: a.education || [],
+      certifications: a.certifications || [],
+      projects: a.projects || [],
+      availability: a.availability || { status: "Available", type: "Full-time" },
+      socialLinks: a.socialLinks || { linkedin: "", github: "", portfolio: "" },
+      source: a.source || "umurava",
     }));
 
-    // Run AI screening
     const screeningOutput = await screenCandidates(jobInput, applicantInputs);
 
-    // Map candidateId strings back to ObjectIds
-    const rankedWithIds = screeningOutput.rankedCandidates.map((r) => ({
-      ...r,
-      candidateId: r.candidateId,
-    }));
+    // Save AI-generated scores back to applicant records (extensibility)
+    for (const result of screeningOutput.rankedCandidates) {
+      await Applicant.findByIdAndUpdate(result.candidateId, {
+        aiScore: result.score,
+        confidenceLevel: result.confidence,
+      });
+    }
 
-    // Save results
     const saved = await ScreeningResult.create({
       jobId,
       totalApplicants: screeningOutput.totalApplicants,
       shortlistedCount: screeningOutput.shortlistedCount,
-      rankedCandidates: rankedWithIds,
+      rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
+        candidateId: r.candidateId,
+        rank: r.rank,
+        score: r.score,
+        strengths: r.strengths,
+        gaps: r.gaps,
+        recommendation: r.recommendation,
+        skillsMatched: r.skillsMatched || [],
+        skillsMissing: r.skillsMissing || [],
+        confidence: r.confidence || "Medium",
+      })),
       biasNotice: screeningOutput.biasNotice,
       screenedAt: screeningOutput.screenedAt,
     });
 
-    // Update job status
     await Job.findByIdAndUpdate(jobId, { status: "screening" });
 
     res.json({ success: true, data: saved });
@@ -112,17 +125,23 @@ export const compareSelectedCandidates = async (req: any, res: Response): Promis
       location: job.location,
     };
 
-    const candidateInputs = candidates.map((c) => ({
+    const candidateInputs = candidates.map((c: any) => ({
       id: c.id,
-      fullName: c.fullName,
-      email: c.email,
-      skills: c.skills,
-      yearsOfExperience: c.yearsOfExperience,
-      education: c.education,
-      location: c.location,
-      languages: c.languages,
-      pastProjects: c.pastProjects,
-      source: c.source as "umurava" | "external",
+      firstName: c.firstName || "",
+      lastName: c.lastName || "",
+      email: c.email || "",
+      headline: c.headline || "",
+      bio: c.bio || "",
+      location: c.location || "",
+      skills: c.skills || [],
+      languages: c.languages || [],
+      experience: c.experience || [],
+      education: c.education || [],
+      certifications: c.certifications || [],
+      projects: c.projects || [],
+      availability: c.availability || { status: "Available", type: "Full-time" },
+      socialLinks: c.socialLinks || { linkedin: "", github: "", portfolio: "" },
+      source: c.source || "umurava",
     }));
 
     const comparison = await compareCandidates(jobInput, candidateInputs);
