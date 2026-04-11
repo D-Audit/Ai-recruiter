@@ -1,32 +1,36 @@
 import { CandidateResult } from "../types/index";
 
 // ─────────────────────────────────────────────────────────────────
-// Smart / curly quote code-points
+// Unicode sets
 // ─────────────────────────────────────────────────────────────────
-const SMART_DOUBLE = new Set([0x201C, 0x201D, 0x201E, 0x201F, 0x2033, 0x2036]); // " " „ ‟ ″ ‶
-const SMART_SINGLE = new Set([0x2018, 0x2019, 0x201A, 0x201B, 0x2032, 0x2035]); // ' ' ‚ ‛ ′ ‵
+const SMART_DOUBLE = new Set([0x201C, 0x201D, 0x201E, 0x201F, 0x2033, 0x2036]);
+const SMART_SINGLE = new Set([0x2018, 0x2019, 0x201A, 0x201B, 0x2032, 0x2035]);
 
 // ─────────────────────────────────────────────────────────────────
-// parseJsonSafe
-//
-// Why one pass instead of global replaces?
-// ─────────────────────────────────────────
-// JSON characters have different meanings depending on context.
-// A smart " OUTSIDE a string is a delimiter → replace with ".
-// A smart " INSIDE  a string is a literal   → replace with \".
-// A global replace of curly→straight quotes turns interior curly
-// quotes into unescaped ", which breaks JSON.parse every time.
+// Helpers
 // ─────────────────────────────────────────────────────────────────
-function parseJsonSafe(raw: string): any {
-  // ── Step 1: strip markdown fences and JS comments ───────────────
-  let s = raw
-    .replace(/```json\s*/gi, "")
-    .replace(/```\s*/g, "")
-    .replace(/\/\/[^\n]*/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .trim();
 
-  // ── Step 2: one-pass context-aware character fixer ───────────────
+/** First non-whitespace character at or after `from`. */
+function peekNext(s: string, from: number): string {
+  for (let j = from; j < s.length; j++) {
+    const c = s[j];
+    if (c !== " " && c !== "\t" && c !== "\n" && c !== "\r") return c;
+  }
+  return "";
+}
+
+/**
+ * In valid JSON, a closing " is always followed by , } ] or :
+ * If the next char is anything else the " is probably content, not a delimiter.
+ */
+function isStructural(ch: string): boolean {
+  return ch === "," || ch === "}" || ch === "]" || ch === ":";
+}
+
+// ─────────────────────────────────────────────────────────────────
+// One-pass context-aware character fixer
+// ─────────────────────────────────────────────────────────────────
+function onePassFix(s: string): string {
   let fixed    = "";
   let inString = false;
   let i        = 0;
@@ -35,15 +39,25 @@ function parseJsonSafe(raw: string): any {
     const ch   = s[i];
     const code = s.charCodeAt(i);
 
-    // Already-escaped sequence — copy both chars verbatim
+    // Already-escaped pair — copy verbatim
     if (ch === "\\" && inString) {
       fixed += ch + (s[i + 1] ?? "");
       i += 2;
       continue;
     }
 
-    // Straight double-quote — toggle string tracking
+    // Straight double-quote
     if (ch === '"') {
+      if (inString) {
+        // Lookahead: if next non-WS is not a JSON structural char,
+        // this " is content inside the value — escape it
+        const next = peekNext(s, i + 1);
+        if (next && !isStructural(next)) {
+          fixed += '\\"';
+          i++;
+          continue;
+        }
+      }
       inString = !inString;
       fixed += ch;
       i++;
@@ -52,17 +66,13 @@ function parseJsonSafe(raw: string): any {
 
     // Smart / curly DOUBLE quote
     if (SMART_DOUBLE.has(code)) {
-      if (inString) {
-        fixed += '\\"'; // inside a value → escape so it's a literal char
-      } else {
-        inString = !inString;
-        fixed += '"';   // outside → use as delimiter
-      }
+      fixed += inString ? '\\"' : '"';
+      if (!inString) inString = true;
       i++;
       continue;
     }
 
-    // Smart / curly SINGLE quote → plain apostrophe (always safe)
+    // Smart / curly SINGLE quote → plain apostrophe
     if (SMART_SINGLE.has(code)) {
       fixed += "'";
       i++;
@@ -74,88 +84,189 @@ function parseJsonSafe(raw: string): any {
       if (ch === "\n") { fixed += "\\n"; i++; continue; }
       if (ch === "\r") { fixed += "\\r"; i++; continue; }
       if (ch === "\t") { fixed += "\\t"; i++; continue; }
-      if (code <= 0x1F || code === 0x7F) { i++; continue; } // strip
+      if (code <= 0x1F || code === 0x7F) { i++; continue; }
     }
 
     fixed += ch;
     i++;
   }
 
-  // ── Step 3: remove trailing commas before ] or } ────────────────
-  fixed = fixed.replace(/,\s*([\]}])/g, "$1");
+  return fixed;
+}
 
-  // ── Step 4: parse with 3 progressive fallbacks ──────────────────
+// ─────────────────────────────────────────────────────────────────
+// JSON.parse with 3 progressive fallbacks
+// ─────────────────────────────────────────────────────────────────
+function parseJsonSafe(raw: string): any {
+  let s = raw
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .trim();
 
-  // Attempt 1: cleaned string as-is
+  const fixed = onePassFix(s).replace(/,\s*([\]}])/g, "$1");
+
   try { return JSON.parse(fixed); } catch (_) {}
 
-  // Attempt 2: strip remaining non-printable / non-ASCII junk
   try {
     return JSON.parse(fixed.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, ""));
   } catch (_) {}
 
-  // Attempt 3: collapse any surviving literal newlines to spaces
   try {
     return JSON.parse(fixed.replace(/\n/g, " ").replace(/\r/g, ""));
   } catch (lastErr) {
     throw new Error(
-      `JSON parsing failed after 3 attempts.\n` +
-      `Last error: ${(lastErr as Error).message}\n` +
-      `Snippet: ${fixed.slice(0, 400)}`
+      `JSON parsing failed.\nLast error: ${(lastErr as Error).message}\nSnippet: ${fixed.slice(0, 400)}`
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Extract the outermost JSON array from a raw AI response string
+// Manual field-level extraction (last-resort fallback)
+// ─────────────────────────────────────────────────────────────────
+function extractNumber(obj: string, field: string): number | null {
+  const m = new RegExp(`"${field}"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)`).exec(obj);
+  return m ? parseFloat(m[1]) : null;
+}
+
+function extractStr(obj: string, field: string): string {
+  const m = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`, "s").exec(obj);
+  return m ? m[1].replace(/\\n/g, " ").trim() : "";
+}
+
+function extractStrArray(obj: string, field: string): string[] {
+  const m = new RegExp(`"${field}"\\s*:\\s*\\[([^\\]]*?)\\]`, "s").exec(obj);
+  if (!m) return [];
+  const items: string[] = [];
+  const re = /"((?:[^"\\]|\\.)*)"/g;
+  let hit: RegExpExecArray | null;
+  while ((hit = re.exec(m[1])) !== null) items.push(hit[1]);
+  return items;
+}
+
+/**
+ * Gemini may return strengths/gaps as an array OR a plain string.
+ * CandidateResult.strengths / .gaps are typed as `string`,
+ * so we always join to a single string.
+ */
+function extractAsString(obj: string, field: string): string {
+  // Try array first
+  const arr = extractStrArray(obj, field);
+  if (arr.length) return arr.join(". ");
+  // Fall back to plain string
+  return extractStr(obj, field);
+}
+
+function manualExtractCandidates(raw: string): CandidateResult[] {
+  const results: CandidateResult[] = [];
+  const idRe = /"candidateId"\s*:\s*"([^"]+)"/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = idRe.exec(raw)) !== null) {
+    const candidateId = m[1];
+    const pos         = m.index;
+    const objStart    = raw.lastIndexOf("{", pos);
+    if (objStart === -1) continue;
+
+    let depth = 0, objEnd = -1;
+    for (let k = objStart; k < raw.length; k++) {
+      if (raw[k] === "{") depth++;
+      else if (raw[k] === "}") { if (--depth === 0) { objEnd = k; break; } }
+    }
+    if (objEnd === -1) continue;
+
+    const obj = raw.substring(objStart, objEnd + 1);
+
+    results.push({
+      candidateId,
+      rank:           extractNumber(obj, "rank")  ?? results.length + 1,
+      score:          extractNumber(obj, "score") ?? 0,
+      strengths:      extractAsString(obj, "strengths"),   // string ✓
+      gaps:           extractAsString(obj, "gaps"),         // string ✓
+      recommendation: extractStr(obj, "recommendation"),
+      skillsMatched:  extractStrArray(obj, "skillsMatched"),
+      skillsMissing:  extractStrArray(obj, "skillsMissing"),
+      confidence:     (extractStr(obj, "confidence") || "Medium") as any,
+    });
+  }
+
+  return results;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Boundary extractors
 // ─────────────────────────────────────────────────────────────────
 function extractArray(raw: string): string {
   const start = raw.indexOf("[");
   const end   = raw.lastIndexOf("]");
-  if (start === -1 || end === -1 || end < start) {
+  if (start === -1 || end === -1 || end < start)
     throw new Error("No JSON array found in AI response");
-  }
   return raw.substring(start, end + 1);
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Extract the outermost JSON object from a raw AI response string
-// ─────────────────────────────────────────────────────────────────
 function extractObject(raw: string): string {
   const start = raw.indexOf("{");
   const end   = raw.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
+  if (start === -1 || end === -1 || end < start)
     throw new Error("No JSON object found in AI response");
-  }
   return raw.substring(start, end + 1);
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Public: parse screening response → CandidateResult[]
+// Sanitize a parsed array → CandidateResult[]
+// Handles Gemini returning strengths/gaps as array OR string,
+// and always produces the `string` type required by CandidateResult.
+// ─────────────────────────────────────────────────────────────────
+function sanitizeCandidates(parsed: any[]): CandidateResult[] {
+  return parsed.map((item: any, idx: number) => {
+    const toStr = (v: any): string => {
+      if (!v) return "";
+      if (Array.isArray(v)) return v.join(". ");
+      return String(v);
+    };
+
+    return {
+      candidateId:    item.candidateId ?? item.id ?? "",
+      rank:           typeof item.rank  === "number" ? item.rank  : idx + 1,
+      score:          typeof item.score === "number" ? item.score : 0,
+      strengths:      toStr(item.strengths),   // string ✓
+      gaps:           toStr(item.gaps),         // string ✓
+      recommendation: toStr(item.recommendation),
+      skillsMatched:  Array.isArray(item.skillsMatched) ? item.skillsMatched : [],
+      skillsMissing:  Array.isArray(item.skillsMissing) ? item.skillsMissing : [],
+      confidence:     item.confidence ?? "Medium",
+    };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PUBLIC: parse screening response → CandidateResult[]
 // ─────────────────────────────────────────────────────────────────
 export function parseScreeningResponse(rawText: string): CandidateResult[] {
   if (!rawText?.trim()) throw new Error("Empty response from AI");
 
-  const parsed = parseJsonSafe(extractArray(rawText));
+  // Strategy 1: clean + JSON.parse
+  try {
+    const parsed = parseJsonSafe(extractArray(rawText));
+    if (Array.isArray(parsed)) return sanitizeCandidates(parsed);
+  } catch (e1) {
+    console.warn("⚠️  Strategy 1 (JSON parse) failed:", (e1 as Error).message);
+  }
 
-  if (!Array.isArray(parsed)) throw new Error("AI response is not an array");
+  // Strategy 2: manual field-level extraction
+  console.warn("⚠️  Falling back to manual field extraction...");
+  const manual = manualExtractCandidates(rawText);
+  if (manual.length > 0) {
+    console.log(`✅ Manual extraction recovered ${manual.length} candidates`);
+    return manual;
+  }
 
-  return parsed.map((item: any, idx: number) => ({
-    candidateId:    item.candidateId ?? item.id ?? "",
-    rank:           typeof item.rank  === "number" ? item.rank  : idx + 1,
-    score:          typeof item.score === "number" ? item.score : 0,
-    // strengths / gaps: Gemini sometimes returns a string, sometimes an array
-    strengths:      Array.isArray(item.strengths) ? item.strengths : (item.strengths ? [item.strengths] : []),
-    gaps:           Array.isArray(item.gaps)      ? item.gaps      : (item.gaps      ? [item.gaps]      : []),
-    recommendation: item.recommendation ?? "",
-    skillsMatched:  Array.isArray(item.skillsMatched) ? item.skillsMatched : [],
-    skillsMissing:  Array.isArray(item.skillsMissing) ? item.skillsMissing : [],
-    confidence:     item.confidence ?? "Medium",
-  })) as CandidateResult[];
+  throw new Error("All parsing strategies failed — no candidates extracted from AI response");
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Public: parse comparison response → any
+// PUBLIC: parse comparison response → any
 // ─────────────────────────────────────────────────────────────────
 export function parseComparisonResponse(rawText: string): any {
   if (!rawText?.trim()) throw new Error("Empty comparison response from AI");
