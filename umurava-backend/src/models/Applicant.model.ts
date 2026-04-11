@@ -28,18 +28,19 @@ export interface IApplicant extends Document {
   confidenceLevel?: string;
   portfolioRating?: number;
   source: string;
-  jobId?: mongoose.Types.ObjectId;
+  jobIds: mongoose.Types.ObjectId[]; // array — one applicant can belong to many jobs
   createdAt: Date;
 }
 
 const ApplicantSchema = new Schema<IApplicant>(
   {
     firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
-    email: { type: String, required: true, lowercase: true, trim: true },
-    headline: { type: String, required: true, default: "" },
-    bio: { type: String, default: "" },
-    location: { type: String, required: true, default: "" },
+    lastName:  { type: String, required: true, trim: true },
+    email:     { type: String, required: true, lowercase: true, trim: true },
+    headline:  { type: String, default: "" },
+    bio:       { type: String, default: "" },
+    location:  { type: String, default: "" },
+
     skills: [
       {
         name: { type: String, required: true },
@@ -51,6 +52,7 @@ const ApplicantSchema = new Schema<IApplicant>(
         yearsOfExperience: { type: Number, default: 0 },
       },
     ],
+
     languages: [
       {
         name: { type: String },
@@ -61,44 +63,49 @@ const ApplicantSchema = new Schema<IApplicant>(
         },
       },
     ],
+
     experience: [
       {
-        company: { type: String, default: "" },
-        role: { type: String, default: "" },
-        startDate: { type: String, default: "" },
-        endDate: { type: String, default: "" },
-        description: { type: String, default: "" },
+        company:      { type: String, default: "" },
+        role:         { type: String, default: "" },
+        startDate:    { type: String, default: "" },
+        endDate:      { type: String, default: "" },
+        description:  { type: String, default: "" },
         technologies: { type: [String], default: [] },
-        isCurrent: { type: Boolean, default: false },
+        isCurrent:    { type: Boolean, default: false },
       },
     ],
+
     education: [
       {
-        institution: { type: String, default: "" },
-        degree: { type: String, default: "" },
+        institution:  { type: String, default: "" },
+        degree:       { type: String, default: "" },
         fieldOfStudy: { type: String, default: "" },
-        startYear: { type: Number },
-        endYear: { type: Number },
+        startYear:    { type: Number },
+        endYear:      { type: Number },
       },
     ],
+
     certifications: [
       {
-        name: { type: String },
-        issuer: { type: String },
+        name:      { type: String },
+        issuer:    { type: String },
         issueDate: { type: String },
       },
     ],
+
     projects: [
       {
-        name: { type: String },
-        description: { type: String },
+        name:         { type: String },
+        description:  { type: String },
         technologies: { type: [String], default: [] },
-        role: { type: String, default: "" },
-        link: { type: String, default: "" },
-        startDate: { type: String, default: "" },
-        endDate: { type: String, default: "" },
+        role:         { type: String, default: "" },
+        link:         { type: String, default: "" },
+        startDate:    { type: String, default: "" },
+        endDate:      { type: String, default: "" },
       },
     ],
+
     availability: {
       status: {
         type: String,
@@ -112,32 +119,35 @@ const ApplicantSchema = new Schema<IApplicant>(
       },
       startDate: { type: String, default: "" },
     },
+
     socialLinks: {
-      linkedin: { type: String, default: "" },
-      github: { type: String, default: "" },
+      linkedin:  { type: String, default: "" },
+      github:    { type: String, default: "" },
       portfolio: { type: String, default: "" },
     },
-    // Extensibility — AI-generated & portfolio fields
-    aiScore: { type: Number, default: null },
-    confidenceLevel: {
-      type: String,
-      enum: ["High", "Medium", "Low", null],
-      default: null,
-    },
+
+    aiScore:         { type: Number, default: null },
+    confidenceLevel: { type: String, enum: ["High", "Medium", "Low", null], default: null },
     portfolioRating: { type: Number, default: null },
+
     source: {
       type: String,
       enum: ["umurava", "external"],
       default: "umurava",
     },
-    jobId: {
-      type: Schema.Types.ObjectId,
+
+    // One document per applicant; jobIds tracks which jobs they belong to.
+    // Use $addToSet in the controller to prevent duplicate job references.
+    jobIds: {
+      type: [Schema.Types.ObjectId],
       ref: "Job",
-      required: false,
-      default: null,
+      default: [],
     },
   },
   { timestamps: true }
 );
+
+// Enforce one document per unique email at the DB level
+ApplicantSchema.index({ email: 1 }, { unique: true });
 
 export default mongoose.model<IApplicant>("Applicant", ApplicantSchema);

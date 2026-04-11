@@ -6,7 +6,7 @@ import { parsePDFResume } from "../services/pdf.service";
 
 export const getApplicants = async (req: any, res: Response): Promise<void> => {
   try {
-    // Match any applicant whose jobIds array contains the given jobId
+    // jobIds is an array field — Mongo matches docs where the array contains this value
     const applicants = await Applicant.find({ jobIds: req.params.jobId });
     res.json({ success: true, count: applicants.length, applicants });
   } catch (error) {
@@ -33,13 +33,10 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
     const { jobId } = req.body;
     const parsed = await parseCSVFile(req.file.path);
 
-    // Store jobId inside jobIds array so future jobs can be appended
     const applicants = parsed.map((p) => ({ ...p, jobIds: [jobId] }));
     const inserted = await Applicant.insertMany(applicants);
 
-    await Job.findByIdAndUpdate(jobId, {
-      $inc: { applicantsCount: inserted.length },
-    });
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: inserted.length } });
 
     res.json({
       success: true,
@@ -61,9 +58,7 @@ export const uploadPDF = async (req: any, res: Response): Promise<void> => {
     const { jobId } = req.body;
     const parsed = await parsePDFResume(req.file.path);
 
-    // Store jobId inside jobIds array
     const applicant = await Applicant.create({ ...parsed, jobIds: [jobId] });
-
     await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
 
     res.json({ success: true, message: "PDF parsed successfully", applicant });
@@ -76,50 +71,50 @@ export const selectUmuravaProfiles = async (req: any, res: Response): Promise<vo
   try {
     const { jobId, profileIds } = req.body;
 
-    const profiles = await Applicant.find({ _id: { $in: profileIds } });
+    // ── Step 1: find which of the selected profiles already have this jobId ──
+    // $addToSet on updateMany would still update the count incorrectly,
+    // so we split into "already linked" vs "newly linked" first.
+    const alreadyLinked = await Applicant.find({
+      _id: { $in: profileIds },
+      jobIds: jobId,           // jobIds array already contains this jobId
+    }).select("_id");
 
-    let addedCount = 0;
+    const alreadyLinkedIds = new Set(alreadyLinked.map((p) => String(p._id)));
 
-    for (const p of profiles) {
-      // Check if already added to this job
-      const exists = await Applicant.findOne({
-        email: p.email,
-        jobId: jobId,
+    const newProfileIds = profileIds.filter(
+      (id: string) => !alreadyLinkedIds.has(String(id))
+    );
+
+    if (newProfileIds.length === 0) {
+      res.json({
+        success: true,
+        count: 0,
+        message: "All selected profiles are already linked to this job",
       });
-
-      if (!exists) {
-        await Applicant.create({
-          firstName: p.firstName,
-          lastName: p.lastName,
-          email: p.email,
-          headline: p.headline,
-          bio: p.bio,
-          skills: p.skills,
-          languages: p.languages,
-          experience: p.experience,
-          education: p.education,
-          certifications: p.certifications,
-          projects: p.projects,
-          availability: p.availability,
-          socialLinks: p.socialLinks,
-          location: p.location,
-          source: "umurava",
-          jobId,
-        });
-        addedCount++;
-      }
+      return;
     }
 
+    // ── Step 2: atomically append jobId to each new profile's jobIds array ──
+    // $addToSet guarantees no duplicates even under concurrent requests
+    await Applicant.updateMany(
+      { _id: { $in: newProfileIds } },
+      { $addToSet: { jobIds: jobId } }
+    );
+
+    // ── Step 3: increment job applicant count only for genuinely new links ──
     await Job.findByIdAndUpdate(jobId, {
-      $inc: { applicantsCount: addedCount },
+      $inc: { applicantsCount: newProfileIds.length },
     });
 
     res.json({
       success: true,
-      count: addedCount,
-      message: addedCount === 0
-        ? "All selected profiles already added to this job"
-        : `${addedCount} profiles added successfully`,
+      count: newProfileIds.length,
+      skipped: alreadyLinkedIds.size,
+      message: `${newProfileIds.length} profile${newProfileIds.length !== 1 ? "s" : ""} added${
+        alreadyLinkedIds.size > 0
+          ? `, ${alreadyLinkedIds.size} already linked (skipped)`
+          : ""
+      }`,
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
