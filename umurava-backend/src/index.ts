@@ -6,24 +6,29 @@ import authRoutes from "./routes/auth.routes";
 import jobRoutes from "./routes/job.routes";
 import applicantRoutes from "./routes/applicant.routes";
 import screeningRoutes from "./routes/screening.routes";
+import chatRoutes from "./routes/chat.routes";
+import morgan from "morgan";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ── Middleware FIRST ──
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001"],
   credentials: true,
 }));
-
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(morgan("dev"));
 
+// ── Routes AFTER middleware ──
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/screening", screeningRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/", (req, res) => {
   res.json({ message: "Umurava AI Backend is running ✅" });

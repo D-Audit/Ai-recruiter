@@ -1,11 +1,14 @@
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import User from "../models/User.model";
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const generateToken = (id: string, email: string, name: string) => {
   return jwt.sign(
     { id, email, name },
-    process.env.JWT_SECRET as string,
+    process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 };

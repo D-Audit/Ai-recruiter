@@ -13,6 +13,7 @@ export interface IScreeningResult extends Document {
     recommendation: string;
     skillsMatched: string[];
     skillsMissing: string[];
+    confidence: string;
   }[];
   biasNotice: string;
   screenedAt: Date;
@@ -20,25 +21,12 @@ export interface IScreeningResult extends Document {
 
 const ScreeningResultSchema = new Schema<IScreeningResult>(
   {
-    jobId: {
-      type: Schema.Types.ObjectId,
-      ref: "Job",
-      required: true,
-    },
-    totalApplicants: {
-      type: Number,
-      required: true,
-    },
-    shortlistedCount: {
-      type: Number,
-      required: true,
-    },
+    jobId: { type: Schema.Types.ObjectId, ref: "Job", required: true },
+    totalApplicants: { type: Number, required: true },
+    shortlistedCount: { type: Number, required: true },
     rankedCandidates: [
       {
-        candidateId: {
-          type: Schema.Types.ObjectId,
-          ref: "Applicant",
-        },
+        candidateId: { type: Schema.Types.ObjectId, ref: "Applicant" },
         rank: { type: Number },
         score: { type: Number },
         strengths: { type: String },
@@ -46,21 +34,13 @@ const ScreeningResultSchema = new Schema<IScreeningResult>(
         recommendation: { type: String },
         skillsMatched: { type: [String], default: [] },
         skillsMissing: { type: [String], default: [] },
+        confidence: { type: String, default: "Medium" },
       },
     ],
-    biasNotice: {
-      type: String,
-      default: "",
-    },
-    screenedAt: {
-      type: Date,
-      default: Date.now,
-    },
+    biasNotice: { type: String, default: "" },
+    screenedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
 
-export default mongoose.model<IScreeningResult>(
-  "ScreeningResult",
-  ScreeningResultSchema
-);
+export default mongoose.model<IScreeningResult>("ScreeningResult", ScreeningResultSchema);
