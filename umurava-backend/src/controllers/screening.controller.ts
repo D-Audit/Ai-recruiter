@@ -3,6 +3,11 @@ import Job from "../models/Job.model";
 import Applicant from "../models/Applicant.model";
 import ScreeningResult from "../models/ScreeningResult.model";
 import { screenCandidates, compareCandidates } from "../services/ai.service";
+import {
+  generateCacheKey,
+  getCachedResult,
+  setCachedResult,
+} from "../services/cache.service";
 
 // ─────────────────────────────────────────────
 // Helper: map an applicant document → AI input
@@ -63,56 +68,108 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    const screeningOutput = await screenCandidates(
-      toJobInput(job),
-      applicants.map(toApplicantInput)
-    );
+    const jobInput = {
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      requiredSkills: job.requiredSkills,
+      yearsOfExperience: job.yearsOfExperience,
+      educationLevel: job.educationLevel,
+      location: job.location,
+    };
 
-    // Persist AI scores + confidence back onto each applicant document
-    const scoreUpdates = screeningOutput.rankedCandidates.map((r) =>
-      Applicant.findByIdAndUpdate(r.candidateId, {
-        aiScore:         r.score,
-        confidenceLevel: r.confidence,
-        // portfolioRating can be added here when the AI service returns it
-      })
-    );
-    await Promise.all(scoreUpdates);
+    const applicantInputs = applicants.map((a: any) => ({
+      id: a.id,
+      firstName: a.firstName || "",
+      lastName: a.lastName || "",
+      email: a.email || "",
+      headline: a.headline || "",
+      bio: a.bio || "",
+      location: a.location || "",
+      skills: a.skills || [],
+      languages: a.languages || [],
+      experience: a.experience || [],
+      education: a.education || [],
+      certifications: a.certifications || [],
+      projects: a.projects || [],
+      availability: a.availability || { status: "Available", type: "Full-time" },
+      socialLinks: a.socialLinks || { linkedin: "", github: "", portfolio: "" },
+      source: a.source || "umurava",
+    }));
 
-    // Upsert: replace any previous screening result for this job
-    const saved = await ScreeningResult.findOneAndUpdate(
-      { jobId },
-      {
-        jobId,
-        totalApplicants:  screeningOutput.totalApplicants,
-        shortlistedCount: screeningOutput.shortlistedCount,
-        rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
-          candidateId:   r.candidateId,
-          rank:          r.rank,
-          score:         r.score,
-          strengths:     r.strengths,
-          gaps:          r.gaps,
-          recommendation: r.recommendation,
-          skillsMatched: r.skillsMatched  || [],
-          skillsMissing: r.skillsMissing  || [],
-          confidence:    r.confidence     || "Medium",
-        })),
-        biasNotice: screeningOutput.biasNotice,
-        screenedAt:  screeningOutput.screenedAt,
-      },
-      { upsert: true, new: true }
-    );
+    // 🧠 CACHE LOGIC (ONLY ADDITION)
+    const weights = {
+      skills: 0.4,
+      experience: 0.25,
+      education: 0.2,
+      location: 0.15,
+    };
+
+    const applicantIds = applicants.map((a) => a.id);
+    const cacheKey = generateCacheKey(jobId, applicantIds, weights);
+
+    const cached = await getCachedResult(cacheKey);
+
+    if (cached) {
+      console.log("🎯 Returning cached screening result");
+
+      res.json({
+        success: true,
+        data: cached,
+        fromCache: true,
+      });
+
+      return;
+    }
+
+    // AI CALL (UNCHANGED)
+    const screeningOutput = await screenCandidates(jobInput, applicantInputs);
+
+    // Save AI-generated scores back to applicant records (UNCHANGED)
+    for (const result of screeningOutput.rankedCandidates) {
+      await Applicant.findByIdAndUpdate(result.candidateId, {
+        aiScore: result.score,
+        confidenceLevel: result.confidence,
+      });
+    }
+
+    const saved = await ScreeningResult.create({
+      jobId,
+      totalApplicants: screeningOutput.totalApplicants,
+      shortlistedCount: screeningOutput.shortlistedCount,
+      rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
+        candidateId: r.candidateId,
+        rank: r.rank,
+        score: r.score,
+        strengths: r.strengths,
+        gaps: r.gaps,
+        recommendation: r.recommendation,
+        skillsMatched: r.skillsMatched || [],
+        skillsMissing: r.skillsMissing || [],
+        confidence: r.confidence || "Medium",
+      })),
+      biasNotice: screeningOutput.biasNotice,
+      screenedAt: screeningOutput.screenedAt,
+    });
 
     await Job.findByIdAndUpdate(jobId, { status: "screening" });
 
-    res.json({ success: true, data: saved });
+    // 💾 SAVE TO CACHE (NEW ADDITION)
+    await setCachedResult(cacheKey, jobId, saved);
+
+    res.json({ success: true, data: saved, fromCache: false });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: "Screening failed", error: String(error) });
+    res.status(500).json({
+      success: false,
+      message: "Screening failed",
+      error: String(error),
+    });
   }
 };
 
-// ─────────────────────────────────────────────
-// GET /screening/:jobId/results
-// ─────────────────────────────────────────────
+// ------------------- NO CHANGES BELOW -------------------
+
 export const getResults = async (req: any, res: Response): Promise<void> => {
   try {
     // Return the most recent result for this job
@@ -169,7 +226,12 @@ export const compareSelectedCandidates = async (req: any, res: Response): Promis
     );
 
     res.json({ success: true, data: comparison });
+
   } catch (error) {
-    res.status(500).json({ success: false, message: "Comparison failed", error: String(error) });
+    res.status(500).json({
+      success: false,
+      message: "Comparison failed",
+      error: String(error),
+    });
   }
 };

@@ -43,36 +43,83 @@ Availability: ${a.availability?.status ?? "N/A"} | ${a.availability?.type ?? "N/
   }).join("\n\n---\n\n");
 
   return `
-You are an expert AI recruiter. Evaluate the candidates below against the job and return ONLY a valid JSON array.
+You are an expert AI recruitment assistant for Umurava, an African talent platform.
+Screen and rank all applicants for the job below. Be fair and skills-first in evaluation.
 
-JOB:
-${jobSummary}
+═══════════════════════════════════════
+JOB DETAILS:
+═══════════════════════════════════════
+Title: ${job.title}
+Description: ${job.description}
+Required Skills: ${job.requiredSkills.join(", ")}
+Minimum Experience: ${job.yearsOfExperience} years
+Education Required: ${job.educationLevel}
+Location: ${job.location}
 
-CANDIDATES:
-${candidateList}
+═══════════════════════════════════════
+SCORING WEIGHTS (total = 100):
+═══════════════════════════════════════
+1. Skills Match (40 pts)
+   - Match skills[].name against required skills
+   - Bonus for Advanced/Expert level on matched skills
+   - Bonus for skills used in experience[].technologies
 
-STRICT OUTPUT RULES — FOLLOW EXACTLY:
-1. Return ONLY a raw JSON array. No markdown, no backticks, no explanation.
-2. "strengths" must be an ARRAY of short bullet strings (max 10 words each, max 4 items).
-3. "gaps" must be an ARRAY of short bullet strings (max 10 words each, max 3 items).
-4. "recommendation" must be one plain sentence with NO quotation marks inside it.
-5. "confidence" must be exactly one of: "High", "Medium", or "Low".
-6. Do NOT use quotation marks (" or ') inside any string value.
-7. "score" must be a number between 0 and 100.
-8. Use the exact candidateId strings provided — do not change them.
+2. Work Experience (25 pts)
+   - Sum years from experience[] (startDate → endDate or Present)
+   - Relevance of roles to this job
+   - Technologies used in experience
 
-OUTPUT FORMAT (one object per candidate):
+3. Education (20 pts)
+   - Degree level vs required (PhD > Master > Bachelor > High School)
+   - Field of study relevance
+
+4. Extras (15 pts)
+   - Location match bonus (up to 5 pts)
+   - Languages (each Fluent/Native relevant language = 2 pts, up to 5 pts)
+   - Certifications relevant to job (up to 5 pts)
+
+IMPORTANT — optional field handling:
+- If bio, certifications, socialLinks, or portfolioRating are missing/empty, do NOT penalize
+- Treat absent optional fields as neutral — score purely on available data
+- A candidate with fewer fields is not worse; simply score what is present
+
+═══════════════════════════════════════
+CANDIDATES (${applicants.length} total):
+═══════════════════════════════════════
+${JSON.stringify(applicants, null, 2)}
+
+═══════════════════════════════════════
+INSTRUCTIONS:
+═══════════════════════════════════════
+1. Score every candidate 0-100 using weights above
+2. Rank highest score to lowest
+3. Return ALL candidates (or TOP 10 if more than 10 provided)
+4. skillsMatched = skill names from their skills[] that match required skills
+5. skillsMissing = required skills they do NOT have in skills[]
+6. confidence = "High" if score >= 70, "Medium" if 50-69, "Low" if below 50
+7. NEVER use fullName — use firstName and lastName separately
+
+// Add to the output format in buildScreeningPrompt
+RETURN THIS FORMAT ONLY:
 [
   {
-    "candidateId": "<exact id from input>",
-    "rank": <integer starting from 1>,
-    "score": <number 0-100>,
-    "strengths": ["strength one", "strength two", "strength three"],
-    "gaps": ["gap one", "gap two"],
-    "recommendation": "One plain sentence recommendation without any inner quotes.",
-    "skillsMatched": ["Skill1", "Skill2"],
-    "skillsMissing": ["Skill3"],
-    "confidence": "High"
+    "candidateId": "exact_id_from_input",
+    "rank": 1,
+    "score": 87,
+    "strengths": "2-3 sentences",
+    "gaps": "1-2 sentences",
+    "recommendation": "Shortlist | Consider | Not Selected",
+    "skillsMatched": ["React", "Node.js"],
+    "skillsMissing": ["MongoDB"],
+    "confidence": "High",
+    "upskillingPaths": [
+      {
+        "skill": "MongoDB",
+        "reason": "Required for this role",
+        "suggestedResource": "MongoDB University free course"
+      }
+    ],
+    "adjacentRoles": ["Frontend Developer", "React Native Developer"]
   }
 ]
 

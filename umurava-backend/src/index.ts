@@ -8,31 +8,73 @@ import applicantRoutes from "./routes/applicant.routes";
 import screeningRoutes from "./routes/screening.routes";
 import chatRoutes from "./routes/chat.routes";
 import morgan from "morgan";
+import rateLimit from "express-rate-limit";
+import helmet from "helmet";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ── Middleware FIRST ──
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001"],
   credentials: true,
 }));
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(morgan("dev"));
+app.use(helmet());
 
-// ── Routes AFTER middleware ──
+const globalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 100,
+  message: {
+    success: false,
+    message: "Too many requests. Please try again later.",
+  },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: {
+    success: false,
+    message: "Too many login attempts. Try again later.",
+  },
+});
+
+
+const aiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 20,
+  message: {
+    success: false,
+    message: "Too many AI requests. Please slow down.",
+  },
+});
+
+
+app.use("/api/", globalLimiter);
+
+
+app.use("/api/auth/login", authLimiter);
+
+
+app.use("/api/screening", aiLimiter);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/jobs", jobRoutes);
 app.use("/api/applicants", applicantRoutes);
 app.use("/api/screening", screeningRoutes);
 app.use("/api/chat", chatRoutes);
 
+
+
 app.get("/", (req, res) => {
   res.json({ message: "Umurava AI Backend is running ✅" });
 });
+
 
 app.use((err: any, req: any, res: any, next: any) => {
   console.error("Global error:", err);
@@ -41,6 +83,8 @@ app.use((err: any, req: any, res: any, next: any) => {
     message: err.message || "Internal server error",
   });
 });
+
+
 
 connectDB().then(() => {
   app.listen(PORT, () => {
