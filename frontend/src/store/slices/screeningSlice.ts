@@ -4,16 +4,22 @@ import {
   getResults,
   compareCandidates,
 } from "../../services/screeningService";
+import type { ScreeningResult } from "../../types";
+import { buildScreeningChatContext } from "../../utils/screeningChatContext";
 
 export const triggerScreening = createAsyncThunk(
   "screening/run",
   async (jobId: string, { rejectWithValue }) => {
     try {
-      const data = await runScreening(jobId);
-      return data.data;
-    } catch (error: any) {
+      const body = await runScreening(jobId);
+      return {
+        result: body.data as ScreeningResult,
+        fromCache: Boolean(body.fromCache),
+      };
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
       return rejectWithValue(
-        error.response?.data?.message || "Screening failed"
+        err.response?.data?.message || "Screening failed"
       );
     }
   }
@@ -24,8 +30,8 @@ export const fetchResults = createAsyncThunk(
   async (jobId: string, { rejectWithValue }) => {
     try {
       const data = await getResults(jobId);
-      return data.data;
-    } catch (error: any) {
+      return data.data as ScreeningResult;
+    } catch {
       return rejectWithValue("Failed to get results");
     }
   }
@@ -40,7 +46,7 @@ export const compareSelected = createAsyncThunk(
     try {
       const data = await compareCandidates(jobId, candidateIds);
       return data.data;
-    } catch (error: any) {
+    } catch {
       return rejectWithValue("Comparison failed");
     }
   }
@@ -49,14 +55,17 @@ export const compareSelected = createAsyncThunk(
 const screeningSlice = createSlice({
   name: "screening",
   initialState: {
-    results: null as any,
-    comparison: null as any,
+    results: null as ScreeningResult | null,
+    fromCache: false,
+    /** Last screening snapshot for AI assistant (kept after leaving job page). */
+    assistantScreeningContext: null as Record<string, unknown> | null,
+    comparison: null as unknown,
     selectedForCompare: [] as string[],
     loading: false,
     error: null as string | null,
   },
   reducers: {
-    toggleSelectForCompare: (state, action) => {
+    toggleSelectForCompare: (state, action: { payload: string }) => {
       const id = action.payload;
       if (state.selectedForCompare.includes(id)) {
         state.selectedForCompare = state.selectedForCompare.filter(
@@ -66,9 +75,18 @@ const screeningSlice = createSlice({
         state.selectedForCompare.push(id);
       }
     },
-    clearComparison: (state) => {
+    clearCompare: (state) => {
       state.comparison = null;
       state.selectedForCompare = [];
+    },
+    clearResults: (state) => {
+      state.results = null;
+      state.fromCache = false;
+      state.selectedForCompare = [];
+      state.error = null;
+    },
+    clearAssistantContext: (state) => {
+      state.assistantScreeningContext = null;
     },
   },
   extraReducers: (builder) => {
@@ -79,14 +97,26 @@ const screeningSlice = createSlice({
       })
       .addCase(triggerScreening.fulfilled, (state, action) => {
         state.loading = false;
-        state.results = action.payload;
+        state.results = action.payload.result;
+        state.fromCache = action.payload.fromCache;
+        const ctx = buildScreeningChatContext(action.payload.result);
+        if (ctx) state.assistantScreeningContext = ctx;
       })
       .addCase(triggerScreening.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload as string;
       })
+      .addCase(fetchResults.pending, (state) => {
+        state.error = null;
+      })
       .addCase(fetchResults.fulfilled, (state, action) => {
         state.results = action.payload;
+        state.fromCache = false;
+        const ctx = buildScreeningChatContext(action.payload);
+        if (ctx) state.assistantScreeningContext = ctx;
+      })
+      .addCase(fetchResults.rejected, (state, action) => {
+        state.error = action.payload as string;
       })
       .addCase(compareSelected.pending, (state) => {
         state.loading = true;
@@ -102,6 +132,10 @@ const screeningSlice = createSlice({
   },
 });
 
-export const { toggleSelectForCompare, clearComparison } =
-  screeningSlice.actions;
+export const {
+  toggleSelectForCompare,
+  clearCompare,
+  clearResults,
+  clearAssistantContext,
+} = screeningSlice.actions;
 export default screeningSlice.reducer;

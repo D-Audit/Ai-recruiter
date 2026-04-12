@@ -58,6 +58,12 @@ export interface ApplicantInput {
   source: string;
 }
 
+export interface UpskillingPath {
+  skill: string;
+  reason: string;
+  suggestedResource: string;
+}
+
 export interface CandidateResult {
   candidateId: string;
   rank: number;
@@ -68,6 +74,8 @@ export interface CandidateResult {
   skillsMatched: string[];
   skillsMissing: string[];
   confidence: string;
+  upskillingPaths?: UpskillingPath[];
+  adjacentRoles?: string[];
 }
 
 export interface ScreeningOutput {

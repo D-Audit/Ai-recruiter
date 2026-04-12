@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
-/** Legacy route: `/screening/[jobId]` → canonical job hub. */
-export default function LegacyScreeningRedirect() {
-  const { jobId } = useParams();
+/** Legacy list route — screenings live under `/screenings`. */
+export default function LegacyCandidatesIndexRedirect() {
   const router = useRouter();
-
   useEffect(() => {
-    if (jobId) router.replace(`/jobs/${jobId}`);
-  }, [jobId, router]);
-
+    router.replace("/screenings");
+  }, [router]);
   return (
     <div
       style={{
@@ -21,7 +18,6 @@ export default function LegacyScreeningRedirect() {
         justifyContent: "center",
         background: "#f8fafc",
         color: "#64748b",
-        fontSize: 14,
       }}
     >
       Redirecting…

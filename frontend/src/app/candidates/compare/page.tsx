@@ -1,7 +1,10 @@
 "use client";
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Sidebar from "../../../components/Sidebar";
+import AppHeader from "../../../components/AppHeader";
+import LoadingSpinner from "../../../components/LoadingSpinner";
 import { compareCandidates } from "../../../services/screeningService";
 import toast from "react-hot-toast";
 import { Trophy, ArrowLeft } from "lucide-react";
@@ -10,21 +13,28 @@ import { Trophy, ArrowLeft } from "lucide-react";
 //  Inner component (uses useSearchParams — must be in Suspense)
 // ────────────────────────────────────────────────────────────
 function CompareContent() {
-  const sp     = useSearchParams();
-  const router = useRouter();
-  const jobId  = sp.get("jobId") || "";
-  const ids    = sp.get("ids")?.split(",") || [];
+  const sp = useSearchParams();
+  const jobId = sp.get("jobId") || "";
+  const ids = sp.get("ids")?.split(",").filter(Boolean) || [];
+  const backHref = jobId ? `/screenings/${jobId}` : "/screenings";
+
+  const mutedLink: CSSProperties = {
+    color: "#64748b",
+    fontWeight: 600,
+    fontSize: 13,
+    textDecoration: "none",
+  };
 
   const [result,  setResult]  = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!jobId || ids.length < 2) { setLoading(false); return; }
-    compareCandidates(jobId, ids)
+    compareCandidates(jobId, ids.filter(Boolean))
       .then((d) => setResult(d.data))
       .catch(() => toast.error("Comparison failed"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [jobId, ids.join(",")]);
 
   const verdictMap: Record<string, { bg: string; color: string }> = {
     "Strong Fit":   { bg: "#dcfce7", color: "#16a34a" },
@@ -57,11 +67,8 @@ function CompareContent() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
         .cp-root { display:flex; font-family:'DM Sans',sans-serif; }
-        .cp-main { margin-left:260px; min-height:100vh; padding:36px 40px; background:#f1f5f9; flex:1; }
-        .back-btn { display:inline-flex; align-items:center; gap:7px; color:#64748b; font-size:13.5px; font-weight:600; background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; margin-bottom:24px; padding:0; transition:color 0.15s; }
-        .back-btn:hover { color:#1e293b; }
-        .cp-title { font-family:'Sora',sans-serif; font-size:26px; font-weight:800; color:#0f172a; letter-spacing:-0.5px; margin-bottom:4px; }
-        .cp-sub { color:#64748b; font-size:14px; font-weight:500; margin-bottom:28px; }
+        .cp-shell { margin-left:260px; flex:1; display:flex; flex-direction:column; min-height:100vh; background:#f1f5f9; }
+        .cp-main { padding:24px 40px 40px; flex:1; }
 
         .winner-banner { background:linear-gradient(135deg,#f59e0b,#d97706); border-radius:16px; padding:22px 28px; margin-bottom:22px; display:flex; align-items:center; gap:18px; color:white; box-shadow:0 6px 20px rgba(245,158,11,0.3); }
         .winner-title { font-family:'Sora',sans-serif; font-size:18px; font-weight:800; margin-bottom:4px; }
@@ -78,33 +85,116 @@ function CompareContent() {
 
         .bias-note { background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px 18px; }
 
-        .state-card { background:white; border-radius:18px; border:1px solid #e2e8f0; padding:72px 40px; text-align:center; }
-
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .spinner-lg { width:52px; height:52px; border:4px solid #e9d5ff; border-top-color:#7c3aed; border-radius:50%; animation:spin 0.8s linear infinite; margin:0 auto 18px; }
+        .state-card { background:white; border-radius:18px; border:1px solid #e2e8f0; padding:56px 40px; text-align:center; }
       `}</style>
 
       <div className="cp-root">
         <Sidebar />
-        <main className="cp-main">
-          <button className="back-btn" onClick={() => router.back()}>
-            <ArrowLeft size={15} /> Back to Results
-          </button>
+        <div className="cp-shell">
+          <AppHeader
+            title="Candidate comparison"
+            subtitle={
+              jobId
+                ? "Side-by-side AI analysis for this role"
+                : "Open from screening results — the URL should include ?jobId= and &ids=candidateId1,candidateId2"
+            }
+          />
+          <main className="cp-main">
+          <nav
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 24,
+            }}
+          >
+            <Link href={backHref} style={{ ...mutedLink, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ArrowLeft size={14} /> Screening results
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            {jobId ? (
+              <>
+                <Link href={`/jobs/${jobId}`} style={mutedLink}>
+                  Job hub
+                </Link>
+                <span style={{ color: "#cbd5e1" }}>·</span>
+              </>
+            ) : null}
+            <Link href="/jobs" style={mutedLink}>
+              All jobs
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <Link href="/screenings" style={mutedLink}>
+              Screenings
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <Link href="/dashboard" style={mutedLink}>
+              Dashboard
+            </Link>
+          </nav>
 
-          <h1 className="cp-title">Candidate Comparison</h1>
-          <p className="cp-sub">Side-by-side AI analysis</p>
-
-          {loading && (
-            <div className="state-card">
-              <div className="spinner-lg" />
-              <p style={{ color: "#64748b", fontWeight: 600 }}>AI is comparing candidates…</p>
-            </div>
-          )}
+          {loading && <LoadingSpinner label="AI is comparing candidates…" />}
 
           {!loading && !result && (
             <div className="state-card">
-              <p style={{ color: "#64748b", fontWeight: 600 }}>No comparison data found.</p>
-              <p style={{ color: "#94a3b8", fontSize: 13, marginTop: 6 }}>Go back and select at least 2 candidates.</p>
+              <p style={{ color: "#64748b", fontWeight: 600, marginBottom: 8 }}>
+                {!jobId
+                  ? "Missing job in the URL. Comparison needs a jobId query parameter."
+                  : ids.length < 2
+                    ? "Select at least two candidates on the screening results page, then use Compare."
+                    : "No comparison data returned. Try again from screening results."}
+              </p>
+              <p style={{ color: "#94a3b8", fontSize: 13, marginBottom: 20 }}>
+                Use the links below to get back into the flow.
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
+                <Link
+                  href={backHref}
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: 10,
+                    border: "1px solid #bfdbfe",
+                    background: "#eff6ff",
+                    color: "#2563eb",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    textDecoration: "none",
+                  }}
+                >
+                  ← Screening results
+                </Link>
+                <Link
+                  href="/jobs"
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: 10,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    textDecoration: "none",
+                  }}
+                >
+                  All jobs
+                </Link>
+                <Link
+                  href="/dashboard"
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: 10,
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#475569",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    textDecoration: "none",
+                  }}
+                >
+                  Dashboard
+                </Link>
+              </div>
             </div>
           )}
 
@@ -122,19 +212,23 @@ function CompareContent() {
                 {/* Header row */}
                 <div className="table-head-row" style={{ display: "grid", gridTemplateColumns: grid }}>
                   <div className="table-head-cell">Category</div>
-                  {result.comparison?.map((c: any, i: number) => (
+                  {result.comparison?.map((c: any, i: number) => {
+                    const isWinner = c.candidateId === result.winner;
+                    return (
                     <div
                       key={i}
                       className="table-head-candidate"
                       style={{
-                        background: c.candidateId === result.winner ? "#fffbeb" : "transparent",
-                        color: c.candidateId === result.winner ? "#d97706" : "#0f172a",
+                        background: isWinner ? "#fffbeb" : "transparent",
+                        color: isWinner ? "#d97706" : "#0f172a",
                       }}
                     >
-                      {c.fullName || `Candidate ${i + 1}`}
-                      {c.candidateId === result.winner && " 🏆"}
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                        {isWinner ? <Trophy size={18} color="#d97706" aria-hidden /> : null}
+                        {c.fullName || `Candidate ${i + 1}`}
+                      </span>
                     </div>
-                  ))}
+                  );})}
                 </div>
 
                 {/* Data rows */}
@@ -161,7 +255,8 @@ function CompareContent() {
               </div>
             </>
           )}
-        </main>
+          </main>
+        </div>
       </div>
     </>
   );
@@ -173,14 +268,7 @@ function CompareContent() {
 // ────────────────────────────────────────────────────────────
 export default function ComparePage() {
   return (
-    <Suspense
-      fallback={
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "#f1f5f9" }}>
-          <div style={{ width: 52, height: 52, border: "4px solid #e9d5ff", borderTopColor: "#7c3aed", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      }
-    >
+    <Suspense fallback={<LoadingSpinner fullPage label="Loading comparison…" />}>
       <CompareContent />
     </Suspense>
   );

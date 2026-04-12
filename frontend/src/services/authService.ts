@@ -11,16 +11,24 @@ export const register = async (
   password: string,
   company: string
 ) => {
-  const res = await api.post("/auth/register", {
-    name,
-    email,
-    password,
-    company,
-  });
+  const res = await api.post("/auth/register", { name, email, password, company });
   return res.data;
 };
 
 export const getMe = async () => {
   const res = await api.get("/auth/me");
+  return res.data;
+};
+
+export const updateMe = async (data: { name?: string; company?: string }) => {
+  const res = await api.put("/auth/me", data);
+  return res.data;
+};
+
+export const changePassword = async (data: {
+  currentPassword: string;
+  newPassword: string;
+}) => {
+  const res = await api.put("/auth/password", data);
   return res.data;
 };

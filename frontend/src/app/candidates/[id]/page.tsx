@@ -1,11 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import Sidebar from "../../../components/Sidebar";
+import AppHeader from "../../../components/AppHeader";
+import LoadingSpinner from "../../../components/LoadingSpinner";
 import { getResults } from "../../../services/screeningService";
 import {
   ArrowLeft, MapPin, Briefcase, GraduationCap, Globe, Link2,
-  CheckCircle, XCircle, Star, Award, FolderOpen, ExternalLink,
+  CheckCircle, XCircle, Star, Award, FolderOpen, ExternalLink, FileText,
 } from "lucide-react";
 
 const levelColor: Record<string, string> = {
@@ -26,59 +29,213 @@ const confidenceStyle: Record<string, { bg: string; color: string }> = {
   Low: { bg: "#fee2e2", color: "#dc2626" },
 };
 
-export default function CandidateDetailPage() {
-  const { id } = useParams();
-  const router = useRouter();
+function CandidateDetailInner() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const id = String(params.id || "");
+  const jobId = searchParams.get("jobId");
   const [candidate, setCandidate] = useState<any>(null);
   const [aiResult, setAiResult] = useState<any>(null);
+  const [biasNotice, setBiasNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const backHref = jobId ? `/screenings/${jobId}` : "/screenings";
+  const displayName = candidate
+    ? `${candidate.firstName || ""} ${candidate.lastName || ""}`.trim()
+    : "";
+
   useEffect(() => {
-    const jobId = new URLSearchParams(window.location.search).get("jobId");
-    if (!jobId) { setLoading(false); return; }
-    getResults(jobId).then((d) => {
-      const results = d.data?.rankedCandidates || [];
-      const found = results.find((r: any) =>
-        r.candidateId?._id === id || r.candidateId === id
-      );
-      if (found) {
-        setAiResult(found);
-        setCandidate(found.candidateId);
-      }
-    }).finally(() => setLoading(false));
-  }, [id]);
+    if (!jobId || !id) {
+      setLoading(false);
+      return;
+    }
+    getResults(jobId)
+      .then((d) => {
+        setBiasNotice(typeof d.data?.biasNotice === "string" ? d.data.biasNotice : null);
+        const results = d.data?.rankedCandidates || [];
+        const found = results.find(
+          (r: any) => r.candidateId?._id === id || r.candidateId === id
+        );
+        if (found) {
+          setAiResult(found);
+          setCandidate(found.candidateId);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [id, jobId]);
 
   const scoreColor = aiResult?.score >= 70 ? "#15803d" : aiResult?.score >= 50 ? "#ca8a04" : "#dc2626";
+
+  const linkStyle: CSSProperties = {
+    color: "#2563eb",
+    fontWeight: 600,
+    fontSize: 13,
+    textDecoration: "none",
+  };
+  const mutedLink: CSSProperties = { color: "#64748b", fontWeight: 600, fontSize: 13, textDecoration: "none" };
 
   return (
     <div style={{ display: "flex" }}>
       <Sidebar />
-      <main style={{ marginLeft: "260px", minHeight: "100vh", padding: "32px", background: "#f8fafc", flex: 1 }}>
-        <button onClick={() => router.back()} style={{
-          display: "flex", alignItems: "center", gap: "8px", marginBottom: "24px",
-          background: "none", border: "none", color: "#64748b", cursor: "pointer", fontWeight: "500",
-        }}>
-          <ArrowLeft size={16} /> Back to Results
-        </button>
+      <div
+        style={{
+          marginLeft: 260,
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
+          background: "#f8fafc",
+        }}
+      >
+        <AppHeader
+          title={displayName || "Candidate profile"}
+          subtitle={
+            jobId
+              ? "Screening context · use the links below to move around the app"
+              : "Open from screening results (link includes ?jobId=) for full AI context"
+          }
+        />
+        <main style={{ padding: "24px 40px 48px", flex: 1 }}>
+          <nav
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 24,
+            }}
+          >
+            <Link href={backHref} style={{ ...mutedLink, display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ArrowLeft size={14} /> Screening results
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            {jobId ? (
+              <>
+                <Link href={`/jobs/${jobId}`} style={mutedLink}>
+                  Job hub
+                </Link>
+                <span style={{ color: "#cbd5e1" }}>·</span>
+              </>
+            ) : null}
+            <Link href="/jobs" style={mutedLink}>
+              All jobs
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <Link href="/screenings" style={mutedLink}>
+              Screenings
+            </Link>
+            <span style={{ color: "#cbd5e1" }}>·</span>
+            <Link href="/dashboard" style={mutedLink}>
+              Dashboard
+            </Link>
+          </nav>
 
         {loading ? (
-          <div style={{ textAlign: "center", padding: "64px", color: "#94a3b8" }}>Loading profile...</div>
+          <LoadingSpinner label="Loading profile…" />
         ) : !candidate && !aiResult ? (
-          <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "48px", textAlign: "center" }}>
-            <p style={{ color: "#64748b" }}>Candidate not found. Navigate here from the screening results page.</p>
+          <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "48px", textAlign: "center" }}>
+            <p style={{ color: "#64748b", marginBottom: 16, lineHeight: 1.6 }}>
+              {!jobId
+                ? "This page needs a job context. Open a candidate from screening results (the link includes ?jobId=)."
+                : "No candidate match in the screening results for this job. Return to results or pick another candidate."}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center" }}>
+              <Link href={backHref} style={{ ...linkStyle, padding: "10px 18px", borderRadius: 10, border: "1px solid #bfdbfe", background: "#eff6ff" }}>
+                ← Screening results
+              </Link>
+              <Link href="/jobs" style={{ ...linkStyle, padding: "10px 18px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569" }}>
+                All jobs
+              </Link>
+              <Link href="/dashboard" style={{ ...linkStyle, padding: "10px 18px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569" }}>
+                Dashboard
+              </Link>
+            </div>
           </div>
         ) : (
           <div style={{ maxWidth: "760px" }}>
+
+            {/* AI Analysis — shown first when screening data exists */}
+            {aiResult && (
+              <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px", marginBottom: "16px" }}>
+                <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "16px", fontSize: "15px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  AI Analysis
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "14px" }}>
+                    <p style={{ fontWeight: "600", color: "#15803d", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Strengths</p>
+                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.strengths}</p>
+                  </div>
+                  <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "10px", padding: "14px" }}>
+                    <p style={{ fontWeight: "600", color: "#c2410c", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Gaps</p>
+                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.gaps}</p>
+                  </div>
+                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px" }}>
+                    <p style={{ fontWeight: "600", color: "#1d4ed8", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "5px" }}>
+                      <Star size={11} /> Recommendation
+                    </p>
+                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.recommendation}</p>
+                  </div>
+                </div>
+
+                {(aiResult.skillsMatched?.length > 0 || aiResult.skillsMissing?.length > 0) && (
+                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
+                    <p style={{ fontWeight: "600", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>Skills Analysis</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {aiResult.skillsMatched?.map((s: string) => (
+                        <span key={s} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", background: "#f0fdf4", color: "#15803d", borderRadius: "6px", fontSize: "12px", fontWeight: "500" }}>
+                          <CheckCircle size={10} />{s}
+                        </span>
+                      ))}
+                      {aiResult.skillsMissing?.map((s: string) => (
+                        <span key={s} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", background: "#fef2f2", color: "#dc2626", borderRadius: "6px", fontSize: "12px", fontWeight: "500" }}>
+                          <XCircle size={10} />{s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiResult.upskillingPaths?.length > 0 && (
+                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
+                    <p style={{ fontWeight: "600", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>Upskilling paths</p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {aiResult.upskillingPaths.map((u: { skill: string; reason: string; suggestedResource?: string }, i: number) => (
+                        <div key={i} style={{ padding: "12px", background: "#f8fafc", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                          <p style={{ fontWeight: "700", fontSize: "13px", color: "#0f172a" }}>{u.skill}</p>
+                          <p style={{ fontSize: "12px", color: "#64748b", marginTop: 4 }}>{u.reason}</p>
+                          {u.suggestedResource ? (
+                            <a href={u.suggestedResource} target="_blank" rel="noopener noreferrer" style={{ fontSize: "12px", fontWeight: 600, color: "#2563eb", marginTop: 6, display: "inline-block" }}>
+                              Suggested resource →
+                            </a>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiResult.adjacentRoles?.length > 0 && (
+                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
+                    <p style={{ fontWeight: "600", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>Adjacent roles</p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {aiResult.adjacentRoles.map((role: string) => (
+                        <span key={role} style={{ padding: "4px 10px", borderRadius: "8px", background: "#f1f5f9", color: "#475569", fontSize: "12px", fontWeight: 600 }}>{role}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Profile Header */}
             <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "28px", marginBottom: "16px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "20px" }}>
                 <div style={{
-                  width: "72px", height: "72px", borderRadius: "18px", flexShrink: 0,
+                  width: "88px", height: "88px", borderRadius: "50%", flexShrink: 0,
                   background: "linear-gradient(135deg,#2563eb,#7c3aed)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "white", fontSize: "26px", fontWeight: "700",
-                }}>{candidate?.firstName?.charAt(0) || "?"}</div>
+                  color: "white", fontSize: "28px", fontWeight: "700",
+                }}>{`${candidate?.firstName?.charAt(0) || ""}${candidate?.lastName?.charAt(0) || ""}`.toUpperCase() || "?"}</div>
                 <div style={{ flex: 1 }}>
                   <h1 style={{ fontSize: "22px", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>
                     {candidate?.firstName} {candidate?.lastName}
@@ -130,10 +287,21 @@ export default function CandidateDetailPage() {
                   </div>
                 )}
               </div>
-              {/* Social Links */}
-              {candidate?.socialLinks && (candidate.socialLinks.linkedin || candidate.socialLinks.github || candidate.socialLinks.portfolio) && (
-                <div style={{ display: "flex", gap: "10px", marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f1f5f9" }}>
-                  {candidate.socialLinks.linkedin && (
+              {/* Social Links + Resume */}
+              {(candidate?.resumeUrl || (candidate?.socialLinks && (candidate.socialLinks.linkedin || candidate.socialLinks.github || candidate.socialLinks.portfolio))) && (
+                <div style={{ display: "flex", gap: "10px", marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+                  {/* View Resume — only shown if backend has stored a resumeUrl */}
+                  {candidate.resumeUrl && (
+                    <a href={candidate.resumeUrl} target="_blank" rel="noopener noreferrer" style={{
+                      display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px",
+                      borderRadius: "8px", background: "#f0fdf4", color: "#15803d",
+                      textDecoration: "none", fontSize: "12px", fontWeight: "600",
+                      border: "1px solid #bbf7d0",
+                    }}>
+                      <FileText size={12} /> View Resume <ExternalLink size={10} />
+                    </a>
+                  )}
+                  {candidate.socialLinks?.linkedin && (
                     <a href={candidate.socialLinks.linkedin} target="_blank" rel="noopener noreferrer" style={{
                       display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px",
                       borderRadius: "8px", background: "#eff6ff", color: "#2563eb",
@@ -142,7 +310,7 @@ export default function CandidateDetailPage() {
                       <Link2 size={12} /> LinkedIn <ExternalLink size={10} />
                     </a>
                   )}
-                  {candidate.socialLinks.github && (
+                  {candidate.socialLinks?.github && (
                     <a href={candidate.socialLinks.github} target="_blank" rel="noopener noreferrer" style={{
                       display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px",
                       borderRadius: "8px", background: "#f8fafc", color: "#475569",
@@ -151,7 +319,7 @@ export default function CandidateDetailPage() {
                       <Link2 size={12} /> GitHub <ExternalLink size={10} />
                     </a>
                   )}
-                  {candidate.socialLinks.portfolio && (
+                  {candidate.socialLinks?.portfolio && (
                     <a href={candidate.socialLinks.portfolio} target="_blank" rel="noopener noreferrer" style={{
                       display: "flex", alignItems: "center", gap: "5px", padding: "5px 12px",
                       borderRadius: "8px", background: "#f5f3ff", color: "#7c3aed",
@@ -163,50 +331,6 @@ export default function CandidateDetailPage() {
                 </div>
               )}
             </div>
-
-            {/* AI Analysis */}
-            {aiResult && (
-              <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "24px", marginBottom: "16px" }}>
-                <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "16px", fontSize: "15px", display: "flex", alignItems: "center", gap: "8px" }}>
-                  AI Analysis
-                </h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "14px" }}>
-                    <p style={{ fontWeight: "600", color: "#15803d", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Strengths</p>
-                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.strengths}</p>
-                  </div>
-                  <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: "10px", padding: "14px" }}>
-                    <p style={{ fontWeight: "600", color: "#c2410c", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px" }}>Gaps</p>
-                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.gaps}</p>
-                  </div>
-                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "10px", padding: "14px" }}>
-                    <p style={{ fontWeight: "600", color: "#1d4ed8", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "5px" }}>
-                      <Star size={11} /> Recommendation
-                    </p>
-                    <p style={{ color: "#374151", fontSize: "13px", lineHeight: "1.6" }}>{aiResult.recommendation}</p>
-                  </div>
-                </div>
-
-                {/* Skills matched/missing */}
-                {(aiResult.skillsMatched?.length > 0 || aiResult.skillsMissing?.length > 0) && (
-                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
-                    <p style={{ fontWeight: "600", color: "#1e293b", fontSize: "13px", marginBottom: "8px" }}>Skills Analysis</p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                      {aiResult.skillsMatched?.map((s: string) => (
-                        <span key={s} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", background: "#f0fdf4", color: "#15803d", borderRadius: "6px", fontSize: "12px", fontWeight: "500" }}>
-                          <CheckCircle size={10} />{s}
-                        </span>
-                      ))}
-                      {aiResult.skillsMissing?.map((s: string) => (
-                        <span key={s} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "4px 10px", background: "#fef2f2", color: "#dc2626", borderRadius: "6px", fontSize: "12px", fontWeight: "500" }}>
-                          <XCircle size={10} />{s}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Skills */}
             {candidate?.skills?.length > 0 && (
@@ -238,7 +362,7 @@ export default function CandidateDetailPage() {
                   <Briefcase size={16} /> Work Experience
                 </h3>
                 {candidate.experience.map((ex: any, i: number) => (
-                  <div key={i} style={{ borderLeft: "3px solid #e2e8f0", paddingLeft: "16px", marginBottom: "16px", position: "relative" }}>
+                  <div key={i} style={{ borderLeft: "3px solid #2563eb", paddingLeft: "16px", marginBottom: "16px", position: "relative" }}>
                     <div style={{
                       position: "absolute", left: "-6px", top: "4px", width: "10px", height: "10px",
                       borderRadius: "50%", background: ex.isCurrent ? "#2563eb" : "#cbd5e1",
@@ -369,13 +493,22 @@ export default function CandidateDetailPage() {
 
             {/* Bias Notice */}
             <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "10px", padding: "14px" }}>
-              <p style={{ color: "#92400e", fontSize: "12px" }}>
-                ⚠️ AI screening is a decision-support tool. Final hiring decisions must be made by qualified human recruiters. Optional fields like certifications and portfolio links can improve AI scoring accuracy.
+              <p style={{ color: "#92400e", fontSize: "12px", lineHeight: 1.55 }}>
+                ⚠️ {biasNotice || "AI screening is a decision-support tool. Final hiring decisions must be made by qualified human recruiters."}
               </p>
             </div>
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
+  );
+}
+
+export default function CandidateDetailPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner fullPage label="Loading candidate…" />}>
+      <CandidateDetailInner />
+    </Suspense>
   );
 }

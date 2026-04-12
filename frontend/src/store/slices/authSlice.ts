@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { login, register } from "../../services/authService";
 export const loginUser = createAsyncThunk(
   "auth/login",
@@ -69,6 +69,14 @@ const authSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
+    updateProfileFields: (
+      state,
+      action: PayloadAction<{ name?: string; company?: string }>
+    ) => {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -101,5 +109,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { logout, clearError, updateProfileFields } = authSlice.actions;
 export default authSlice.reducer;

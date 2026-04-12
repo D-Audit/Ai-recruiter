@@ -2,6 +2,7 @@
 import { Provider } from "react-redux";
 import { store } from "../store";
 import { Toaster } from "react-hot-toast";
+import FloatingAI from "../components/FloatingAI";
 
 export default function Providers({
   children,
@@ -12,6 +13,7 @@ export default function Providers({
     <Provider store={store}>
       {children}
       <Toaster position="top-right" />
+      <FloatingAI />
     </Provider>
   );
 }

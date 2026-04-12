@@ -127,3 +127,50 @@ export const getMe = async (req: any, res: Response): Promise<void> => {
     res.status(500).json({ success: false, message: "Failed to get user" });
   }
 };
+
+export const changePassword = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+      return;
+    }
+
+    if (typeof newPassword !== "string" || newPassword.length < 6) {
+      res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters",
+      });
+      return;
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      res.status(404).json({ success: false, message: "User not found" });
+      return;
+    }
+
+    const ok = await user.comparePassword(currentPassword);
+    if (!ok) {
+      res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+      return;
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ success: true, message: "Password updated successfully" });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to change password",
+    });
+  }
+};

@@ -1,34 +1,34 @@
 import { JobInput, ApplicantInput } from "../types/index";
 
-// ─────────────────────────────────────────────────────────────────
-// Build the screening prompt
-// Key rules passed to Gemini to prevent malformed JSON:
-//   1. strengths / gaps must be SHORT string arrays (≤ 10 words each)
-//   2. recommendation is one plain sentence — no inner quotes
-//   3. No markdown, no explanation outside the JSON
-// ─────────────────────────────────────────────────────────────────
-export function buildScreeningPrompt(job: JobInput, applicants: ApplicantInput[]): string {
-  const jobSummary = `
-Job Title: ${job.title}
-Description: ${job.description ?? "N/A"}
-Required Skills: ${(job.requiredSkills ?? []).join(", ")}
-Years of Experience Required: ${job.yearsOfExperience ?? "Not specified"}
-Education Level: ${job.educationLevel ?? "Not specified"}
-Location: ${job.location ?? "Not specified"}
-`.trim();
+export function buildScreeningPrompt(
+  job: JobInput,
+  applicants: ApplicantInput[]
+): string {
 
-  const candidateList = applicants.map((a) => {
-    const skills      = (a.skills ?? []).map((s: any) => `${s.name} (${s.level})`).join(", ");
-    const experience  = (a.experience ?? [])
-      .map((e: any) => `${e.role} at ${e.company} (${e.startDate} - ${e.endDate})`)
-      .join(" | ");
-    const education   = (a.education ?? [])
-      .map((e: any) => `${e.degree} in ${e.fieldOfStudy} from ${e.institution}`)
-      .join(" | ");
-    const projects    = (a.projects ?? []).map((p: any) => p.name).join(", ");
-    const certs       = (a.certifications ?? []).map((c: any) => c.name).join(", ");
+  // Format each candidate as clean readable text for AI
+  const candidateList = applicants
+    .map((a) => {
+      const skills = (a.skills ?? [])
+        .map((s: any) => `${s.name} (${s.level})`)
+        .join(", ");
 
-    return `
+      const experience = (a.experience ?? [])
+        .map((e: any) => `${e.role} at ${e.company} (${e.startDate} - ${e.endDate})`)
+        .join(" | ");
+
+      const education = (a.education ?? [])
+        .map((e: any) => `${e.degree} in ${e.fieldOfStudy} from ${e.institution}`)
+        .join(" | ");
+
+      const projects = (a.projects ?? [])
+        .map((p: any) => p.name)
+        .join(", ");
+
+      const certs = (a.certifications ?? [])
+        .map((c: any) => c.name)
+        .join(", ");
+
+      return `
 CANDIDATE ID: ${a.id}
 Name: ${a.firstName} ${a.lastName}
 Headline: ${a.headline ?? "N/A"}
@@ -40,7 +40,8 @@ Projects: ${projects || "N/A"}
 Certifications: ${certs || "N/A"}
 Availability: ${a.availability?.status ?? "N/A"} | ${a.availability?.type ?? "N/A"}
 `.trim();
-  }).join("\n\n---\n\n");
+    })
+    .join("\n\n---\n\n");
 
   return `
 You are an expert AI recruitment assistant for Umurava, an African talent platform.
@@ -50,11 +51,11 @@ Screen and rank all applicants for the job below. Be fair and skills-first in ev
 JOB DETAILS:
 ═══════════════════════════════════════
 Title: ${job.title}
-Description: ${job.description}
-Required Skills: ${job.requiredSkills.join(", ")}
-Minimum Experience: ${job.yearsOfExperience} years
-Education Required: ${job.educationLevel}
-Location: ${job.location}
+Description: ${job.description ?? "N/A"}
+Required Skills: ${(job.requiredSkills ?? []).join(", ")}
+Minimum Experience: ${job.yearsOfExperience ?? "Not specified"} years
+Education Required: ${job.educationLevel ?? "Not specified"}
+Location: ${job.location ?? "Not specified"}
 
 ═══════════════════════════════════════
 SCORING WEIGHTS (total = 100):
@@ -65,7 +66,7 @@ SCORING WEIGHTS (total = 100):
    - Bonus for skills used in experience[].technologies
 
 2. Work Experience (25 pts)
-   - Sum years from experience[] (startDate → endDate or Present)
+   - Sum years from experience[] (startDate to endDate or Present)
    - Relevance of roles to this job
    - Technologies used in experience
 
@@ -75,40 +76,48 @@ SCORING WEIGHTS (total = 100):
 
 4. Extras (15 pts)
    - Location match bonus (up to 5 pts)
-   - Languages (each Fluent/Native relevant language = 2 pts, up to 5 pts)
+   - Languages Fluent/Native = 2 pts each (up to 5 pts)
    - Certifications relevant to job (up to 5 pts)
 
 IMPORTANT — optional field handling:
-- If bio, certifications, socialLinks, or portfolioRating are missing/empty, do NOT penalize
-- Treat absent optional fields as neutral — score purely on available data
-- A candidate with fewer fields is not worse; simply score what is present
+- If bio, certifications, socialLinks are missing/empty, do NOT penalize
+- Treat absent optional fields as neutral
+- Score purely on available data
 
 ═══════════════════════════════════════
 CANDIDATES (${applicants.length} total):
 ═══════════════════════════════════════
-${JSON.stringify(applicants, null, 2)}
+${candidateList}
 
 ═══════════════════════════════════════
 INSTRUCTIONS:
 ═══════════════════════════════════════
 1. Score every candidate 0-100 using weights above
 2. Rank highest score to lowest
-3. Return ALL candidates (or TOP 10 if more than 10 provided)
-4. skillsMatched = skill names from their skills[] that match required skills
-5. skillsMissing = required skills they do NOT have in skills[]
+3. Return ALL candidates (or TOP 10 if more than 10)
+4. skillsMatched = skill names from their skills[] matching required skills
+5. skillsMissing = required skills they do NOT have
 6. confidence = "High" if score >= 70, "Medium" if 50-69, "Low" if below 50
-7. NEVER use fullName — use firstName and lastName separately
+7. upskillingPaths = suggest free resources for each missing required skill
+8. adjacentRoles = other roles this candidate could fit based on their profile
 
-// Add to the output format in buildScreeningPrompt
-RETURN THIS FORMAT ONLY:
+STRICT OUTPUT RULES:
+1. Return ONLY a raw JSON array — no markdown, no backticks, no explanation
+2. strengths must be a SHORT string (2-3 sentences max)
+3. gaps must be a SHORT string (1-2 sentences max)
+4. recommendation must be exactly one of: "Shortlist", "Consider", "Not Selected"
+5. score must be a number between 0 and 100
+6. Use the exact candidateId strings provided — do not change them
+
+RETURN THIS EXACT FORMAT:
 [
   {
     "candidateId": "exact_id_from_input",
     "rank": 1,
     "score": 87,
-    "strengths": "2-3 sentences",
-    "gaps": "1-2 sentences",
-    "recommendation": "Shortlist | Consider | Not Selected",
+    "strengths": "2-3 sentences about why good fit",
+    "gaps": "1-2 sentences about weaknesses",
+    "recommendation": "Shortlist",
     "skillsMatched": ["React", "Node.js"],
     "skillsMissing": ["MongoDB"],
     "confidence": "High",
@@ -116,71 +125,78 @@ RETURN THIS FORMAT ONLY:
       {
         "skill": "MongoDB",
         "reason": "Required for this role",
-        "suggestedResource": "MongoDB University free course"
+        "suggestedResource": "MongoDB University free course at university.mongodb.com"
       }
     ],
     "adjacentRoles": ["Frontend Developer", "React Native Developer"]
   }
 ]
 
-Rank candidates from highest to lowest score. Include all ${applicants.length} candidates.
+Rank candidates from highest to lowest score.
+Include all ${applicants.length} candidates.
 `.trim();
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Build the comparison prompt (2–3 candidates)
-// ─────────────────────────────────────────────────────────────────
-export function buildComparisonPrompt(job: JobInput, candidates: ApplicantInput[]): string {
-  const jobSummary = `
-Job Title: ${job.title}
-Required Skills: ${(job.requiredSkills ?? []).join(", ")}
-Years of Experience: ${job.yearsOfExperience ?? "Not specified"}
-Location: ${job.location ?? "Not specified"}
-`.trim();
-
-  const candidateList = candidates.map((c) => {
-    const skills     = (c.skills ?? []).map((s: any) => s.name).join(", ");
-    const experience = (c.experience ?? [])
-      .map((e: any) => `${e.role} at ${e.company}`)
-      .join(" | ");
-    return `
+// ─────────────────────────────────────────────
+// Comparison prompt — 2 to 3 candidates
+// ─────────────────────────────────────────────
+export function buildComparisonPrompt(
+  job: JobInput,
+  candidates: ApplicantInput[]
+): string {
+  const candidateList = candidates
+    .map((c) => {
+      const skills = (c.skills ?? [])
+        .map((s: any) => s.name)
+        .join(", ");
+      const experience = (c.experience ?? [])
+        .map((e: any) => `${e.role} at ${e.company}`)
+        .join(" | ");
+      return `
 ID: ${c.id}
 Name: ${c.firstName} ${c.lastName}
 Skills: ${skills || "N/A"}
 Experience: ${experience || "N/A"}
 Location: ${c.location ?? "N/A"}
 `.trim();
-  }).join("\n\n---\n\n");
+    })
+    .join("\n\n---\n\n");
 
   return `
-You are an expert AI recruiter. Compare these candidates for the job below. Return ONLY a raw JSON object.
+  
+You are an expert AI recruiter. Compare these candidates for the job below.
+Return ONLY a raw JSON object.
 
 JOB:
-${jobSummary}
+Title: ${job.title}
+Required Skills: ${(job.requiredSkills ?? []).join(", ")}
+Years of Experience: ${job.yearsOfExperience ?? "Not specified"}
+Location: ${job.location ?? "Not specified"}
 
 CANDIDATES:
 ${candidateList}
 
 STRICT OUTPUT RULES:
-1. Return ONLY a raw JSON object. No markdown, no backticks, no explanation.
-2. All string values must be plain text — NO quotation marks inside string values.
-3. Arrays of strings should use short bullet phrases (max 10 words each).
+1. Return ONLY a raw JSON object — no markdown, no backticks, no explanation
+2. All string values must be plain text with NO quotation marks inside them
+3. Arrays of strings should use short phrases (max 10 words each)
 
-OUTPUT FORMAT:
+RETURN THIS EXACT FORMAT:
 {
-  "winner": "<candidateId of best fit>",
-  "summary": "One plain sentence comparing the candidates.",
-  "candidates": [
+  "winner": "candidateId of best fit",
+  "winnerReason": "One plain sentence explaining why this candidate wins.",
+  "comparison": [
     {
-      "candidateId": "<id>",
-      "name": "<first last>",
-      "score": <0-100>,
-      "pros": ["pro one", "pro two"],
-      "cons": ["con one"],
-      "verdict": "One plain hiring verdict sentence."
+      "candidateId": "exact id from input",
+      "fullName": "First Last",
+      "score": 85,
+      "topStrength": "Best quality in one short phrase",
+      "biggestGap": "Main weakness in one short phrase",
+      "verdict": "Strong Fit"
     }
-  ],
-  "recommendation": "One plain final recommendation sentence."
+  ]
 }
+
+Verdict options: "Strong Fit", "Good Fit", "Moderate Fit", "Weak Fit"
 `.trim();
 }

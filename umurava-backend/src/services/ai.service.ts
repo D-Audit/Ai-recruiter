@@ -26,7 +26,7 @@ formal credentials. Final decisions must be made by human recruiters.`;
 // ─────────────────────────────────────────────────────────────────
 // Gemini call with retry + exponential back-off
 // ─────────────────────────────────────────────────────────────────
-async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
+export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
       const result = await geminiModel.generateContent(prompt);

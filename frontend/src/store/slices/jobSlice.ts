@@ -3,6 +3,7 @@ import {
   getAllJobs,
   createJob,
   deleteJob,
+  updateJob,
 } from "../../services/jobService";
 
 export const fetchJobs = createAsyncThunk(
@@ -43,6 +44,23 @@ export const removeJob = createAsyncThunk(
   }
 );
 
+export const saveJob = createAsyncThunk(
+  "jobs/update",
+  async (
+    { id, data }: { id: string; data: Record<string, unknown> },
+    { rejectWithValue }
+  ) => {
+    try {
+      const res = await updateJob(id, data);
+      return res.job;
+    } catch (error: any) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to update job"
+      );
+    }
+  }
+);
+
 const jobSlice = createSlice({
   name: "jobs",
   initialState: {
@@ -54,6 +72,15 @@ const jobSlice = createSlice({
   reducers: {
     setCurrentJob: (state, action) => {
       state.currentJob = action.payload;
+    },
+    bumpJobApplicants: (state, action: { payload: { jobId: string; delta: number } }) => {
+      const j = state.jobs.find((x) => x._id === action.payload.jobId);
+      if (j) {
+        j.applicantsCount = Math.max(
+          0,
+          (j.applicantsCount || 0) + action.payload.delta
+        );
+      }
     },
   },
   extraReducers: (builder) => {
@@ -72,11 +99,18 @@ const jobSlice = createSlice({
       .addCase(addJob.fulfilled, (state, action) => {
         state.jobs.unshift(action.payload);
       })
+      .addCase(saveJob.fulfilled, (state, action) => {
+        const idx = state.jobs.findIndex((j) => j._id === action.payload._id);
+        if (idx >= 0) state.jobs[idx] = action.payload;
+        if (state.currentJob?._id === action.payload._id) {
+          state.currentJob = action.payload;
+        }
+      })
       .addCase(removeJob.fulfilled, (state, action) => {
         state.jobs = state.jobs.filter((j) => j._id !== action.payload);
       });
   },
 });
 
-export const { setCurrentJob } = jobSlice.actions;
+export const { setCurrentJob, bumpJobApplicants } = jobSlice.actions;
 export default jobSlice.reducer;

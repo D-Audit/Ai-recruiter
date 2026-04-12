@@ -9,11 +9,8 @@ import {
   setCachedResult,
 } from "../services/cache.service";
 
-// ─────────────────────────────────────────────
-// Helper: map an applicant document → AI input
-// ─────────────────────────────────────────────
 const toApplicantInput = (a: any) => ({
-  id: a.id,
+  id:             String(a._id),
   firstName:      a.firstName      || "",
   lastName:       a.lastName       || "",
   email:          a.email          || "",
@@ -31,9 +28,6 @@ const toApplicantInput = (a: any) => ({
   source:         a.source         || "umurava",
 });
 
-// ─────────────────────────────────────────────
-// Helper: map a job document → AI input
-// ─────────────────────────────────────────────
 const toJobInput = (job: any) => ({
   id:                job.id,
   title:             job.title,
@@ -44,9 +38,6 @@ const toJobInput = (job: any) => ({
   location:          job.location,
 });
 
-// ─────────────────────────────────────────────
-// POST /screening/:jobId/run
-// ─────────────────────────────────────────────
 export const runScreening = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId } = req.params;
@@ -57,7 +48,6 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    // ── Updated: query by jobIds array (was jobId scalar) ──
     const applicants = await Applicant.find({ jobIds: jobId });
 
     if (applicants.length === 0) {
@@ -68,93 +58,56 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    const jobInput = {
-      id: job.id,
-      title: job.title,
-      description: job.description,
-      requiredSkills: job.requiredSkills,
-      yearsOfExperience: job.yearsOfExperience,
-      educationLevel: job.educationLevel,
-      location: job.location,
-    };
-
-    const applicantInputs = applicants.map((a: any) => ({
-      id: a.id,
-      firstName: a.firstName || "",
-      lastName: a.lastName || "",
-      email: a.email || "",
-      headline: a.headline || "",
-      bio: a.bio || "",
-      location: a.location || "",
-      skills: a.skills || [],
-      languages: a.languages || [],
-      experience: a.experience || [],
-      education: a.education || [],
-      certifications: a.certifications || [],
-      projects: a.projects || [],
-      availability: a.availability || { status: "Available", type: "Full-time" },
-      socialLinks: a.socialLinks || { linkedin: "", github: "", portfolio: "" },
-      source: a.source || "umurava",
-    }));
-
-    // 🧠 CACHE LOGIC (ONLY ADDITION)
-    const weights = {
-      skills: 0.4,
-      experience: 0.25,
-      education: 0.2,
-      location: 0.15,
-    };
-
+    const weights = { skills: 0.4, experience: 0.25, education: 0.2, location: 0.15 };
     const applicantIds = applicants.map((a) => a.id);
     const cacheKey = generateCacheKey(jobId, applicantIds, weights);
-
     const cached = await getCachedResult(cacheKey);
 
     if (cached) {
       console.log("🎯 Returning cached screening result");
-
-      res.json({
-        success: true,
-        data: cached,
-        fromCache: true,
-      });
-
+      res.json({ success: true, data: cached, fromCache: true });
       return;
     }
 
-    // AI CALL (UNCHANGED)
-    const screeningOutput = await screenCandidates(jobInput, applicantInputs);
+    const screeningOutput = await screenCandidates(
+      toJobInput(job),
+      applicants.map(toApplicantInput)
+    );
 
-    // Save AI-generated scores back to applicant records (UNCHANGED)
-    for (const result of screeningOutput.rankedCandidates) {
-      await Applicant.findByIdAndUpdate(result.candidateId, {
-        aiScore: result.score,
-        confidenceLevel: result.confidence,
-      });
-    }
+    const scoreUpdates = screeningOutput.rankedCandidates.map((r) =>
+      Applicant.findByIdAndUpdate(r.candidateId, {
+        aiScore:         r.score,
+        confidenceLevel: r.confidence,
+      })
+    );
+    await Promise.all(scoreUpdates);
 
-    const saved = await ScreeningResult.create({
-      jobId,
-      totalApplicants: screeningOutput.totalApplicants,
-      shortlistedCount: screeningOutput.shortlistedCount,
-      rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
-        candidateId: r.candidateId,
-        rank: r.rank,
-        score: r.score,
-        strengths: r.strengths,
-        gaps: r.gaps,
-        recommendation: r.recommendation,
-        skillsMatched: r.skillsMatched || [],
-        skillsMissing: r.skillsMissing || [],
-        confidence: r.confidence || "Medium",
-      })),
-      biasNotice: screeningOutput.biasNotice,
-      screenedAt: screeningOutput.screenedAt,
-    });
+    const saved = await ScreeningResult.findOneAndUpdate(
+      { jobId },
+      {
+        jobId,
+        totalApplicants:  screeningOutput.totalApplicants,
+        shortlistedCount: screeningOutput.shortlistedCount,
+        rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
+          candidateId:    r.candidateId,
+          rank:           r.rank,
+          score:          r.score,
+          strengths:      r.strengths,
+          gaps:           r.gaps,
+          recommendation: r.recommendation,
+          skillsMatched:  r.skillsMatched  || [],
+          skillsMissing:  r.skillsMissing  || [],
+          confidence:     r.confidence     || "Medium",
+          upskillingPaths: r.upskillingPaths || [],
+          adjacentRoles:   r.adjacentRoles  || [],
+        })),
+        biasNotice: screeningOutput.biasNotice,
+        screenedAt: screeningOutput.screenedAt,
+      },
+      { upsert: true, new: true }
+    );
 
     await Job.findByIdAndUpdate(jobId, { status: "screening" });
-
-    // 💾 SAVE TO CACHE (NEW ADDITION)
     await setCachedResult(cacheKey, jobId, saved);
 
     res.json({ success: true, data: saved, fromCache: false });
@@ -168,17 +121,17 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ------------------- NO CHANGES BELOW -------------------
-
 export const getResults = async (req: any, res: Response): Promise<void> => {
   try {
-    // Return the most recent result for this job
     const result = await ScreeningResult.findOne({ jobId: req.params.jobId })
       .populate("rankedCandidates.candidateId")
       .sort({ screenedAt: -1 });
 
     if (!result) {
-      res.status(404).json({ success: false, message: "No screening results found for this job" });
+      res.status(404).json({
+        success: false,
+        message: "No screening results found for this job",
+      });
       return;
     }
 
@@ -188,15 +141,37 @@ export const getResults = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────────
-// POST /screening/compare
-// ─────────────────────────────────────────────
-export const compareSelectedCandidates = async (req: any, res: Response): Promise<void> => {
+export const getAllScreenings = async (req: any, res: Response): Promise<void> => {
+  try {
+    const results = await ScreeningResult.find()
+      .populate("jobId", "title")
+      .sort({ screenedAt: -1 });
+    res.json({ success: true, data: results });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to retrieve screenings" });
+  }
+};
+
+export const compareSelectedCandidates = async (
+  req: any,
+  res: Response
+): Promise<void> => {
   try {
     const { jobId, candidateIds } = req.body;
 
     if (!candidateIds || candidateIds.length < 2) {
-      res.status(400).json({ success: false, message: "Please provide at least 2 candidate IDs to compare" });
+      res.status(400).json({
+        success: false,
+        message: "Please provide at least 2 candidate IDs to compare",
+      });
+      return;
+    }
+
+    if (candidateIds.length > 3) {
+      res.status(400).json({
+        success: false,
+        message: "You can compare at most 3 candidates at once",
+      });
       return;
     }
 
@@ -206,10 +181,9 @@ export const compareSelectedCandidates = async (req: any, res: Response): Promis
       return;
     }
 
-    // ── Only compare candidates that actually belong to this job ──
     const candidates = await Applicant.find({
       _id:    { $in: candidateIds },
-      jobIds: jobId,                  // updated: was jobId scalar
+      jobIds: jobId,
     });
 
     if (candidates.length === 0) {

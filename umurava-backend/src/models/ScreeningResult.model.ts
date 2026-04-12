@@ -14,6 +14,8 @@ export interface IScreeningResult extends Document {
     skillsMatched: string[];
     skillsMissing: string[];
     confidence: string;
+    upskillingPaths: { skill: string; reason: string; suggestedResource: string }[];
+    adjacentRoles: string[];
   }[];
   biasNotice: string;
   screenedAt: Date;
@@ -35,6 +37,14 @@ const ScreeningResultSchema = new Schema<IScreeningResult>(
         skillsMatched: { type: [String], default: [] },
         skillsMissing: { type: [String], default: [] },
         confidence: { type: String, default: "Medium" },
+        upskillingPaths: [
+          {
+            skill:             { type: String },
+            reason:            { type: String },
+            suggestedResource: { type: String },
+          },
+        ],
+        adjacentRoles: { type: [String], default: [] },
       },
     ],
     biasNotice: { type: String, default: "" },

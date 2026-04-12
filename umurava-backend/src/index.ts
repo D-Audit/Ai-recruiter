@@ -17,7 +17,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001"],
+  origin: process.env.NODE_ENV === "production"
+    ? [process.env.FRONTEND_URL || "https://your-app.vercel.app"]
+    : ["http://localhost:3000", "http://localhost:3001"],
   credentials: true,
 }));
 
@@ -36,14 +38,13 @@ const globalLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 10,
   message: {
     success: false,
     message: "Too many login attempts. Try again later.",
   },
 });
-
 
 const aiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
@@ -54,13 +55,8 @@ const aiLimiter = rateLimit({
   },
 });
 
-
 app.use("/api/", globalLimiter);
-
-
 app.use("/api/auth/login", authLimiter);
-
-
 app.use("/api/screening", aiLimiter);
 
 app.use("/api/auth", authRoutes);
@@ -69,12 +65,9 @@ app.use("/api/applicants", applicantRoutes);
 app.use("/api/screening", screeningRoutes);
 app.use("/api/chat", chatRoutes);
 
-
-
 app.get("/", (req, res) => {
   res.json({ message: "Umurava AI Backend is running ✅" });
 });
-
 
 app.use((err: any, req: any, res: any, next: any) => {
   console.error("Global error:", err);
@@ -83,8 +76,6 @@ app.use((err: any, req: any, res: any, next: any) => {
     message: err.message || "Internal server error",
   });
 });
-
-
 
 connectDB().then(() => {
   app.listen(PORT, () => {

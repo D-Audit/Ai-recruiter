@@ -5,6 +5,8 @@ export interface User {
   company: string;
 }
 
+export type JobStatus = "open" | "closed" | "screening";
+
 export interface Job {
   _id: string;
   title: string;
@@ -14,7 +16,7 @@ export interface Job {
   educationLevel: string;
   location: string;
   jobType: string;
-  status: string;
+  status: JobStatus | string;
   applicantsCount: number;
   createdAt: string;
 }
@@ -67,14 +69,16 @@ export interface Project {
 export interface Availability {
   status: "Available" | "Open to Opportunities" | "Not Available";
   type: "Full-time" | "Part-time" | "Contract";
-  startDate: string;
+  startDate?: string;
 }
 
 export interface SocialLinks {
-  linkedin: string;
-  github: string;
-  portfolio: string;
+  linkedin?: string;
+  github?: string;
+  portfolio?: string;
 }
+
+export type ApplicantSource = "umurava" | "external";
 
 export interface Applicant {
   _id: string;
@@ -82,34 +86,44 @@ export interface Applicant {
   lastName: string;
   email: string;
   headline: string;
-  bio: string;
+  bio?: string;
   location: string;
   skills: Skill[];
-  languages: Language[];
-  experience: Experience[];
-  education: Education[];
-  certifications: Certification[];
-  projects: Project[];
+  languages?: Language[];
+  experience?: Experience[];
+  education?: Education[];
+  certifications?: Certification[];
+  projects?: Project[];
   availability: Availability;
-  socialLinks: SocialLinks;
-  // Extensibility fields
+  socialLinks?: SocialLinks;
   aiScore?: number;
-  confidenceLevel?: string;
-  portfolioRating?: number;
-  source: string;
-  jobId: string;
+  confidenceLevel?: "High" | "Medium" | "Low" | string;
+  source: ApplicantSource | string;
+  jobIds: string[];
+  /** URL to the uploaded resume file (set by backend when a file or URL is uploaded). */
+  resumeUrl?: string;
+}
+
+export type RecommendationLevel = "Shortlist" | "Consider" | "Not Selected";
+
+export interface UpskillingPath {
+  skill: string;
+  reason: string;
+  suggestedResource: string;
 }
 
 export interface CandidateResult {
-  candidateId: any;
+  candidateId: Applicant | string;
   rank: number;
   score: number;
   strengths: string;
   gaps: string;
-  recommendation: string;
+  recommendation: RecommendationLevel | string;
   skillsMatched: string[];
   skillsMissing: string[];
-  confidence: string;
+  confidence: "High" | "Medium" | "Low" | string;
+  upskillingPaths?: UpskillingPath[];
+  adjacentRoles?: string[];
 }
 
 export interface ScreeningResult {
@@ -120,4 +134,21 @@ export interface ScreeningResult {
   rankedCandidates: CandidateResult[];
   biasNotice: string;
   screenedAt: string;
+  fromCache?: boolean;
+}
+
+export interface ComparisonRow {
+  candidateId: string;
+  fullName: string;
+  score: number;
+  topStrength: string;
+  biggestGap: string;
+  verdict: string;
+}
+
+export interface ComparisonResult {
+  winner: string;
+  winnerReason: string;
+  comparison: ComparisonRow[];
+  biasNotice?: string;
 }

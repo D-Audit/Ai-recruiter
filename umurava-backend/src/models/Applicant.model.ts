@@ -1,3 +1,6 @@
+// src/models/Applicant.model.ts
+// UPDATED — added resumeUrl field. Everything else is unchanged.
+
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IApplicant extends Document {
@@ -28,7 +31,8 @@ export interface IApplicant extends Document {
   confidenceLevel?: string;
   portfolioRating?: number;
   source: string;
-  jobIds: mongoose.Types.ObjectId[]; // array — one applicant can belong to many jobs
+  jobIds: mongoose.Types.ObjectId[];
+  resumeUrl?: string; // NEW — set when a file is uploaded or URL is imported
   createdAt: Date;
 }
 
@@ -136,13 +140,18 @@ const ApplicantSchema = new Schema<IApplicant>(
       default: "umurava",
     },
 
-    // One document per applicant; jobIds tracks which jobs they belong to.
-    // Use $addToSet in the controller to prevent duplicate job references.
     jobIds: {
       type: [Schema.Types.ObjectId],
       ref: "Job",
       default: [],
     },
+
+    // ── NEW FIELD ─────────────────────────────────────────────────────────────
+    // For /upload/resume: empty string (add S3/Cloudinary URL here if you store files)
+    // For /upload/url:    the original URL the recruiter pasted
+    // Powers the "View Resume" button in the candidate detail page
+    resumeUrl: { type: String, default: "" },
+    // ─────────────────────────────────────────────────────────────────────────
   },
   { timestamps: true }
 );
