@@ -261,3 +261,37 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
     res.status(500).json({ success: false, message: "URL import failed: " + error.message });
   }
 };
+
+export const submitManualApplicant = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { jobId, ...profileData } = req.body;
+
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
+
+    if (!profileData.firstName || !profileData.lastName || !profileData.email) {
+      res.status(400).json({
+        success: false,
+        message: "firstName, lastName, and email are required",
+      });
+      return;
+    }
+
+    const applicant = await Applicant.create({
+      ...profileData,
+      jobIds: [jobId],
+      source: profileData.source || "external",
+    });
+
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
+    res.status(201).json({ success: true, count: 1, applicant });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: "Manual applicant submit failed: " + error.message,
+    });
+  }
+};

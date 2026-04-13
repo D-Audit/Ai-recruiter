@@ -5,13 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  Brain,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Sparkles,
-  X,
+  Brain, Check, ChevronDown, ChevronUp,
+  Sparkles, X, ExternalLink, Trophy,
+  TrendingUp, AlertTriangle, CheckCircle2,
+  XCircle, Users, ArrowRight, GitCompare,
 } from "lucide-react";
 import { AppDispatch, RootState } from "../store";
 import { toggleSelectForCompare } from "../store/slices/screeningSlice";
@@ -34,24 +31,24 @@ function getCandidateId(r: CandidateResult): string {
 function candidateName(r: CandidateResult): string {
   const c = r.candidateId;
   if (typeof c === "object" && c) {
-    const fn = c.firstName || "";
-    const ln = c.lastName || "";
+    const fn = (c as any).firstName || "";
+    const ln = (c as any).lastName || "";
     const n = `${fn} ${ln}`.trim();
     if (n) return n;
-    if ("email" in c && c.email) return c.email;
+    if ((c as any).email) return (c as any).email;
   }
   return "Candidate";
 }
 
 function candidateEmail(r: CandidateResult): string {
   const c = r.candidateId;
-  if (typeof c === "object" && c && "email" in c) return c.email || "";
+  if (typeof c === "object" && c && "email" in c) return (c as any).email || "";
   return "";
 }
 
 function candidateHeadline(r: CandidateResult): string {
   const c = r.candidateId;
-  if (typeof c === "object" && c && "headline" in c) return c.headline || "";
+  if (typeof c === "object" && c && "headline" in c) return (c as any).headline || "";
   return "";
 }
 
@@ -76,10 +73,7 @@ export default function ScreeningResults({
 }: Props) {
   const router = useRouter();
   const dispatch = useDispatch<AppDispatch>();
-  const selectedForCompare = useSelector(
-    (s: RootState) => s.screening.selectedForCompare
-  );
-
+  const selectedForCompare = useSelector((s: RootState) => s.screening.selectedForCompare);
   const [expS, setExpS] = useState<Record<string, boolean>>({});
   const [expG, setExpG] = useState<Record<string, boolean>>({});
 
@@ -93,623 +87,500 @@ export default function ScreeningResults({
   if (!results) return null;
 
   const topScore = ranked[0]?.score ?? 0;
+  const avgScore = ranked.length
+    ? Math.round(ranked.reduce((s, c) => s + c.score, 0) / ranked.length)
+    : 0;
 
-  const recStyle = (rec: string) => {
-    if (rec === "Shortlist")
-      return { bg: "#dcfce7", color: "#15803d" };
-    if (rec === "Consider")
-      return { bg: "#dbeafe", color: "#2563eb" };
-    return { bg: "#f1f5f9", color: "#64748b" };
+  const recConfig = (rec: string) => {
+    if (rec === "Shortlist") return { bg: "#f0fdf4", color: "#15803d", border: "#bbf7d0", icon: CheckCircle2 };
+    if (rec === "Consider") return { bg: "#eff6ff", color: "#2563eb", border: "#bfdbfe", icon: TrendingUp };
+    return { bg: "#f8fafc", color: "#64748b", border: "#e2e8f0", icon: XCircle };
   };
 
-  const confLabel = (c: string) => {
-    if (c === "High") return { text: "High Confidence", bg: "#dcfce7", color: "#15803d" };
-    if (c === "Medium")
-      return { text: "Medium Confidence", bg: "#fef9c3", color: "#ca8a04" };
-    return { text: "Low Confidence", bg: "#fee2e2", color: "#dc2626" };
+  const confConfig = (c: string) => {
+    if (c === "High") return { text: "High Confidence", bg: "#f0fdf4", color: "#15803d" };
+    if (c === "Medium") return { text: "Medium Confidence", bg: "#fffbeb", color: "#d97706" };
+    return { text: "Low Confidence", bg: "#fef2f2", color: "#dc2626" };
   };
 
   const rankMedal = (rank: number) => {
-    if (rank === 1) return { bg: "#f59e0b", label: "#1" };
-    if (rank === 2) return { bg: "#94a3b8", label: "#2" };
-    if (rank === 3) return { bg: "#d97706", label: "#3" };
-    return { bg: "#cbd5e1", label: `#${rank}` };
+    if (rank === 1) return { bg: "linear-gradient(135deg, #f59e0b, #d97706)", text: "#fff", label: "🥇" };
+    if (rank === 2) return { bg: "linear-gradient(135deg, #94a3b8, #64748b)", text: "#fff", label: "🥈" };
+    if (rank === 3) return { bg: "linear-gradient(135deg, #d97706, #b45309)", text: "#fff", label: "🥉" };
+    return { bg: "#f1f5f9", text: "#64748b", label: `#${rank}` };
+  };
+
+  const scoreColor = (score: number) => {
+    if (score >= 75) return "#15803d";
+    if (score >= 55) return "#d97706";
+    return "#dc2626";
+  };
+
+  const scoreBarColor = (score: number) => {
+    if (score >= 75) return "linear-gradient(90deg, #22c55e, #16a34a)";
+    if (score >= 55) return "linear-gradient(90deg, #f59e0b, #d97706)";
+    return "linear-gradient(90deg, #f87171, #dc2626)";
   };
 
   const handleCompareNav = () => {
     if (selectedForCompare.length < 2) return;
-    router.push(
-      `/candidates/compare?jobId=${jobId}&ids=${selectedForCompare.join(",")}`
-    );
+    router.push(`/candidates/compare?jobId=${jobId}&ids=${selectedForCompare.join(",")}`);
   };
 
-  const toggleSel = (id: string) => {
-    dispatch(toggleSelectForCompare(id));
-  };
+  const toggleSel = (id: string) => dispatch(toggleSelectForCompare(id));
 
   return (
     <>
       <style>{`
-        .sr-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
+        .sr-wrap { font-family: var(--font-body, system-ui); }
+
+        /* Summary stats */
+        .sr-summary {
+          display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+        }
         .sr-stat {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 16px;
-          padding: 18px 20px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+          background: white; border: 1.5px solid var(--border-soft, #e2e8f0);
+          border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
-        .sr-stat-v { font-size: 28px; font-weight: 800; color: #0f172a; letter-spacing: -0.03em; }
+        .sr-stat-v { font-size: 26px; font-weight: 800; color: #0f172a; letter-spacing: -0.04em; line-height: 1; }
         .sr-stat-l { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin-top: 6px; }
+
+        /* Bias notice */
         .sr-bias {
-          background: #fef9c3;
-          border: 1px solid #fde68a;
-          border-radius: 12px;
-          padding: 14px 16px;
-          margin-bottom: 16px;
-          color: #92400e;
-          font-size: 13px;
-          line-height: 1.55;
+          background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 12px;
+          padding: 12px 16px; margin-bottom: 16px; color: #92400e;
+          font-size: 13px; line-height: 1.55; display: flex; gap: 10px; align-items: flex-start;
         }
-        .sr-hint {
-          font-size: 13px;
-          color: #64748b;
-          margin-bottom: 16px;
-          font-weight: 500;
+
+        /* Toolbar */
+        .sr-toolbar {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
         }
+        .sr-hint { font-size: 13px; color: #64748b; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+        .sr-cache-badge {
+          display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+          border-radius: 99px; background: #fffbeb; color: #d97706;
+          font-size: 11px; font-weight: 700;
+        }
+        .sr-run-btn {
+          display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px;
+          border-radius: 10px; border: none; background: var(--brand-primary, #2563eb);
+          color: white; font-weight: 700; font-size: 13px; cursor: pointer;
+          font-family: var(--font-body, system-ui); box-shadow: 0 4px 14px rgba(37,99,235,0.28);
+          transition: all 0.15s;
+        }
+        .sr-run-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(37,99,235,0.38); }
+        .sr-run-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Candidate card */
         .sr-card {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 16px;
-          padding: 20px 22px;
-          margin-bottom: 14px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+          background: white; border: 1.5px solid #e2e8f0; border-radius: 16px;
+          padding: 20px 22px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+          transition: box-shadow 0.18s, border-color 0.18s;
+          position: relative;
         }
-        .sr-card-top { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
-        .sr-rank {
-          width: 40px;
-          height: 40px;
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-weight: 800;
-          font-size: 14px;
-          flex-shrink: 0;
+        .sr-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.07); border-color: #dbeafe; }
+        .sr-card.selected { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1), 0 4px 16px rgba(0,0,0,0.06); }
+        .sr-card.rank-1 { border-color: #fde68a; }
+        .sr-card.rank-1:hover { border-color: #f59e0b; }
+
+        .sr-card-header { display: flex; gap: 12px; align-items: flex-start; }
+        .sr-checkbox-wrap {
+          padding-top: 10px; flex-shrink: 0;
         }
-        .sr-bar-wrap {
-          height: 8px;
-          background: #f1f5f9;
-          border-radius: 99px;
-          overflow: hidden;
-          margin-top: 10px;
+        .sr-checkbox {
+          width: 18px; height: 18px; accent-color: #2563eb; cursor: pointer;
+          border-radius: 4px;
         }
-        .sr-bar-fill {
-          height: 100%;
-          border-radius: 99px;
-          animation: growBar 0.85s ease forwards;
+        .sr-rank-badge {
+          width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 14px; font-weight: 800;
         }
-        .sr-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; }
-        .sr-expand {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          margin-top: 8px;
-          background: none;
-          border: none;
-          color: #2563eb;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          padding: 0;
+        .sr-candidate-info { flex: 1; min-width: 0; }
+        .sr-name-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-bottom: 3px; }
+        .sr-name { font-size: 15.5px; font-weight: 700; color: #0f172a; }
+        .sr-rec-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 700; border: 1px solid; }
+        .sr-conf-pill { padding: 3px 9px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+        .sr-email { font-size: 12.5px; color: #64748b; }
+        .sr-headline { font-size: 13px; color: #475569; margin-top: 4px; line-height: 1.45; }
+
+        /* Score area */
+        .sr-score-area {
+          flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+          min-width: 70px;
         }
-        .sr-cache {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          padding: 4px 10px;
-          border-radius: 20px;
-          background: #fef9c3;
-          color: #a16207;
-          font-size: 11px;
-          font-weight: 700;
+        .sr-score-circle {
+          width: 60px; height: 60px; border-radius: 50%;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          border: 3px solid;
         }
-        .sr-run-wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-        .sr-run {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 10px 18px;
-          border-radius: 11px;
-          border: none;
-          background: #2563eb;
-          color: white;
-          font-weight: 700;
-          font-size: 13px;
-          cursor: pointer;
-          box-shadow: 0 4px 14px rgba(37,99,235,0.28);
+        .sr-score-num { font-size: 20px; font-weight: 800; line-height: 1; }
+        .sr-score-label { font-size: 9px; color: #94a3b8; font-weight: 600; margin-top: 1px; }
+
+        /* Score bar */
+        .sr-bar-wrap { height: 7px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 12px; margin-bottom: 2px; }
+        .sr-bar-fill { height: 100%; border-radius: 99px; animation: growBar 0.9s ease forwards; }
+
+        /* Details */
+        .sr-details { margin-top: 14px; }
+        .sr-insights { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+        .sr-insight { border-radius: 10px; padding: 12px 14px; border: 1px solid; }
+        .sr-insight-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .sr-insight-text { font-size: 12.5px; line-height: 1.5; color: #374151; }
+
+        .sr-expand-btn {
+          display: inline-flex; align-items: center; gap: 4px; padding: 0;
+          background: none; border: none; color: #2563eb; font-size: 12.5px;
+          font-weight: 600; cursor: pointer; font-family: var(--font-body, system-ui);
+          margin-top: 8px; transition: gap 0.15s;
         }
-        .sr-run:disabled { opacity: 0.65; cursor: not-allowed; }
-        .sr-float {
-          position: fixed;
-          bottom: 24px;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 80;
-          padding: 12px 20px;
-          border-radius: 14px;
-          background: #0f172a;
-          color: white;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        .sr-expand-btn:hover { gap: 7px; }
+
+        /* Skills chips */
+        .sr-skills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+        .sr-skill-match { padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 600; background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; display: flex; align-items: center; gap: 3px; }
+        .sr-skill-miss { padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 600; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; display: flex; align-items: center; gap: 3px; }
+
+        /* Card footer */
+        .sr-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 14px; border-top: 1px solid #f1f5f9; flex-wrap: wrap; gap: 10px; }
+        .sr-view-link {
+          display: inline-flex; align-items: center; gap: 5px;
+          font-size: 13px; font-weight: 700; color: #2563eb; text-decoration: none;
+          transition: gap 0.15s;
+        }
+        .sr-view-link:hover { gap: 8px; }
+
+        /* Compare float */
+        .sr-compare-float {
+          position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+          z-index: 80; padding: 13px 20px;
+          border-radius: 16px; background: #0f172a; color: white;
+          display: flex; align-items: center; gap: 14px;
+          box-shadow: 0 16px 48px rgba(0,0,0,0.28), 0 4px 16px rgba(0,0,0,0.14);
+          border: 1px solid rgba(255,255,255,0.08);
+          animation: fadeInUp 0.22s ease;
           margin-left: 130px;
         }
-        @media (max-width: 768px) {
-          .sr-stats { grid-template-columns: 1fr; }
-          .sr-float { margin-left: 0; left: 16px; right: 16px; transform: none; flex-wrap: wrap; justify-content: center; }
+        .sr-compare-count { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
+        .sr-compare-btn {
+          padding: 8px 18px; border-radius: 10px; border: none;
+          background: linear-gradient(135deg, #2563eb, #7c3aed); color: white;
+          font-weight: 700; font-size: 13px; cursor: pointer; font-family: var(--font-body, system-ui);
+          display: flex; align-items: center; gap: 6px;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.4);
+          transition: all 0.15s;
+        }
+        .sr-compare-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(37,99,235,0.5); }
+        .sr-clear-btn {
+          display: flex; align-items: center; justify-content: center;
+          width: 30px; height: 30px; border-radius: 8px; border: none;
+          background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7);
+          cursor: pointer; transition: background 0.15s;
+        }
+        .sr-clear-btn:hover { background: rgba(255,255,255,0.15); color: white; }
+
+        /* Upskilling */
+        .sr-upskill-item { padding: 10px 12px; background: #f8fafc; border-radius: 9px; border: 1px solid #e2e8f0; margin-bottom: 7px; }
+        .sr-upskill-skill { font-weight: 700; font-size: 12.5px; color: #0f172a; }
+        .sr-upskill-reason { font-size: 12px; color: #64748b; margin-top: 3px; line-height: 1.4; }
+
+        @media (max-width: 900px) {
+          .sr-summary { grid-template-columns: repeat(2, 1fr); }
+          .sr-insights { grid-template-columns: 1fr; }
+          .sr-compare-float { margin-left: 0; left: 16px; right: 16px; transform: none; flex-wrap: wrap; justify-content: center; }
+        }
+        @media (max-width: 600px) {
+          .sr-score-area { display: none; }
+          .sr-summary { grid-template-columns: 1fr 1fr; }
         }
       `}</style>
 
-      <div className="sr-run-wrap">
-        {showRunButton && onRunScreening ? (
-          <button
-            type="button"
-            className="sr-run"
-            disabled={loadingRun}
-            onClick={onRunScreening}
-          >
-            {loadingRun ? (
-              <>
-                <span
-                  style={{
-                    width: 16,
-                    height: 16,
-                    border: "2px solid rgba(255,255,255,0.35)",
-                    borderTopColor: "white",
-                    borderRadius: "50%",
-                    display: "inline-block",
-                    animation: "spin 0.75s linear infinite",
-                  }}
-                />
-                Analyzing…
-              </>
-            ) : (
-              <>
-                <Brain size={17} /> Run Screening
-              </>
+      <div className="sr-wrap">
+
+        {/* Summary stats */}
+        <div className="sr-summary">
+          {[
+            { label: "Total Screened", value: results.totalApplicants },
+            { label: "Shortlisted", value: results.shortlistedCount },
+            { label: "Top Score", value: `${topScore}` },
+            { label: "Avg Score", value: `${avgScore}` },
+          ].map((s) => (
+            <div key={s.label} className="sr-stat">
+              <div className="sr-stat-v">{s.value}</div>
+              <div className="sr-stat-l">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bias notice */}
+        {results.biasNotice && (
+          <div className="sr-bias">
+            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{results.biasNotice}</span>
+          </div>
+        )}
+
+        {/* Toolbar */}
+        <div className="sr-toolbar">
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {showRunButton && onRunScreening && (
+              <button
+                type="button"
+                className="sr-run-btn"
+                disabled={loadingRun}
+                onClick={onRunScreening}
+              >
+                {loadingRun ? (
+                  <>
+                    <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.75s linear infinite" }} />
+                    Analyzing…
+                  </>
+                ) : (
+                  <><Brain size={15} /> Run Screening</>
+                )}
+              </button>
             )}
-          </button>
-        ) : null}
-        {fromCache ? (
-          <span className="sr-cache">
-            <Sparkles size={12} /> Served from cache
-          </span>
-        ) : null}
-      </div>
-
-      <div className="sr-stats">
-        <div className="sr-stat">
-          <div className="sr-stat-v">{results.totalApplicants}</div>
-          <div className="sr-stat-l">Total screened</div>
+            {fromCache && (
+              <span className="sr-cache-badge">
+                <Sparkles size={11} /> Cached
+              </span>
+            )}
+          </div>
+          <p className="sr-hint">
+            <Users size={13} />
+            {ranked.length} candidate{ranked.length !== 1 ? "s" : ""} shown
+            {selectedForCompare.length > 0 && ` · ${selectedForCompare.length} selected`}
+          </p>
         </div>
-        <div className="sr-stat">
-          <div className="sr-stat-v">{results.shortlistedCount}</div>
-          <div className="sr-stat-l">Shortlisted</div>
-        </div>
-        <div className="sr-stat">
-          <div className="sr-stat-v">{topScore}</div>
-          <div className="sr-stat-l">Top score</div>
-        </div>
-      </div>
 
-      {results.biasNotice ? (
-        <div className="sr-bias">⚠️ {results.biasNotice}</div>
-      ) : null}
+        {/* Hint */}
+        {ranked.length >= 2 && (
+          <p style={{ fontSize: 12.5, color: "#94a3b8", marginBottom: 14, fontWeight: 500 }}>
+            ☑ Check 2–3 candidates to compare them side by side
+          </p>
+        )}
 
-      <p className="sr-hint">
-        Select 2–3 candidates using the checkboxes, then click Compare.
-      </p>
+        {/* Candidate cards */}
+        {ranked.map((r, i) => {
+          const id = getCandidateId(r);
+          const key = candidateKey(r, i);
+          const sel = !!(id && selectedForCompare.includes(id));
+          const medal = rankMedal(r.rank);
+          const sc = scoreColor(r.score);
+          const rec = recConfig(String(r.recommendation));
+          const cf = confConfig(String(r.confidence));
+          const RecIcon = rec.icon;
+          const sExpanded = expS[key];
+          const gExpanded = expG[key];
 
-      {ranked.map((r, i) => {
-        const id = getCandidateId(r);
-        const key = candidateKey(r, i);
-        const sel = id && selectedForCompare.includes(id);
-        const medal = rankMedal(r.rank);
-        const scoreColor =
-          r.score >= 70 ? "#16a34a" : r.score >= 50 ? "#d97706" : "#dc2626";
-        const rec = recStyle(String(r.recommendation));
-        const cf = confLabel(String(r.confidence));
-
-        return (
-          <div key={key} className="sr-card">
-            <div className="sr-card-top">
-              <input
-                type="checkbox"
-                checked={!!sel}
-                disabled={!id || (!sel && selectedForCompare.length >= 3)}
-                onChange={() => id && toggleSel(id)}
-                style={{ width: 18, height: 18, accentColor: "#2563eb", marginTop: 10 }}
-              />
-              <div className="sr-rank" style={{ background: medal.bg }}>
-                {medal.label}
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 8,
-                    alignItems: "center",
-                  }}
-                >
-                  <h3
-                    style={{
-                      fontSize: 16,
-                      fontWeight: 700,
-                      color: "#0f172a",
-                      margin: 0,
-                    }}
-                  >
-                    {candidateName(r)}
-                  </h3>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      padding: "3px 10px",
-                      borderRadius: 20,
-                      background: rec.bg,
-                      color: rec.color,
-                    }}
-                  >
-                    {r.recommendation}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      padding: "3px 10px",
-                      borderRadius: 20,
-                      background: cf.bg,
-                      color: cf.color,
-                    }}
-                  >
-                    {cf.text}
-                  </span>
+          return (
+            <div
+              key={key}
+              className={`sr-card${sel ? " selected" : ""}${r.rank === 1 ? " rank-1" : ""}`}
+            >
+              <div className="sr-card-header">
+                {/* Checkbox */}
+                <div className="sr-checkbox-wrap">
+                  <input
+                    type="checkbox"
+                    className="sr-checkbox"
+                    checked={sel}
+                    disabled={!id || (!sel && selectedForCompare.length >= 3)}
+                    onChange={() => id && toggleSel(id)}
+                    title={sel ? "Remove from compare" : selectedForCompare.length >= 3 ? "Max 3 selected" : "Add to compare"}
+                  />
                 </div>
-                {candidateEmail(r) ? (
-                  <p style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
-                    {candidateEmail(r)}
-                  </p>
-                ) : null}
-                {candidateHeadline(r) ? (
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#475569",
-                      marginTop: 6,
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    {candidateHeadline(r)}
-                  </p>
-                ) : null}
 
-                <div style={{ marginTop: 12 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 4,
-                    }}
-                  >
+                {/* Rank badge */}
+                <div
+                  className="sr-rank-badge"
+                  style={{ background: medal.bg, color: medal.text }}
+                >
+                  {medal.label}
+                </div>
+
+                {/* Info */}
+                <div className="sr-candidate-info">
+                  <div className="sr-name-row">
+                    <span className="sr-name">{candidateName(r)}</span>
                     <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                      }}
+                      className="sr-rec-pill"
+                      style={{ background: rec.bg, color: rec.color, borderColor: rec.border }}
                     >
-                      Match score
+                      <RecIcon size={11} />
+                      {r.recommendation}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 800,
-                        color: scoreColor,
-                      }}
-                    >
-                      {r.score}/100
+                    <span className="sr-conf-pill" style={{ background: cf.bg, color: cf.color }}>
+                      {cf.text}
                     </span>
                   </div>
-                  <div className="sr-bar-wrap">
-                    <div
-                      className="sr-bar-fill"
-                      style={
-                        {
-                          background: scoreColor,
-                          ["--target-width" as string]: `${r.score}%`,
-                        } as React.CSSProperties
-                      }
-                    />
-                  </div>
-                </div>
+                  {candidateEmail(r) && <p className="sr-email">{candidateEmail(r)}</p>}
+                  {candidateHeadline(r) && <p className="sr-headline">{candidateHeadline(r)}</p>}
 
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 6,
-                    marginTop: 12,
-                  }}
-                >
-                  {(r.skillsMatched || []).map((s) => (
-                    <span
-                      key={s}
-                      className="sr-chip"
-                      style={{ background: "#dcfce7", color: "#15803d" }}
-                    >
-                      <Check size={12} /> {s}
-                    </span>
-                  ))}
-                  {(r.skillsMissing || []).map((s) => (
-                    <span
-                      key={s}
-                      className="sr-chip"
-                      style={{ background: "#fee2e2", color: "#dc2626" }}
-                    >
-                      <X size={12} /> {s}
-                    </span>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <p
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#15803d",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    Strengths
-                  </p>
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#374151",
-                      lineHeight: 1.55,
-                      marginTop: 4,
-                    }}
-                  >
-                    {expS[key]
-                      ? r.strengths
-                      : (r.strengths || "").slice(0, 140) +
-                        ((r.strengths || "").length > 140 ? "…" : "")}
-                  </p>
-                  {(r.strengths || "").length > 140 ? (
-                    <button
-                      type="button"
-                      className="sr-expand"
-                      onClick={() =>
-                        setExpS((x) => ({ ...x, [key]: !x[key] }))
-                      }
-                    >
-                      {expS[key] ? (
-                        <>
-                          Show less <ChevronUp size={14} />
-                        </>
-                      ) : (
-                        <>
-                          Show more <ChevronDown size={14} />
-                        </>
-                      )}
-                    </button>
-                  ) : null}
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <p
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: "#c2410c",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    Gaps
-                  </p>
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#374151",
-                      lineHeight: 1.55,
-                      marginTop: 4,
-                    }}
-                  >
-                    {expG[key]
-                      ? r.gaps
-                      : (r.gaps || "").slice(0, 140) +
-                        ((r.gaps || "").length > 140 ? "…" : "")}
-                  </p>
-                  {(r.gaps || "").length > 140 ? (
-                    <button
-                      type="button"
-                      className="sr-expand"
-                      onClick={() =>
-                        setExpG((x) => ({ ...x, [key]: !x[key] }))
-                      }
-                    >
-                      {expG[key] ? (
-                        <>
-                          Show less <ChevronUp size={14} />
-                        </>
-                      ) : (
-                        <>
-                          Show more <ChevronDown size={14} />
-                        </>
-                      )}
-                    </button>
-                  ) : null}
-                </div>
-
-                {r.upskillingPaths && r.upskillingPaths.length > 0 ? (
-                  <div style={{ marginTop: 14 }}>
-                    <p
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                        marginBottom: 8,
-                      }}
-                    >
-                      Upskilling paths
-                    </p>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                      }}
-                    >
-                      {r.upskillingPaths.map((u, ui) => (
-                        <div
-                          key={ui}
-                          style={{
-                            border: "1px solid #e2e8f0",
-                            borderRadius: 10,
-                            padding: "10px 12px",
-                            background: "#f8fafc",
-                          }}
-                        >
-                          <p
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 13,
-                              color: "#0f172a",
-                            }}
-                          >
-                            {u.skill}
-                          </p>
-                          <p
-                            style={{
-                              fontSize: 12,
-                              color: "#64748b",
-                              marginTop: 4,
-                            }}
-                          >
-                            {u.reason}
-                          </p>
-                          {u.suggestedResource ? (
-                            <a
-                              href={u.suggestedResource}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 4,
-                                marginTop: 6,
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "#2563eb",
-                              }}
-                            >
-                              Resource <ExternalLink size={12} />
-                            </a>
-                          ) : null}
-                        </div>
-                      ))}
+                  {/* Score bar */}
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>AI Match Score</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: sc }}>{r.score}/100</span>
+                    </div>
+                    <div className="sr-bar-wrap">
+                      <div
+                        className="sr-bar-fill"
+                        style={{
+                          background: scoreBarColor(r.score),
+                          "--target-width": `${r.score}%`,
+                        } as React.CSSProperties}
+                      />
                     </div>
                   </div>
-                ) : null}
+                </div>
 
-                {r.adjacentRoles && r.adjacentRoles.length > 0 ? (
-                  <div style={{ marginTop: 12 }}>
-                    <p
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#64748b",
-                        marginBottom: 6,
-                      }}
-                    >
-                      Adjacent roles
+                {/* Score circle */}
+                <div className="sr-score-area">
+                  <div className="sr-score-circle" style={{ borderColor: sc }}>
+                    <span className="sr-score-num" style={{ color: sc }}>{r.score}</span>
+                    <span className="sr-score-label">/100</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Expandable details */}
+              <div className="sr-details">
+                <div className="sr-insights">
+                  {/* Strengths */}
+                  <div className="sr-insight" style={{ background: "#f0fdf4", borderColor: "#bbf7d0" }}>
+                    <p className="sr-insight-label" style={{ color: "#15803d" }}>✓ Strengths</p>
+                    <p className="sr-insight-text">
+                      {sExpanded || r.strengths.length <= 160
+                        ? r.strengths
+                        : `${r.strengths.slice(0, 160)}…`}
                     </p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {r.adjacentRoles.map((role) => (
-                        <span
-                          key={role}
-                          style={{
-                            padding: "4px 10px",
-                            borderRadius: 8,
-                            background: "#f1f5f9",
-                            color: "#475569",
-                            fontSize: 12,
-                            fontWeight: 600,
-                          }}
-                        >
+                    {r.strengths.length > 160 && (
+                      <button
+                        className="sr-expand-btn"
+                        style={{ color: "#15803d" }}
+                        onClick={() => setExpS((p) => ({ ...p, [key]: !p[key] }))}
+                      >
+                        {sExpanded ? <><ChevronUp size={13} /> Less</> : <><ChevronDown size={13} /> More</>}
+                      </button>
+                    )}
+                  </div>
+                  {/* Gaps */}
+                  <div className="sr-insight" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+                    <p className="sr-insight-label" style={{ color: "#c2410c" }}>⚠ Gaps</p>
+                    <p className="sr-insight-text">
+                      {gExpanded || r.gaps.length <= 160
+                        ? r.gaps
+                        : `${r.gaps.slice(0, 160)}…`}
+                    </p>
+                    {r.gaps.length > 160 && (
+                      <button
+                        className="sr-expand-btn"
+                        style={{ color: "#c2410c" }}
+                        onClick={() => setExpG((p) => ({ ...p, [key]: !p[key] }))}
+                      >
+                        {gExpanded ? <><ChevronUp size={13} /> Less</> : <><ChevronDown size={13} /> More</>}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Skills */}
+                {(r.skillsMatched?.length > 0 || r.skillsMissing?.length > 0) && (
+                  <div className="sr-skills">
+                    {r.skillsMatched?.map((s) => (
+                      <span key={s} className="sr-skill-match">
+                        <Check size={10} />{s}
+                      </span>
+                    ))}
+                    {r.skillsMissing?.map((s) => (
+                      <span key={s} className="sr-skill-miss">
+                        <X size={10} />{s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Upskilling paths */}
+                {(r.upskillingPaths?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ fontSize: 11.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>
+                      Upskilling Paths
+                    </p>
+                    {(r.upskillingPaths ?? []).map((u, ui) => (
+                      <div key={ui} className="sr-upskill-item">
+                        <p className="sr-upskill-skill">{u.skill}</p>
+                        <p className="sr-upskill-reason">{u.reason}</p>
+                        {u.suggestedResource && (
+                          <a
+                            href={u.suggestedResource}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
+                          >
+                            Resource <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Adjacent roles */}
+                {(r.adjacentRoles?.length ?? 0) > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <p style={{ fontSize: 11.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>
+                      Adjacent Roles
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {(r.adjacentRoles ?? []).map((role) => (
+                        <span key={role} style={{ padding: "4px 10px", borderRadius: 8, background: "#f1f5f9", color: "#475569", fontSize: 12, fontWeight: 600 }}>
                           {role}
                         </span>
                       ))}
                     </div>
                   </div>
-                ) : null}
+                )}
+              </div>
 
-                {id ? (
-                  <Link
-                    href={`/candidates/${id}?jobId=${jobId}`}
-                    style={{ marginTop: 14, display: "inline-block" }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#2563eb",
-                      }}
-                    >
-                      View Profile →
-                    </span>
+              {/* Card footer */}
+              <div className="sr-card-footer">
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    className="sr-checkbox"
+                    checked={sel}
+                    disabled={!id || (!sel && selectedForCompare.length >= 3)}
+                    onChange={() => id && toggleSel(id)}
+                  />
+                  <span style={{ fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                    {sel ? "In compare" : "Add to compare"}
+                  </span>
+                </div>
+                {id && (
+                  <Link href={`/candidates/${id}?jobId=${jobId}`} className="sr-view-link">
+                    View Full Profile <ArrowRight size={13} />
                   </Link>
-                ) : null}
+                )}
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
 
-      {selectedForCompare.length >= 2 ? (
-        <div className="sr-float">
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {selectedForCompare.length} selected
-          </span>
-          <button
-            type="button"
-            onClick={handleCompareNav}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 10,
-              border: "none",
-              background: "#2563eb",
-              color: "white",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Compare
-          </button>
-        </div>
-      ) : null}
+        {/* Compare float bar */}
+        {selectedForCompare.length >= 2 && (
+          <div className="sr-compare-float">
+            <span className="sr-compare-count">
+              {selectedForCompare.length} selected
+            </span>
+            <button type="button" className="sr-compare-btn" onClick={handleCompareNav}>
+              <GitCompare size={14} /> Compare Now
+            </button>
+          </div>
+        )}
+      </div>
     </>
   );
 }

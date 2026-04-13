@@ -9,9 +9,14 @@ import {
   selectUmuravaProfiles,
   uploadResume,
   uploadFromURL,
+  submitManualApplicant,
 } from "../controllers/applicant.controller";
+import { protect } from "../middleware/auth.middleware";
 
 const router = Router();
+
+// All applicant routes require authentication
+router.use(protect);
 
 // Platform profiles
 router.get("/umurava", getUmuravaProfiles);
@@ -26,7 +31,10 @@ router.post("/upload/xlsx", upload.single("file"), uploadXLSX);
 router.post("/upload/resume", resumeUpload.single("file"), uploadResume);
 router.post("/upload/url", uploadFromURL);
 
-// Manual Selection
+// Manual applicant entry (called by frontend applicants page)
+router.post("/manual", submitManualApplicant);
+
+// Umurava profile selection
 router.post("/select", selectUmuravaProfiles);
 
 export default router;
