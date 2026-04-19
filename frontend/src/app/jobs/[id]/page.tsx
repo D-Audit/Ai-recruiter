@@ -8,7 +8,6 @@ import Sidebar from "../../../components/Sidebar";
 import AppHeader from "../../../components/AppHeader";
 import ScreeningResults from "../../../components/ScreeningResults";
 import { getJob } from "../../../services/jobService";
-import { sendChatMessage } from "../../../services/chatService";
 import {
   triggerScreening, fetchResults, clearResults,
 } from "../../../store/slices/screeningSlice";
@@ -16,7 +15,7 @@ import { saveJob } from "../../../store/slices/jobSlice";
 import { AppDispatch, RootState } from "../../../store";
 import toast from "react-hot-toast";
 import {
-  ArrowLeft, Brain, MapPin, Users, Pencil, Send,
+  ArrowLeft, Brain, MapPin, Users, Pencil,
   Sparkles, ChevronRight, Briefcase, Clock, GraduationCap,
   CheckCircle2,
 } from "lucide-react";
@@ -38,9 +37,6 @@ export default function JobDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [topN, setTopN] = useState<10 | 20 | "all">(20);
   const [editForm, setEditForm] = useState<Partial<JobRow>>({});
-  const [chatInput, setChatInput] = useState("");
-  const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
-  const [chatLoading, setChatLoading] = useState(false);
 
   const jobId = id as string;
 
@@ -97,26 +93,6 @@ export default function JobDetailPage() {
     }
   };
 
-  const sendChat = async () => {
-    const msg = chatInput.trim();
-    if (!msg || chatLoading || !job) return;
-    setChatHistory((h) => [...h, { role: "user", text: msg }]);
-    setChatInput("");
-    setChatLoading(true);
-    try {
-      const res = await sendChatMessage(msg, {
-        jobId: job._id,
-        job: { title: job.title, description: job.description, requiredSkills: job.requiredSkills, yearsOfExperience: job.yearsOfExperience, educationLevel: job.educationLevel, location: job.location, jobType: job.jobType },
-        screeningSummary: results ? { totalApplicants: results.totalApplicants, shortlistedCount: results.shortlistedCount } : null,
-      });
-      setChatHistory((h) => [...h, { role: "ai", text: res.response || "No response" }]);
-    } catch {
-      setChatHistory((h) => [...h, { role: "ai", text: "Assistant unavailable. Try again later." }]);
-    } finally {
-      setChatLoading(false); }
-  };
-
-  const chips = ["Who should I interview first?", "Compare top 3 candidates", "What skills are most matched?"];
   const st = job ? statusMap[job.status || "closed"] ?? statusMap.closed : statusMap.closed;
 
   // Workflow banner logic
@@ -184,11 +160,8 @@ export default function JobDetailPage() {
         .jd-btn-outline:hover { border-color: #bfdbfe; color: var(--brand-primary); background: rgba(37,99,235,0.04); }
 
         /* Chat */
-        .jd-chat { background: var(--surface-card); border: 1.5px solid var(--border-soft); border-radius: 18px; padding: 24px; margin-top: 20px; box-shadow: var(--shadow-card); }
-        .jd-chat-msgs { max-height: 280px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
-        .jd-msg-user { background: rgba(37,99,235,0.08); color: var(--text-primary); padding: 10px 14px; border-radius: 12px 12px 4px 12px; font-size: 13.5px; align-self: flex-end; max-width: 85%; }
+.jd-msg-user { background: rgba(37,99,235,0.08); color: var(--text-primary); padding: 10px 14px; border-radius: 12px 12px 4px 12px; font-size: 13.5px; align-self: flex-end; max-width: 85%; }
         .jd-msg-ai { background: var(--surface-hover); color: var(--text-primary); padding: 10px 14px; border-radius: 12px 12px 12px 4px; font-size: 13.5px; align-self: flex-start; max-width: 85%; line-height: 1.5; }
-        .jd-chat-input-row { display: flex; gap: 8px; }
         .jd-chip { padding: 6px 12px; border-radius: 20px; border: 1.5px solid var(--border-soft); background: var(--surface-card); font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; transition: all var(--transition-fast); }
         .jd-chip:hover { border-color: #bfdbfe; color: var(--brand-primary); }
 
@@ -340,42 +313,7 @@ export default function JobDetailPage() {
                   </div>
                 )}
 
-                {/* AI Chat */}
-                <div className="jd-chat">
-                  <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
-                    <Sparkles size={15} color="#7c3aed" /> Ask AI about this job
-                  </p>
-                  {chatHistory.length === 0 && (
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 12 }}>
-                      {chips.map((c) => (
-                        <button key={c} className="jd-chip" onClick={() => { setChatInput(c); }}>
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {chatHistory.length > 0 && (
-                    <div className="jd-chat-msgs">
-                      {chatHistory.map((m, i) => (
-                        <div key={i} className={m.role === "user" ? "jd-msg-user" : "jd-msg-ai"}>{m.text}</div>
-                      ))}
-                      {chatLoading && <div className="jd-msg-ai" style={{ color: "var(--text-muted)" }}>Thinking…</div>}
-                    </div>
-                  )}
-                  <div className="jd-chat-input-row">
-                    <input
-                      style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1.5px solid var(--border-input)", background: "var(--surface-input)", color: "var(--text-primary)", fontSize: 14, fontFamily: "var(--font-body)", outline: "none" }}
-                      placeholder="Ask about this job or candidates…"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && sendChat()}
-                    />
-                    <button onClick={sendChat} disabled={!chatInput.trim() || chatLoading} style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "linear-gradient(135deg, #2563eb, #7c3aed)", color: "white", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, opacity: !chatInput.trim() ? 0.5 : 1 }}>
-                      <Send size={14} /> Send
-                    </button>
-                  </div>
-                </div>
-              </>
+</>
             )}
           </div>
         </div>

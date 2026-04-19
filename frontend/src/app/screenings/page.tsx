@@ -13,8 +13,8 @@ import { AppDispatch, RootState } from "../../store";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import type { CandidateResult } from "../../types";
 import {
-  ListChecks, Briefcase, BarChart2, Upload, Download,
-  Sparkles, Users, Brain, ArrowRight, Play,
+  ListChecks, Briefcase, Upload, Download,
+  Sparkles, Users, Brain, ArrowRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -44,7 +44,12 @@ function ScreeningsInner() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobId, setJobId] = useState(searchParams.get("jobId") || "");
-  const [topN, setTopN] = useState<10 | 20 | "all">("all");
+  const [topN, setTopN] = useState<10 | 20 | "all">(() => {
+    const n = searchParams.get("topN");
+    if (n === "10") return 10;
+    if (n === "20") return 20;
+    return "all";
+  });
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -75,8 +80,8 @@ function ScreeningsInner() {
     if (!jobId) return;
     try {
       await dispatch(triggerScreening(jobId)).unwrap();
-      toast.success("AI screening complete!");
-      router.replace(`/screenings?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
+      toast.success("AI screening complete! Redirecting to results…");
+      router.push(`/screenings/${encodeURIComponent(jobId)}`);
     } catch (e: unknown) {
       toast.error(typeof e === "string" ? e : "Screening failed. Make sure candidates are uploaded.");
     }
@@ -188,6 +193,20 @@ function ScreeningsInner() {
                   </select>
                 </div>
 
+                {/* Top N — pick BEFORE running */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, padding:"0 4px" }}>
+                  <label style={{ fontSize:12.5, color:"var(--text-muted)", fontWeight:700, whiteSpace:"nowrap" }}>Show top</label>
+                  <select
+                    value={topN}
+                    onChange={(e) => setTopN(e.target.value as any)}
+                    style={{ fontSize:13, border:"1.5px solid var(--border-input)", borderRadius:8, background:"var(--surface-card)", color:"var(--text-primary)", padding:"6px 10px", outline:"none", cursor:"pointer" }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value="all">All</option>
+                  </select>
+                </div>
+
                 {/* Run AI Screening — primary action */}
                 <button
                   className="sc-run-btn"
@@ -199,11 +218,6 @@ function ScreeningsInner() {
                   {loadingRes ? "Running…" : "Run AI Screening"}
                 </button>
 
-                {/* Load existing results — secondary action */}
-                <button className="sc-load-btn" onClick={handleLoad} disabled={!jobId || loadingRes}>
-                  <BarChart2 size={15} />
-                  Load Results
-                </button>
               </div>
 
               {/* Warning when job has no candidates */}
@@ -297,20 +311,8 @@ function ScreeningsInner() {
                         <option value="all">All</option>
                       </select>
                     </div>
-
-                    {/* Re-run screening button in results area */}
-                    <button
-                      className="sc-run-btn"
-                      onClick={handleRunScreening}
-                      disabled={loadingRes}
-                      style={{ padding: "8px 16px", fontSize: 13 }}
-                    >
-                      <Play size={13} />
-                      Re-run Screening
-                    </button>
-
                     <button className="sc-csv-btn" onClick={() => downloadScreeningCSV(results, selectedJob?.title || "results")}>
-                      <Download size={14} /> Export CSV
+                      <Download size={14} /> Download Results
                     </button>
                   </div>
                 </div>

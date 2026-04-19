@@ -314,6 +314,7 @@ function ApplicantsPageContent() {
     return `${p.firstName} ${p.lastName} ${p.email} ${p.headline}`.toLowerCase().includes(s);
   });
 
+  const [topN, setTopN] = useState<10 | 20 | 'all'>(10);
   const step = !selectedJob ? 1 : !candidatesLoaded ? 2 : 3;
 
   // ── Helpers for add/remove rows in manual form ────────────────────────────
@@ -434,12 +435,27 @@ function ApplicantsPageContent() {
                 );
               })}
               {step === 3 && (
-                <Link
-                  href={selectedJob ? `/screenings?jobId=${selectedJob}` : "/screenings"}
-                  style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, background: "linear-gradient(135deg,#7c3aed,#2563eb)", color: "white", fontWeight: 700, fontSize: 13, textDecoration: "none", boxShadow: "var(--shadow-button)", flexShrink: 0 }}
-                >
-                  <Brain size={14} /> Run Screening
-                </Link>
+                <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                  {/* Pick Top N BEFORE running */}
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <label style={{ fontSize:12, fontWeight:700, color:"var(--text-muted)", whiteSpace:"nowrap" }}>Show top</label>
+                    <select
+                      value={topN}
+                      onChange={(e) => setTopN(e.target.value as any)}
+                      style={{ fontSize:13, border:"1.5px solid var(--border-input)", borderRadius:8, background:"var(--surface-card)", color:"var(--text-primary)", padding:"6px 10px", outline:"none", cursor:"pointer", fontFamily:"inherit" }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value="all">All</option>
+                    </select>
+                  </div>
+                  <Link
+                    href={selectedJob ? `/screenings?jobId=${selectedJob}&topN=${topN}` : "/screenings"}
+                    style={{ display:"inline-flex", alignItems:"center", gap:6, padding:"8px 18px", borderRadius:10, background:"linear-gradient(135deg,#7c3aed,#2563eb)", color:"white", fontWeight:700, fontSize:13, textDecoration:"none", boxShadow:"var(--shadow-button)", flexShrink:0, whiteSpace:"nowrap" }}
+                  >
+                    <Brain size={14} /> Run AI Screening
+                  </Link>
+                </div>
               )}
             </div>
 
