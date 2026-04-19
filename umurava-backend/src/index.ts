@@ -10,9 +10,10 @@ import chatRoutes from "./routes/chat.routes";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+import crypto from "crypto";
 
 dotenv.config();
-
+console.log(crypto.randomBytes(256).toString("hex"));
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -78,7 +79,7 @@ app.use((err: any, req: any, res: any, next: any) => {
 });
 
 connectDB().then(() => {
-  app.listen(PORT, () => {
+ app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
 });
