@@ -9,7 +9,7 @@ import ScreeningResults from "../../../components/ScreeningResults";
 import { getJob } from "../../../services/jobService";
 import { getResults } from "../../../services/screeningService";
 import type { Job, ScreeningResult } from "../../../types";
-import { ListChecks } from "lucide-react";
+import { Brain, Briefcase, Upload, ArrowRight, Sparkles } from "lucide-react";
 
 export default function ScreeningJobPage() {
   const { jobId } = useParams();
@@ -22,15 +22,11 @@ export default function ScreeningJobPage() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/");
-      return;
-    }
+    if (!token) { router.push("/"); return; }
     if (!id) return;
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       try {
         const [jr, sr] = await Promise.all([
           getJob(id).catch(() => ({ job: null })),
@@ -44,22 +40,24 @@ export default function ScreeningJobPage() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id, router]);
 
   return (
     <>
       <style>{`
-        .sj-root { display: flex; font-family: system-ui, sans-serif; }
-        .sj-main { margin-left: 260px; min-height: 100vh; background: #f8fafc; flex: 1; display: flex; flex-direction: column; }
-        .sj-body { padding: 28px 40px 100px; flex: 1; max-width: 960px; }
+        .sj-root { display: flex; font-family: var(--font-body, system-ui); }
+        .sj-main { margin-left: var(--sidebar-width); min-height: 100vh; background: var(--surface-base); flex: 1; display: flex; flex-direction: column; }
+        .sj-body { padding: 28px 40px 100px; flex: 1; max-width: 1000px; animation: fadeIn 0.28s ease; }
         .sj-empty {
-          text-align: center; padding: 72px 40px; background: white; border-radius: 16px; border: 1px solid #e2e8f0;
+          background: var(--surface-card); border: 1.5px solid var(--border-soft);
+          border-radius: 18px; padding: 72px 40px; text-align: center;
+          display: flex; flex-direction: column; align-items: center; gap: 12px;
+          box-shadow: var(--shadow-card);
         }
-        @media (max-width: 768px) { .sj-main { margin-left: 0; } }
+        @media (max-width: 768px) { .sj-main { margin-left: 0; } .sj-body { padding: 20px 16px 80px; } }
       `}</style>
+
       <div className="sj-root">
         <Sidebar />
         <div className="sj-main">
@@ -69,68 +67,55 @@ export default function ScreeningJobPage() {
           />
           <div className="sj-body">
             {loading ? (
-              <p style={{ color: "#94a3b8", padding: 48 }}>Loading…</p>
-            ) : error === "no-results" || !results ? (
+              <div style={{ padding: 64, textAlign: "center" }}>
+                <div style={{ width: 40, height: 40, border: "3px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 14px" }} />
+                <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Loading screening results…</p>
+              </div>
+            ) : (error === "no-results" || !results) ? (
+              /* FLOW 3C: Beautiful empty state with clear CTAs */
               <div className="sj-empty">
-                <div
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 16,
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "0 auto 16px",
-                  }}
-                >
-                  <ListChecks size={28} color="#cbd5e1" />
+                <div style={{ width: 72, height: 72, borderRadius: 20, background: "rgba(124,58,237,0.08)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+                  <Brain size={32} color="#7c3aed" />
                 </div>
-                <p style={{ fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
-                  No screening runs yet
+                <p style={{ fontWeight: 800, fontSize: 20, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
+                  No screening results yet
                 </p>
-                <p
-                  style={{
-                    color: "#64748b",
-                    fontSize: 14,
-                    maxWidth: 380,
-                    margin: "0 auto 20px",
-                    lineHeight: 1.55,
-                  }}
-                >
-                  Run your first screening from the job page for this position.
+                <p style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 380, lineHeight: 1.65, textAlign: "center" }}>
+                  Select a job that has candidates uploaded, then run AI screening to get a ranked shortlist.
                 </p>
-                <Link
-                  href={id ? `/jobs/${id}` : "/jobs"}
-                  style={{
-                    display: "inline-block",
-                    padding: "10px 22px",
-                    borderRadius: 11,
-                    background: "#2563eb",
-                    color: "white",
-                    fontWeight: 700,
-                    fontSize: 14,
-                    textDecoration: "none",
-                  }}
-                >
-                  Go to Job
-                </Link>
-                {" · "}
-                <Link
-                  href="/jobs"
-                  style={{ color: "#2563eb", fontWeight: 600, fontSize: 14 }}
-                >
-                  All jobs
+                <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                  <Link href={id ? `/jobs/${id}` : "/jobs"} className="btn-primary">
+                    <Sparkles size={14} /> Run Screening <ArrowRight size={13} />
+                  </Link>
+                  <Link href="/applicants" className="btn-secondary">
+                    <Upload size={14} /> Upload Candidates
+                  </Link>
+                </div>
+                <Link href="/jobs" style={{ marginTop: 16, fontSize: 13, color: "var(--text-muted)", textDecoration: "none", fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                  <Briefcase size={13} /> View all jobs
                 </Link>
               </div>
             ) : (
-              <ScreeningResults
-                jobId={id}
-                results={results}
-                fromCache={false}
-                displayTopN="all"
-              />
+              <>
+                {/* Results header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Sparkles size={18} color="#7c3aed" />
+                      <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>
+                        {results.totalApplicants} candidates screened
+                      </p>
+                    </div>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 3 }}>
+                      {results.shortlistedCount} shortlisted · Screened {new Date(results.screenedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                  </div>
+                  <Link href={id ? `/jobs/${id}` : "/jobs"} style={{ fontSize: 13, fontWeight: 700, color: "var(--brand-primary)", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                    <Briefcase size={13} /> Back to Job
+                  </Link>
+                </div>
+                <ScreeningResults jobId={id} results={results} fromCache={false} displayTopN="all" />
+              </>
             )}
           </div>
         </div>

@@ -65,13 +65,13 @@ function CompareContent() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
-        .cp-root { display:flex; font-family:'DM Sans',sans-serif; }
+        
+        .cp-root { display:flex; font-family:var(--font-body,system-ui); }
         .cp-shell { margin-left:260px; flex:1; display:flex; flex-direction:column; min-height:100vh; background:#f1f5f9; }
         .cp-main { padding:24px 40px 40px; flex:1; }
 
         .winner-banner { background:linear-gradient(135deg,#f59e0b,#d97706); border-radius:16px; padding:22px 28px; margin-bottom:22px; display:flex; align-items:center; gap:18px; color:white; box-shadow:0 6px 20px rgba(245,158,11,0.3); }
-        .winner-title { font-family:'Sora',sans-serif; font-size:18px; font-weight:800; margin-bottom:4px; }
+        .winner-title { font-family:var(--font-display,system-ui); font-size:18px; font-weight:800; margin-bottom:4px; }
         .winner-reason { font-size:13.5px; opacity:0.85; line-height:1.55; }
 
         .compare-table { background:white; border-radius:18px; border:1px solid #e2e8f0; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.04); margin-bottom:20px; }

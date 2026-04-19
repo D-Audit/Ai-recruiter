@@ -1,19 +1,22 @@
 "use client";
-import { Provider } from "react-redux";
-import { store } from "../store";
+import { Provider, useSelector } from "react-redux";
+import { store, RootState } from "../store";
 import { Toaster } from "react-hot-toast";
 import FloatingAI from "../components/FloatingAI";
 
-export default function Providers({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+/** Only renders FloatingAI when the user is logged in */
+function AuthGatedFloatingAI() {
+  const token = useSelector((s: RootState) => s.auth.token);
+  if (!token) return null;
+  return <FloatingAI />;
+}
+
+export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <Provider store={store}>
       {children}
       <Toaster position="top-right" />
-      <FloatingAI />
+      <AuthGatedFloatingAI />
     </Provider>
   );
 }

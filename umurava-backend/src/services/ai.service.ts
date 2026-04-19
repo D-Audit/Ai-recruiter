@@ -23,9 +23,6 @@ with formal education degrees over self-taught developers. \
 Skills and project experience should be weighted equally to \
 formal credentials. Final decisions must be made by human recruiters.`;
 
-// ─────────────────────────────────────────────────────────────────
-// Gemini call with retry + exponential back-off
-// ─────────────────────────────────────────────────────────────────
 export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {

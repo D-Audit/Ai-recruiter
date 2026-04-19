@@ -10,6 +10,7 @@ import {
   uploadResume,
   uploadFromURL,
   submitManualApplicant,
+  removeApplicantFromJob,
 } from "../controllers/applicant.controller";
 import { protect } from "../middleware/auth.middleware";
 
@@ -31,10 +32,13 @@ router.post("/upload/xlsx", upload.single("file"), uploadXLSX);
 router.post("/upload/resume", resumeUpload.single("file"), uploadResume);
 router.post("/upload/url", uploadFromURL);
 
-// Manual applicant entry (called by frontend applicants page)
+// Manual applicant entry
 router.post("/manual", submitManualApplicant);
 
 // Umurava profile selection
 router.post("/select", selectUmuravaProfiles);
+
+// ✅ FIX: Remove applicant from a specific job
+router.delete("/:jobId/applicant/:applicantId", removeApplicantFromJob);
 
 export default router;

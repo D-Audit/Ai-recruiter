@@ -9,7 +9,7 @@ import { getMe, updateMe } from "../../services/authService";
 import { updateProfileFields } from "../../store/slices/authSlice";
 import { AppDispatch } from "../../store";
 import toast from "react-hot-toast";
-import { User, Save, Settings, Building2, Mail, CheckCircle2 } from "lucide-react";
+import { User, Save, Settings, Building2, Mail, CheckCircle2, Briefcase, Brain, ListChecks } from "lucide-react";
 
 export default function ProfilePage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -55,75 +55,55 @@ export default function ProfilePage() {
   return (
     <>
       <style>{`
-        .pf-root { display: flex; font-family: var(--font-body); }
+        .pf-root { display: flex; font-family: var(--font-body, system-ui); }
         .pf-main { margin-left: var(--sidebar-width); min-height: 100vh; background: var(--surface-base); flex: 1; display: flex; flex-direction: column; }
-        .pf-content { padding: 32px 40px 80px; max-width: 680px; animation: fadeIn 0.28s ease; }
+        .pf-content { padding: 28px 40px 80px; max-width: 680px; animation: fadeIn 0.28s ease; }
 
         .pf-hero {
-          display: flex; align-items: center; gap: 24px;
-          background: white; border-radius: 20px; padding: 28px;
+          display: flex; align-items: center; gap: 22px;
+          background: var(--surface-card); border-radius: 20px; padding: 28px;
           border: 1.5px solid var(--border-soft); box-shadow: var(--shadow-card);
-          margin-bottom: 20px;
+          margin-bottom: 18px;
         }
         .pf-avatar {
           width: 80px; height: 80px; border-radius: 50%; flex-shrink: 0;
-          background: var(--brand-gradient); display: flex; align-items: center; justify-content: center;
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
+          display: flex; align-items: center; justify-content: center;
           color: white; font-size: 26px; font-weight: 800; letter-spacing: -0.5px;
           box-shadow: 0 8px 24px rgba(37,99,235,0.25);
         }
         .pf-hero-name { font-size: 20px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; margin-bottom: 4px; }
-        .pf-hero-company { font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+        .pf-hero-company { font-size: 14px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
         .pf-hero-email { font-size: 13px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
 
-        .pf-card {
-          background: white; border-radius: 18px; border: 1.5px solid var(--border-soft);
-          padding: 28px; box-shadow: var(--shadow-card); margin-bottom: 16px;
-        }
+        .pf-card { background: var(--surface-card); border-radius: 18px; border: 1.5px solid var(--border-soft); padding: 26px; box-shadow: var(--shadow-card); margin-bottom: 16px; }
         .pf-card-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
         .pf-card-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; line-height: 1.5; }
 
         .pf-field { margin-bottom: 18px; }
-        .pf-label {
-          display: flex; align-items: center; gap: 6px;
-          font-size: 11.5px; font-weight: 700; color: #374151; margin-bottom: 7px;
-          text-transform: uppercase; letter-spacing: 0.07em;
-        }
-        .pf-input {
-          width: 100%; padding: 11px 14px; border-radius: 11px;
-          border: 1.5px solid var(--border-soft); font-size: 14px; color: var(--text-primary);
-          font-family: var(--font-body); outline: none; background: #fafbfc;
-          transition: all var(--transition-fast);
-        }
-        .pf-input:focus { border-color: var(--brand-primary); background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        .pf-input:disabled { background: #f8fafc; color: var(--text-muted); cursor: not-allowed; }
+        .pf-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.07em; }
+        .pf-input { width: 100%; padding: 11px 14px; border-radius: 11px; border: 1.5px solid var(--border-input); font-size: 14px; color: var(--text-primary); font-family: var(--font-body); outline: none; background: var(--surface-input); transition: all var(--transition-fast); }
+        .pf-input:focus { border-color: var(--brand-primary); background: var(--surface-card); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .pf-input:disabled { background: var(--surface-hover); color: var(--text-muted); cursor: not-allowed; }
         .pf-input-hint { font-size: 12px; color: var(--text-muted); margin-top: 5px; line-height: 1.4; }
 
         .pf-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; flex-wrap: wrap; }
-        .pf-save {
-          display: inline-flex; align-items: center; gap: 7px; padding: 11px 24px;
-          border-radius: 11px; border: none; background: var(--brand-gradient);
-          color: white; font-weight: 700; font-size: 14px; cursor: pointer;
-          box-shadow: var(--shadow-button); transition: all var(--transition-fast);
-          font-family: var(--font-body);
-        }
+        .pf-save { display: inline-flex; align-items: center; gap: 7px; padding: 11px 24px; border-radius: 11px; border: none; background: var(--brand-gradient); color: white; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: var(--shadow-button); transition: all var(--transition-fast); font-family: var(--font-body); }
         .pf-save:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.38); }
         .pf-save:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
         .pf-save.saved { background: linear-gradient(135deg, #16a34a, #15803d); box-shadow: 0 4px 14px rgba(22,163,74,0.3); }
 
-        .pf-settings-link {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 13px; font-weight: 600; color: var(--text-secondary); text-decoration: none;
-          padding: 9px 16px; border-radius: 10px; border: 1.5px solid var(--border-soft);
-          background: white; transition: all var(--transition-fast);
-        }
-        .pf-settings-link:hover { border-color: #bfdbfe; color: var(--brand-primary); background: #eff6ff; }
+        .pf-settings-link { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); text-decoration: none; padding: 9px 16px; border-radius: 10px; border: 1.5px solid var(--border-soft); background: var(--surface-card); transition: all var(--transition-fast); }
+        .pf-settings-link:hover { border-color: #bfdbfe; color: var(--brand-primary); background: rgba(37,99,235,0.04); }
 
-        @media (max-width: 1024px) and (min-width: 769px) { .pf-main { margin-left: var(--sidebar-collapsed); } }
-        @media (max-width: 768px) {
-          .pf-main { margin-left: 0; }
-          .pf-content { padding: 20px 16px 80px; }
-          .pf-hero { flex-direction: column; text-align: center; align-items: center; }
-        }
+        /* Stats */
+        .pf-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .pf-stat { background: var(--surface-hover); border-radius: 14px; padding: 16px; border: 1.5px solid var(--border-muted); text-align: center; }
+        .pf-stat-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; }
+        .pf-stat-value { font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.04em; }
+        .pf-stat-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 4px; }
+
+        @media (max-width: 768px) { .pf-main { margin-left: 0; } .pf-content { padding: 20px 16px 80px; } .pf-hero { flex-direction: column; text-align: center; align-items: center; } .pf-stats { grid-template-columns: 1fr 1fr; } }
       `}</style>
 
       <div className="pf-root">
@@ -133,7 +113,7 @@ export default function ProfilePage() {
           <div className="pf-content">
             {loading ? (
               <div style={{ padding: 64, textAlign: "center", color: "var(--text-muted)" }}>
-                <div style={{ width: 40, height: 40, border: "3px solid #e2e8f0", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 14px" }} />
+                <div style={{ width: 40, height: 40, border: "3px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 14px" }} />
                 Loading your profile…
               </div>
             ) : (
@@ -163,54 +143,49 @@ export default function ProfilePage() {
                   </p>
 
                   <div className="pf-field">
-                    <label className="pf-label">
-                      <User size={12} /> Full Name
-                    </label>
-                    <input
-                      className="pf-input"
-                      type="text"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder="Your full name"
-                    />
+                    <label className="pf-label"><User size={12} /> Full Name</label>
+                    <input className="pf-input" type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Your full name" />
                   </div>
 
                   <div className="pf-field">
-                    <label className="pf-label">
-                      <Building2 size={12} /> Company
-                    </label>
-                    <input
-                      className="pf-input"
-                      type="text"
-                      value={form.company}
-                      onChange={(e) => setForm({ ...form, company: e.target.value })}
-                      placeholder="Your organization"
-                    />
+                    <label className="pf-label"><Building2 size={12} /> Company</label>
+                    <input className="pf-input" type="text" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} placeholder="Your organization" />
                   </div>
 
                   <div className="pf-field">
-                    <label className="pf-label">
-                      <Mail size={12} /> Work Email
-                    </label>
+                    <label className="pf-label"><Mail size={12} /> Work Email</label>
                     <input className="pf-input" type="email" value={me?.email || ""} disabled />
                     <p className="pf-input-hint">Email is tied to your account and cannot be changed here.</p>
                   </div>
 
                   <div className="pf-actions">
-                    <button
-                      type="button"
-                      className={`pf-save${saved ? " saved" : ""}`}
-                      disabled={saving || !isDirty}
-                      onClick={handleSave}
-                    >
+                    <button type="button" className={`pf-save${saved ? " saved" : ""}`} disabled={saving || !isDirty} onClick={handleSave}>
                       {saved ? <CheckCircle2 size={15} /> : <Save size={15} />}
                       {saving ? "Saving…" : saved ? "Saved!" : "Save Profile"}
                     </button>
-
                     <Link href="/settings" className="pf-settings-link">
-                      <Settings size={14} />
-                      Security & Settings
+                      <Settings size={14} /> Security & Settings
                     </Link>
+                  </div>
+                </div>
+
+                {/* Account stats */}
+                <div className="pf-card">
+                  <p className="pf-card-title" style={{ marginBottom: 16 }}>
+                    <Brain size={16} color="#7c3aed" /> Account Overview
+                  </p>
+                  <div className="pf-stats">
+                    {[
+                      { icon: <Briefcase size={17} color="#2563eb" />, iconBg: "rgba(37,99,235,0.08)", label: "Jobs Created", value: "—" },
+                      { icon: <Brain size={17} color="#7c3aed" />, iconBg: "rgba(124,58,237,0.08)", label: "Screenings Run", value: "—" },
+                      { icon: <ListChecks size={17} color="#0891b2" />, iconBg: "rgba(8,145,178,0.08)", label: "Candidates Reviewed", value: "—" },
+                    ].map((s) => (
+                      <div key={s.label} className="pf-stat">
+                        <div className="pf-stat-icon" style={{ background: s.iconBg }}>{s.icon}</div>
+                        <p className="pf-stat-value">{s.value}</p>
+                        <p className="pf-stat-label">{s.label}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </>

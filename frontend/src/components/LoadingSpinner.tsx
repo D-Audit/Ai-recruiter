@@ -21,8 +21,8 @@ export default function LoadingSpinner({ label, fullPage }: Props) {
         style={{
           width: 40,
           height: 40,
-          border: "3px solid #e2e8f0",
-          borderTopColor: "#2563eb",
+          border: "3px solid var(--border-soft, #e2e8f0)",
+          borderTopColor: "var(--brand-primary, #2563eb)",
           borderRadius: "50%",
           animation: "spin 0.75s linear infinite",
         }}
@@ -30,9 +30,10 @@ export default function LoadingSpinner({ label, fullPage }: Props) {
       {label && (
         <p
           style={{
-            color: "#64748b",
+            color: "var(--text-muted, #64748b)",
             fontSize: 14,
             fontWeight: 500,
+            fontFamily: "var(--font-body, system-ui)",
           }}
         >
           {label}
@@ -51,7 +52,7 @@ export default function LoadingSpinner({ label, fullPage }: Props) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "rgba(255,255,255,0.85)",
+          background: "rgba(var(--surface-base-rgb, 241,245,249), 0.85)",
           zIndex: 999,
         }}
       >
