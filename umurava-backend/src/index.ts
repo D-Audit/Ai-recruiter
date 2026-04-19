@@ -18,10 +18,14 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: process.env.NODE_ENV === "production"
-    ? [process.env.FRONTEND_URL || "https://your-app.vercel.app"]
-    : ["http://localhost:3000", "http://localhost:3001"],
+  origin: [
+    "http://localhost:3000",
+    "https://ai-umurava.vercel.app",   
+    /\.vercel\.app$/,                   
+  ],
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
 app.use(express.json({ limit: "50mb" }));
