@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSelector, useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
@@ -29,29 +29,91 @@ const AppHeader: React.FC<AppHeaderProps> = ({
   workflowBanner,
   actions,
 }) => {
-  const { user } = useSelector((s: RootState) => s.auth);
+  const { user, restoring } = useSelector((s: RootState) => s.auth);
   const dispatch = useDispatch();
   const router = useRouter();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1, type: "screening", title: "AI screening ready",
-      message: "Upload candidates to a job and run AI screening to get ranked results.",
-      read: false, time: "2 min ago", icon: Sparkles, color: "#7c3aed",
-    },
-    {
-      id: 2, type: "candidates", title: "New candidates added",
-      message: "5 new candidates were uploaded to Senior Frontend Developer position.",
-      read: false, time: "1 hour ago", icon: Users, color: "#2563eb",
-    },
-    {
-      id: 3, type: "job", title: "Job published successfully",
-      message: "Your job position is now live and receiving applications.",
-      read: true, time: "3 hours ago", icon: Briefcase, color: "#16a34a",
-    },
-  ]);
+  // ── Real notifications built from actual Redux state ──────────────────────
+  const jobs      = useSelector((s: RootState) => (s as any).jobs?.jobs ?? []);
+  const screening = useSelector((s: RootState) => (s as any).screening ?? {});
+
+  // Build real notifications from live data
+  const buildNotifications = () => {
+    const notifs: any[] = [];
+
+    // 1. Jobs that exist → "Job created" notifications
+    jobs.slice(0, 3).forEach((job: any, i: number) => {
+      notifs.push({
+        id: `job-${job._id}`,
+        type: "job",
+        title: "Job posted",
+        message: `"${job.title}" is live${job.location ? ` · ${job.location}` : ""}. You can now add candidates.`,
+        read: false,
+        time: job.createdAt ? new Date(job.createdAt).toLocaleDateString("en-GB", { day:"numeric", month:"short" }) : "Recently",
+        icon: Briefcase,
+        color: "#16a34a",
+      });
+    });
+
+    // 2. Jobs with candidates → "Candidates uploaded" notifications
+    jobs
+      .filter((job: any) => (job.applicantsCount || 0) > 0)
+      .slice(0, 2)
+      .forEach((job: any) => {
+        notifs.push({
+          id: `cands-${job._id}`,
+          type: "candidates",
+          title: "Candidates added",
+          message: `${job.applicantsCount} candidate${job.applicantsCount !== 1 ? "s" : ""} in "${job.title}". Ready for AI screening.`,
+          read: false,
+          time: "Active",
+          icon: Users,
+          color: "#2563eb",
+        });
+      });
+
+    // 3. Jobs with screening status → "Screening complete" notification
+    jobs
+      .filter((job: any) => job.status === "screening")
+      .slice(0, 2)
+      .forEach((job: any) => {
+        notifs.push({
+          id: `screen-${job._id}`,
+          type: "screening",
+          title: "Screening complete",
+          message: `AI ranked ${job.applicantsCount || 0} candidate${(job.applicantsCount || 0) !== 1 ? "s" : ""} for "${job.title}". View results now.`,
+          read: false,
+          time: "Done",
+          icon: Sparkles,
+          color: "#7c3aed",
+        });
+      });
+
+    // If no real data yet, show a helpful onboarding tip
+    if (notifs.length === 0) {
+      notifs.push({
+        id: "onboard-1",
+        type: "tip",
+        title: "Get started",
+        message: "Post a job, add candidates, then run AI screening to get your first ranked shortlist.",
+        read: false,
+        time: "Now",
+        icon: Sparkles,
+        color: "#2563eb",
+      });
+    }
+
+    return notifs;
+  };
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  // Rebuild notifications whenever jobs/screening data changes
+  useEffect(() => {
+    setNotifications(buildNotifications());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, screening]);
 
   const initials = user?.name
     ? user.name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)
@@ -259,11 +321,11 @@ const AppHeader: React.FC<AppHeaderProps> = ({
                         </span>
                       )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); setNotifications(notifications.map((n) => ({ ...n, read: true }))); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, color: "var(--text-muted)", display: "flex" }}
+                        onClick={(e) => { e.stopPropagation(); setNotifications(prev => prev.map((n) => ({ ...n, read: true }))); }}
+                        style={{ background: "none", border: "1px solid var(--border-soft)", cursor: "pointer", padding: "3px 8px", borderRadius: 6, color: "var(--text-muted)", display: "flex", alignItems:"center", gap:4, fontSize:11, fontWeight:600, fontFamily:"inherit" }}
                         title="Mark all as read"
                       >
-                        <CheckCircle2 size={14} />
+                        <CheckCircle2 size={12} /> Mark all read
                       </button>
                     </div>
                   </div>
@@ -303,7 +365,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
               onClick={() => { setProfileOpen(!profileOpen); setNotifOpen(false); }}
             >
               <div className="header-avatar">{initials}</div>
-              <span className="header-profile-name">{user?.name?.split(" ")[0] || "User"}</span>
+              <span className="header-profile-name">{user?.name?.split(" ")[0] || (restoring ? "…" : "User")}</span>
               <ChevronDown size={13} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
             </button>
 
