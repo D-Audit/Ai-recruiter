@@ -1,119 +1,193 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
 import { getAllJobs } from "../../services/jobService";
-import { RootState } from "../../store";
+import { RootState, AppDispatch } from "../../store";
 import {
-  Briefcase, Users, Brain, Plus,
-  Sparkles, TrendingUp, ListChecks, Activity,
-  ChevronRight, Target, Zap, BarChart3,
+  Briefcase, Users, Brain, Plus, ArrowRight,
+  Sparkles, TrendingUp, ListChecks, ArrowUpRight, Zap,
 } from "lucide-react";
 
-/* Sparkline */
-function Sparkline({ data, color }: { data: number[]; color: string }) {
-  const w = 80, h = 32;
-  const min = Math.min(...data), max = Math.max(...data);
-  const range = max - min || 1;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w;
-    const y = h - ((v - min) / range) * (h - 4) - 2;
-    return [x, y] as [number, number];
-  });
-  const polyline = pts.map(p => p.join(",")).join(" ");
-  const area = `0,${h} ${polyline} ${w},${h}`;
-  const uid = color.replace("#","");
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow:"visible" }}>
-      <defs>
-        <linearGradient id={`sg${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill={`url(#sg${uid})`} />
-      <polyline points={polyline} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={pts[pts.length-1][0]} cy={pts[pts.length-1][1]} r="3" fill={color} />
-    </svg>
-  );
+/* ══════════════════════════════════════════════
+   CHART HELPERS — pure SVG, zero dependencies
+══════════════════════════════════════════════ */
+
+function bezierPath(pts: { x: number; y: number }[]) {
+  return pts.reduce((acc, pt, i) => {
+    if (i === 0) return `M ${pt.x} ${pt.y}`;
+    const prev = pts[i - 1];
+    const cpx = (prev.x + pt.x) / 2;
+    return `${acc} C ${cpx} ${prev.y} ${cpx} ${pt.y} ${pt.x} ${pt.y}`;
+  }, "");
 }
 
-/* Area Chart */
-function AreaChart({ data, labels }: { data: number[]; labels: string[] }) {
-  const [hovered, setHovered] = useState<number | null>(null);
-  const [animated, setAnimated] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setAnimated(true), 300); return () => clearTimeout(t); }, []);
-  const W = 520, H = 120, PL = 32, PR = 16, PT = 12, PB = 24;
-  const cW = W - PL - PR, cH = H - PT - PB;
-  const max = Math.max(...data, 1);
-  const pts = data.map((v, i) => ({ x: PL + (i / (data.length - 1)) * cW, y: PT + cH - (v / max) * cH, v }));
-  const line = pts.map(p => `${p.x},${p.y}`).join(" ");
-  const area = `${pts[0].x},${PT + cH} ${line} ${pts[pts.length-1].x},${PT + cH}`;
+/* ── Large area chart ── */
+function AreaChart({ data: rawData, color, label, height = 120 }: { data: number[]; color: string; label: string; height?: number }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; val: number; i: number } | null>(null);
+
+  const SEED = [1, 2, 1, 3, 2, 4, 3, 5, 4, 5, 4, 6];
+  const raw = rawData?.length ? rawData : [];
+  const merged = SEED.map((s, i) => { const off = SEED.length - raw.length; return i >= off ? (raw[i - off] ?? s) : s; });
+  const allSame = merged.every((v) => v === merged[0]);
+  const data = allSame ? merged.map((v, i) => v + SEED[i] * 0.4) : merged;
+
+  const W = 100; const H = 100;
+  const pad = { t: 8, b: 4, l: 2, r: 2 };
+  const min = Math.min(...data); const max = Math.max(...data); const range = max - min || 1;
+  const pts = data.map((v, i) => ({
+    x: pad.l + (i / (data.length - 1)) * (W - pad.l - pad.r),
+    y: pad.t + (1 - (v - min) / range) * (H - pad.t - pad.b), v,
+  }));
+  const linePath = bezierPath(pts);
+  const areaPath = `${linePath} L ${pts[pts.length - 1].x} ${H} L ${pts[0].x} ${H} Z`;
+  const uid = `ac${color.replace(/\W/g, "")}`;
+
   return (
-    <div style={{ position:"relative", width:"100%", height: H + 8 }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height:"100%", overflow:"visible" }}>
+    <div style={{ position: "relative", width: "100%" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: "100%", height, display: "block", overflow: "visible" }}
+        onMouseLeave={() => setTooltip(null)}>
         <defs>
-          <linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2563eb" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+          <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="85%" stopColor={color} stopOpacity="0.03" />
           </linearGradient>
-          <clipPath id="ac"><rect x={PL} y={0} width={animated ? cW : 0} height={H} style={{ transition:"width 1.1s cubic-bezier(.16,1,.3,1)" }} /></clipPath>
         </defs>
-        {[0,.25,.5,.75,1].map((t,i) => <line key={i} x1={PL} x2={PL+cW} y1={PT+cH*(1-t)} y2={PT+cH*(1-t)} stroke="#f1f5f9" strokeWidth="1" />)}
-        <polygon points={area} fill="url(#ag)" clipPath="url(#ac)" />
-        <polyline points={line} fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#ac)" />
-        {labels.map((l,i) => <text key={i} x={pts[i].x} y={H-4} textAnchor="middle" style={{ fontSize:9, fill:"#94a3b8" }}>{l}</text>)}
-        {pts.map((p,i) => (
+        {[25, 50, 75].map((p) => (
+          <line key={p} x1={pad.l} y1={pad.t + (p / 100) * (H - pad.t - pad.b)}
+            x2={W - pad.r} y2={pad.t + (p / 100) * (H - pad.t - pad.b)}
+            stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
+        ))}
+        <path d={areaPath} fill={`url(#${uid})`} />
+        <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((pt, i) => (
           <g key={i}>
-            <circle cx={p.x} cy={p.y} r={hovered===i?5:3.5} fill={hovered===i?"#2563eb":"#fff"} stroke="#2563eb" strokeWidth="2" style={{ cursor:"pointer", transition:"r .15s" }} onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} />
-            {hovered===i && <g><rect x={p.x-22} y={p.y-28} width={44} height={20} rx={5} fill="#0f172a" /><text x={p.x} y={p.y-14} textAnchor="middle" style={{ fontSize:10.5, fill:"#fff", fontWeight:"700" }}>{p.v}</text></g>}
+            <rect x={pt.x - (W / data.length) / 2} y={pad.t} width={W / data.length} height={H - pad.t}
+              fill="transparent" style={{ cursor: "crosshair" }}
+              onMouseEnter={() => setTooltip({ x: pt.x, y: pt.y, val: raw[i - (data.length - raw.length)] ?? pt.v, i })} />
+            {tooltip?.i === i && (
+              <>
+                <line x1={pt.x} y1={pad.t} x2={pt.x} y2={H} stroke={color} strokeWidth="0.5" strokeOpacity="0.4" strokeDasharray="1.5 1.5" />
+                <circle cx={pt.x} cy={pt.y} r="2.5" fill="white" stroke={color} strokeWidth="1.5" />
+              </>
+            )}
           </g>
         ))}
+        {!tooltip && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="2" fill={color} />}
       </svg>
+      {tooltip && (
+        <div style={{
+          position: "absolute",
+          bottom: `${height - (tooltip.y / 100) * height - 8}px`,
+          left: `${tooltip.x}%`, transform: "translateX(-50%)",
+          background: "#0f172a", color: "white", fontSize: 11, fontWeight: 700,
+          padding: "4px 9px", borderRadius: 6, whiteSpace: "nowrap",
+          pointerEvents: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          border: `1px solid ${color}50`, zIndex: 20,
+        }}>
+          <span style={{ color }}>{Math.round(tooltip.val)}</span>
+          <span style={{ color: "rgba(255,255,255,0.45)", marginLeft: 5 }}>{label}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-/* Donut Chart */
-function DonutChart({ segments }: { segments: { label:string; value:number; color:string }[] }) {
-  const [animated, setAnimated] = useState(false);
-  const [hovered, setHovered] = useState<number|null>(null);
-  useEffect(() => { const t = setTimeout(()=>setAnimated(true),400); return ()=>clearTimeout(t); }, []);
-  const total = segments.reduce((s,sg)=>s+sg.value,0) || 1;
-  const R=52, cx=64, cy=64, circ=2*Math.PI*R, thickness=20;
-  let offset=0;
-  const arcs = segments.map((sg,i) => {
-    const pct=sg.value/total, dash=animated?pct*circ:0, gap=circ-dash;
-    const arc = { dash, gap, offset, pct, ...sg, i };
-    offset += pct*circ; return arc;
-  });
+/* ── Bar chart ── */
+function BarChart({ bars, height = 130 }: { bars: { label: string; value: number; color: string }[]; height?: number }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const max = Math.max(...bars.map((b) => b.value), 1);
+  const W = 100; const H = 100;
+  const barW = (W / bars.length) * 0.52;
+  const gap = (W / bars.length) * 0.48;
+
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:20 }}>
-      <svg width={128} height={128} viewBox="0 0 128 128">
-        <circle cx={cx} cy={cy} r={R} fill="none" stroke="#f1f5f9" strokeWidth={thickness} />
-        {arcs.map((arc,i) => (
-          <circle key={i} cx={cx} cy={cy} r={R} fill="none" stroke={arc.color}
-            strokeWidth={hovered===i?thickness+4:thickness}
-            strokeDasharray={`${arc.dash} ${arc.gap}`}
-            strokeDashoffset={-arc.offset+circ/4}
-            style={{ transition:"stroke-dasharray 1s cubic-bezier(.16,1,.3,1),stroke-width .2s", cursor:"pointer" }}
-            onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)} />
+    <div style={{ position: "relative", width: "100%" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+        style={{ width: "100%", height, display: "block" }}
+        onMouseLeave={() => setHovered(null)}>
+        {[25, 50, 75].map((p) => (
+          <line key={p} x1="0" y1={H - (p / 100) * H * 0.85} x2={W} y2={H - (p / 100) * H * 0.85}
+            stroke="currentColor" strokeOpacity="0.06" strokeWidth="0.5" />
         ))}
-        <text x={cx} y={cy-5} textAnchor="middle" style={{ fontSize:22, fontWeight:800, fill:"#0f172a" }}>{total}</text>
-        <text x={cx} y={cy+13} textAnchor="middle" style={{ fontSize:9, fill:"#94a3b8", fontWeight:600 }}>TOTAL JOBS</text>
+        {bars.map((b, i) => {
+          const bh = Math.max((b.value / max) * H * 0.85, b.value > 0 ? 3 : 0);
+          const x = i * (W / bars.length) + gap / 2;
+          const y = H - bh;
+          return (
+            <g key={i} onMouseEnter={() => setHovered(i)} style={{ cursor: "pointer" }}>
+              <rect x={x} y={H * 0.15} width={barW} height={H * 0.85} fill={b.color} opacity="0.06" rx="1" />
+              <rect x={x} y={y} width={barW} height={bh} fill={b.color}
+                opacity={hovered === i ? 1 : 0.72} rx="1.5"
+                style={{ transition: "opacity 0.15s" }} />
+              <text x={x + barW / 2} y={H - 1} textAnchor="middle" fontSize="4.5" fill="currentColor" opacity="0.4">
+                {b.label.length > 6 ? b.label.slice(0, 5) + "…" : b.label}
+              </text>
+            </g>
+          );
+        })}
       </svg>
-      <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-        {segments.map((sg,i) => (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:8, cursor:"default", opacity:hovered!==null&&hovered!==i?0.45:1, transition:"opacity .18s" }}
-            onMouseEnter={()=>setHovered(i)} onMouseLeave={()=>setHovered(null)}>
-            <div style={{ width:9, height:9, borderRadius:"50%", background:sg.color, flexShrink:0, boxShadow:hovered===i?`0 0 0 3px ${sg.color}30`:"none", transition:"box-shadow .18s" }} />
-            <span style={{ fontSize:12.5, color:"#475569", fontWeight:600 }}>{sg.label}</span>
-            <span style={{ fontSize:12.5, fontWeight:800, color:"#0f172a", marginLeft:"auto", paddingLeft:12 }}>{sg.value}</span>
-            <span style={{ fontSize:11, color:"#94a3b8", minWidth:28 }}>{Math.round(sg.value/total*100)}%</span>
+      {hovered !== null && (
+        <div style={{
+          position: "absolute", top: 4,
+          left: `${(hovered / bars.length) * 100 + (100 / bars.length) * 0.5}%`,
+          transform: "translateX(-50%)",
+          background: "#0f172a", color: "white", fontSize: 11, fontWeight: 700,
+          padding: "4px 9px", borderRadius: 6, pointerEvents: "none",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          border: `1px solid ${bars[hovered].color}50`, zIndex: 20, whiteSpace: "nowrap",
+        }}>
+          <span style={{ color: bars[hovered].color }}>{bars[hovered].value}</span>
+          <span style={{ color: "rgba(255,255,255,0.45)", marginLeft: 5 }}>{bars[hovered].label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Donut chart ── */
+function DonutChart({ segments, size = 110 }: { segments: { label: string; value: number; color: string }[]; size?: number }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const total = segments.reduce((s, sg) => s + sg.value, 0) || 1;
+  const r = 38; const cx = 60; const cy = 60; const circ = 2 * Math.PI * r;
+  let offset = 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+      <svg width={size} height={size} viewBox="0 0 120 120" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-soft)" strokeWidth="11" />
+        {segments.map((sg, i) => {
+          const dash = (sg.value / total) * circ;
+          const seg = (
+            <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={sg.color}
+              strokeWidth={hovered === i ? 14 : 10}
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={-offset} strokeLinecap="round"
+              style={{ transition: "stroke-width 0.15s", cursor: "pointer" }}
+              onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)} />
+          );
+          offset += dash; return seg;
+        })}
+        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="14" fontWeight="800" fill="var(--text-primary)">
+          {hovered !== null ? segments[hovered].value : total}
+        </text>
+        <text x={cx} y={cy + 9} textAnchor="middle" fontSize="6.5" fill="var(--text-muted)">
+          {hovered !== null ? segments[hovered].label : "Total"}
+        </text>
+      </svg>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9, flex: 1 }}>
+        {segments.map((sg, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", opacity: hovered === null || hovered === i ? 1 : 0.35, transition: "opacity 0.15s" }}
+            onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: sg.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)", flex: 1 }}>{sg.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: "var(--text-primary)" }}>{sg.value}</span>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 32, textAlign: "right" }}>{Math.round((sg.value / total) * 100)}%</span>
           </div>
         ))}
       </div>
@@ -121,295 +195,394 @@ function DonutChart({ segments }: { segments: { label:string; value:number; colo
   );
 }
 
-/* Animated Progress Bar */
-function ProgressBar({ pct, color, delay=0 }: { pct:number; color:string; delay?:number }) {
-  const [w, setW] = useState(0);
-  useEffect(() => { const t=setTimeout(()=>setW(pct),400+delay); return ()=>clearTimeout(t); }, [pct,delay]);
+/* ── Mini sparkline for stat cards ── */
+function MiniSparkline({ data: rawData, color }: { data: number[]; color: string }) {
+  const [hov, setHov] = useState<{ x: number; y: number; val: number; i: number } | null>(null);
+  const SEED = [2, 3, 2, 4, 3, 5, 4, 6];
+  const raw = rawData?.length ? rawData : [];
+  const merged = SEED.map((s, i) => { const off = SEED.length - raw.length; return i >= off ? (raw[i - off] ?? s) : s; });
+  const allSame = merged.every((v) => v === merged[0]);
+  const data = allSame ? merged.map((v, i) => v + SEED[i] * 0.3) : merged;
+  const W = 80; const H = 38; const pad = 4;
+  const min = Math.min(...data); const max = Math.max(...data); const range = max - min || 1;
+  const pts = data.map((v, i) => ({ x: pad + (i / (data.length - 1)) * (W - pad * 2), y: pad + (1 - (v - min) / range) * (H - pad * 2), v }));
+  const lp = bezierPath(pts);
+  const ap = `${lp} L ${pts[pts.length - 1].x} ${H - pad} L ${pts[0].x} ${H - pad} Z`;
+  const uid = `ms${color.replace(/\W/g, "")}`;
+
   return (
-    <div style={{ height:5, background:"#f1f5f9", borderRadius:99, overflow:"hidden" }}>
-      <div style={{ height:"100%", width:`${w}%`, background:color, borderRadius:99, transition:"width 1s cubic-bezier(.16,1,.3,1)", boxShadow:w>0?`0 0 6px ${color}55`:"none" }} />
+    <div style={{ position: "relative" }}>
+      <svg width={W} height={H} style={{ overflow: "visible", display: "block" }} onMouseLeave={() => setHov(null)}>
+        <defs>
+          <linearGradient id={uid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={ap} fill={`url(#${uid})`} />
+        <path d={lp} fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((pt, i) => (
+          <rect key={i} x={pt.x - (W / data.length) / 2} y={pad} width={W / data.length} height={H - pad * 2}
+            fill="transparent" style={{ cursor: "crosshair" }}
+            onMouseEnter={() => setHov({ x: pt.x, y: pt.y, val: raw[i - (data.length - raw.length)] ?? pt.v, i })} />
+        ))}
+        {hov ? <circle cx={hov.x} cy={hov.y} r="2.5" fill={color} />
+          : <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="2" fill={color} />}
+      </svg>
+      {hov && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 4px)", left: hov.x, transform: "translateX(-50%)",
+          background: "#0f172a", color: "white", fontSize: 10, fontWeight: 700,
+          padding: "3px 7px", borderRadius: 5, whiteSpace: "nowrap",
+          pointerEvents: "none", border: `1px solid ${color}40`, zIndex: 10,
+        }}>
+          <span style={{ color }}>{Math.round(hov.val)}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Main ── */
+/* ══════════════════════════════════════════════
+   PAGE
+══════════════════════════════════════════════ */
 export default function DashboardPage() {
-  const router = useRouter();
-  const { user, restoring } = useSelector((s: RootState) => s.auth);
-  const [jobs, setJobs] = useState<any[]>([]);
+  const router   = useRouter();
+  const dispatch = useDispatch<AppDispatch>();
+  const { user } = useSelector((s: RootState) => s.auth);
+  const [jobs, setJobs]       = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const token = typeof window!=="undefined"?localStorage.getItem("token"):null;
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) { router.push("/"); return; }
-    getAllJobs().then(d=>setJobs(d.jobs||[])).catch(()=>{}).finally(()=>setLoading(false));
+    getAllJobs().then((d) => setJobs(d.jobs || [])).catch(() => {}).finally(() => setLoading(false));
   }, [router]);
 
-  const totalCandidates = jobs.reduce((s,j)=>s+(j.applicantsCount||0),0);
-  const openJobs        = jobs.filter(j=>j.status==="open").length;
-  const screeningJobs   = jobs.filter(j=>j.status==="screening").length;
-  const closedJobs      = jobs.filter(j=>j.status==="closed").length;
-  const recentJobs      = [...jobs].slice(0,6);
-  const firstName       = user?.name?.split(" ")[0]||(restoring?"…":"there");
-  const hour            = new Date().getHours();
-  const greeting        = hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+  const totalCandidates = jobs.reduce((s, j) => s + (j.applicantsCount || 0), 0);
+  const openJobs        = jobs.filter((j) => j.status === "open").length;
+  const screeningJobs   = jobs.filter((j) => j.status === "screening").length;
+  const closedJobs      = jobs.filter((j) => j.status === "closed").length;
+  const recentJobs      = [...jobs].slice(0, 5);
+  const firstName       = user?.name?.split(" ")[0] || "Recruiter";
 
-  const trends = {
-    jobs:       [1,1,2,2,3,3,Math.max(jobs.length,1)],
-    open:       [0,1,1,2,1,1,Math.max(openJobs,0)],
-    candidates: [0,1,2,3,4,Math.max(totalCandidates-1,0),Math.max(totalCandidates,0)],
-    screening:  [0,0,1,1,2,Math.max(screeningJobs-1,0),Math.max(screeningJobs,0)],
-  };
-
-  const areaData   = [0,0,1,2,3,Math.max(totalCandidates-1,0),totalCandidates];
-  const areaLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const candidateSeries = jobs.reduce((acc: number[], j) => { acc.push((acc[acc.length - 1] || 0) + (j.applicantsCount || 0)); return acc; }, []);
+  const jobSeries       = jobs.map((_, i) => i + 1);
+  const openSeries      = jobs.map((j) => j.status === "open" ? 1 : 0).reduce((acc: number[], v) => { acc.push((acc[acc.length - 1] || 0) + v); return acc; }, []);
+  const screenSeries    = jobs.map((j) => j.status === "screening" ? 1 : 0).reduce((acc: number[], v) => { acc.push((acc[acc.length - 1] || 0) + v); return acc; }, []);
 
   const stats = [
-    { label:"Total Jobs",       value:jobs.length,     icon:Briefcase,  color:"#2563eb", bg:"rgba(37,99,235,0.09)",  trend:"+2 this week",   spark:trends.jobs       },
-    { label:"Open Positions",   value:openJobs,        icon:TrendingUp, color:"#16a34a", bg:"rgba(22,163,74,0.09)",  trend:"Accepting apps", spark:trends.open       },
-    { label:"Total Candidates", value:totalCandidates, icon:Users,      color:"#7c3aed", bg:"rgba(124,58,237,0.09)", trend:"Across all jobs",spark:trends.candidates },
-    { label:"AI Screenings",    value:screeningJobs,   icon:Brain,      color:"#0891b2", bg:"rgba(8,145,178,0.09)",  trend:"Active now",     spark:trends.screening  },
+    { label: "Total Jobs",       value: jobs.length,     color: "#2563eb", bg: "rgba(37,99,235,0.08)",  icon: Briefcase,  spark: jobSeries,       change: jobs.length > 0 ? `${jobs.length} posted` : "Post first job",   positive: jobs.length > 0 },
+    { label: "Open Positions",   value: openJobs,        color: "#16a34a", bg: "rgba(22,163,74,0.08)",  icon: TrendingUp, spark: openSeries,      change: openJobs > 0 ? `${openJobs} active` : "None open",              positive: openJobs > 0 },
+    { label: "Total Candidates", value: totalCandidates, color: "#7c3aed", bg: "rgba(124,58,237,0.08)", icon: Users,      spark: candidateSeries, change: totalCandidates > 0 ? `Across ${jobs.length} jobs` : "Upload resumes", positive: totalCandidates > 0 },
+    { label: "AI Screenings",    value: screeningJobs,   color: "#0891b2", bg: "rgba(8,145,178,0.08)",  icon: Brain,      spark: screenSeries,    change: screeningJobs > 0 ? `${screeningJobs} running` : "None yet",   positive: screeningJobs > 0 },
   ];
 
-  const quickActions = [
-    { href:"/jobs/create",  icon:Plus,       color:"#2563eb", bg:"rgba(37,99,235,0.1)",  title:"Post a New Job",    desc:"Define role, skills & requirements" },
-    { href:"/applicants",   icon:Users,      color:"#7c3aed", bg:"rgba(124,58,237,0.1)", title:"Upload Candidates", desc:"CSV, PDF, DOCX or manual entry"     },
-    { href:"/screenings",   icon:Brain,      color:"#0891b2", bg:"rgba(8,145,178,0.1)",  title:"View Screenings",   desc:"See AI-ranked results"               },
-    { href:"/candidates",   icon:ListChecks, color:"#16a34a", bg:"rgba(22,163,74,0.1)",  title:"Browse Candidates", desc:"Explore the talent pool"            },
-  ];
-
-  const statusMap: Record<string,{bg:string;color:string;dot:string;label:string}> = {
-    open:      {bg:"#dcfce7",color:"#15803d",dot:"#16a34a",label:"Open"},
-    screening: {bg:"#dbeafe",color:"#1d4ed8",dot:"#2563eb",label:"Screening"},
-    closed:    {bg:"#f1f5f9",color:"#475569",dot:"#94a3b8",label:"Closed"},
+  const statusMap: Record<string, { bg: string; color: string; label: string; dot: string }> = {
+    open:      { bg: "rgba(22,163,74,0.08)",   color: "#16a34a", label: "Open",      dot: "#16a34a" },
+    screening: { bg: "rgba(37,99,235,0.08)",   color: "#2563eb", label: "Screening", dot: "#2563eb" },
+    closed:    { bg: "rgba(100,116,139,0.08)", color: "#64748b", label: "Closed",    dot: "#94a3b8" },
   };
 
-  const fade = (d: number) => ({ opacity: mounted?1:0, transform: mounted?"none":"translateY(14px)", transition:`opacity .4s ${d}s,transform .4s ${d}s` });
+  const donutSegments = [
+    { label: "Open",      value: openJobs || 0,      color: "#16a34a" },
+    { label: "Screening", value: screeningJobs || 0, color: "#2563eb" },
+    { label: "Closed",    value: closedJobs || 0,    color: "#94a3b8" },
+  ];
+  const donutFallback = [
+    { label: "Open",      value: 3, color: "#16a34a" },
+    { label: "Screening", value: 2, color: "#2563eb" },
+    { label: "Closed",    value: 1, color: "#94a3b8" },
+  ];
+
+  const barData = [
+    { label: "Open",       value: openJobs,       color: "#16a34a" },
+    { label: "Screening",  value: screeningJobs,  color: "#2563eb" },
+    { label: "Closed",     value: closedJobs,     color: "#94a3b8" },
+    { label: "Candidates", value: totalCandidates, color: "#7c3aed" },
+  ];
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <>
       <style>{`
-        .db-root{display:flex;font-family:var(--font-body,system-ui);}
-        .db-main{margin-left:var(--sidebar-width,260px);min-height:100vh;background:#eef2f7;flex:1;}
-        .db-body{padding:28px 36px 100px;}
-        .db-eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#94a3b8;margin-bottom:14px;display:flex;align-items:center;gap:7px;}
-        .db-greet-title{font-family:var(--font-display,sans-serif);font-size:26px;font-weight:800;color:#0f172a;letter-spacing:-0.5px;line-height:1.2;}
-        .db-greet-sub{font-size:14px;color:#64748b;margin-top:5px;}
-        .db-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
-        .db-stat{background:#fff;border-radius:20px;padding:22px 22px 18px;border:1.5px solid #e8edf3;box-shadow:0 1px 3px rgba(0,0,0,0.05);transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s;position:relative;overflow:hidden;cursor:default;}
-        .db-stat::after{content:"";position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--sc,#2563eb);transform:scaleX(0);transform-origin:left;transition:transform .3s cubic-bezier(.16,1,.3,1);}
-        .db-stat:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(0,0,0,0.09);}
-        .db-stat:hover::after{transform:scaleX(1);}
-        .db-stat-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;}
-        .db-stat-ico{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .db-stat-live{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:99px;}
-        .db-stat-val{font-family:var(--font-display,sans-serif);font-size:36px;font-weight:800;color:#0f172a;letter-spacing:-2px;line-height:1;margin-bottom:4px;}
-        .db-stat-label{font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;}
-        .db-stat-bottom{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid #f8fafc;}
-        .db-stat-trend{font-size:11px;font-weight:600;color:#94a3b8;}
-        @keyframes dbPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0.2);}50%{box-shadow:0 0 0 10px rgba(255,255,255,0);}}
-        .db-banner{background:linear-gradient(135deg,#1535b8 0%,#2952e3 45%,#5b21b6 100%);border-radius:22px;padding:26px 32px;display:flex;align-items:center;gap:22px;margin-bottom:24px;position:relative;overflow:hidden;box-shadow:0 8px 32px rgba(37,99,235,0.28);}
-        .db-banner::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 75% 50%,rgba(255,255,255,0.09) 0%,transparent 55%);}
-        .db-banner-dots{position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,0.07) 1px,transparent 1px);background-size:22px 22px;}
-        .db-banner-ico{width:54px;height:54px;border-radius:15px;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;animation:dbPulse 3s ease-in-out infinite;}
-        .db-banner-title{font-family:var(--font-display,sans-serif);font-size:19px;font-weight:800;color:#fff;letter-spacing:-0.3px;margin-bottom:4px;}
-        .db-banner-sub{font-size:13.5px;color:rgba(255,255,255,0.65);line-height:1.55;max-width:520px;}
-        .db-banner-meta{display:flex;gap:20px;margin-top:10px;flex-wrap:wrap;}
-        .db-banner-chip{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:rgba(255,255,255,0.8);}
-        .db-banner-btn{margin-left:auto;flex-shrink:0;padding:12px 22px;border-radius:13px;border:none;background:#fff;color:#2952e3;font-family:var(--font-display,sans-serif);font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:all .18s;text-decoration:none;box-shadow:0 4px 16px rgba(0,0,0,0.15);white-space:nowrap;position:relative;z-index:1;}
-        .db-banner-btn:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 8px 24px rgba(0,0,0,0.2);}
-        .db-card{background:#fff;border-radius:20px;border:1.5px solid #e8edf3;box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;}
-        .db-card-head{padding:18px 22px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;}
-        .db-card-title{font-size:14.5px;font-weight:700;color:#0f172a;display:flex;align-items:center;gap:8px;}
-        .db-card-link{font-size:12.5px;font-weight:600;color:#2563eb;text-decoration:none;display:flex;align-items:center;gap:3px;transition:gap .15s;}
-        .db-card-link:hover{gap:6px;}
-        .db-cols{display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start;margin-bottom:20px;}
-        .db-bottom{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
-        .db-job{display:flex;align-items:center;gap:14px;padding:13px 22px;text-decoration:none;border-bottom:1px solid #f8fafc;transition:background .15s;}
-        .db-job:last-child{border-bottom:none;}
-        .db-job:hover{background:#f8fafc;}
-        .db-job-ico{width:40px;height:40px;border-radius:11px;background:rgba(37,99,235,0.07);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .db-job-name{font-size:13.5px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-        .db-job-meta{font-size:11.5px;color:#94a3b8;margin-top:2px;}
-        .db-job-badge{padding:3px 11px;border-radius:99px;font-size:11px;font-weight:700;flex-shrink:0;display:flex;align-items:center;gap:5px;}
-        .db-action{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;background:#f8fafc;border:1.5px solid #f1f5f9;text-decoration:none;transition:all .18s;margin-bottom:10px;}
-        .db-action:last-child{margin-bottom:0;}
-        .db-action:hover{background:#fff;border-color:#e2e8f0;transform:translateX(4px);box-shadow:0 4px 14px rgba(0,0,0,0.06);}
-        .db-action-ico{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .db-action-title{font-size:13px;font-weight:700;color:#0f172a;}
-        .db-action-desc{font-size:11px;color:#94a3b8;margin-top:1px;}
-        .db-empty{padding:52px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
-        .db-strip{background:#fff;border-radius:18px;border:1.5px solid #e8edf3;padding:16px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:20px;}
-        .db-strip-chip{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;background:#f8fafc;border:1px solid #f1f5f9;font-size:12px;font-weight:600;color:#475569;white-space:nowrap;}
-        @media(max-width:1280px){.db-stats{grid-template-columns:repeat(2,1fr);}}
-        @media(max-width:1100px){.db-cols{grid-template-columns:1fr;}.db-bottom{grid-template-columns:1fr;}}
-        @media(max-width:768px){.db-main{margin-left:0;}.db-body{padding:20px 16px 100px;}.db-stats{grid-template-columns:1fr 1fr;}}
+        .dash-root { display:flex; font-family:var(--font-body); }
+        .dash-main { margin-left:var(--sidebar-width); min-height:100vh; background:var(--surface-base); flex:1; display:flex; flex-direction:column; }
+        .dash-body { padding:26px 32px 100px; flex:1; }
+
+        @keyframes greetIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes cardIn  { from{opacity:0;transform:translateY(8px)}  to{opacity:1;transform:translateY(0)} }
+
+        .dash-greeting {
+          position:relative; overflow:hidden; border-radius:20px;
+          padding:26px 32px; margin-bottom:20px;
+          background:linear-gradient(135deg,#0f1f5c 0%,#1a3aad 40%,#2556e8 70%,#4f46e5 100%);
+          box-shadow:0 8px 32px rgba(37,99,235,0.22);
+          animation:greetIn 0.4s ease both;
+          display:flex; align-items:center; justify-content:space-between; gap:20px;
+        }
+        .dash-greeting::before { content:''; position:absolute; top:-80px; right:-80px; width:280px; height:280px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,0.07) 0%,transparent 70%); pointer-events:none; }
+        .dash-greeting-eyebrow { font-size:10px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:5px; }
+        .dash-greeting-title   { font-size:23px; font-weight:800; color:white; letter-spacing:-0.04em; font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-greeting-sub     { font-size:13px; color:rgba(255,255,255,0.55); margin-top:6px; }
+        .dash-greeting-cta     { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; background:rgba(255,255,255,0.13); color:white; font-weight:700; font-size:13px; text-decoration:none; border:1px solid rgba(255,255,255,0.2); transition:all 0.18s; position:relative; z-index:1; }
+        .dash-greeting-cta:hover { background:rgba(255,255,255,0.22); transform:translateY(-1px); }
+
+        .dash-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+        .dash-stat-card { background:var(--surface-card); border:1px solid var(--border-soft); border-radius:16px; padding:18px 20px; box-shadow:var(--shadow-card); transition:all 0.18s; animation:cardIn 0.35s ease both; position:relative; overflow:visible; }
+        .dash-stat-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-card-hover); }
+        .dash-stat-card::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:var(--sac,transparent); opacity:0; transition:opacity 0.18s; border-radius:0 0 16px 16px; }
+        .dash-stat-card:hover::after { opacity:1; }
+        .dash-stat-top   { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; }
+        .dash-stat-icon  { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; }
+        .dash-stat-value { font-size:30px; font-weight:800; color:var(--text-primary); letter-spacing:-0.05em; line-height:1; font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-stat-label { font-size:10.5px; color:var(--text-muted); font-weight:600; margin-top:4px; text-transform:uppercase; letter-spacing:0.07em; }
+        .dash-stat-change{ font-size:11px; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:3px; }
+
+        .dash-charts-row  { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+        .dash-charts-row2 { display:grid; grid-template-columns:1.4fr 1fr; gap:16px; margin-bottom:20px; }
+
+        .dash-card { background:var(--surface-card); border:1px solid var(--border-soft); border-radius:18px; box-shadow:var(--shadow-card); overflow:hidden; animation:cardIn 0.4s ease both; }
+        .dash-card-header { padding:16px 20px 0; display:flex; align-items:flex-start; justify-content:space-between; }
+        .dash-card-title  { font-size:13px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:7px; }
+        .dash-card-sub    { font-size:11px; color:var(--text-muted); margin-top:2px; }
+        .dash-card-big    { font-size:22px; font-weight:800; color:var(--text-primary); font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-chart-wrap  { padding:12px 18px 16px; }
+        .dash-card-link   { font-size:12px; font-weight:600; color:var(--brand-primary); text-decoration:none; display:flex; align-items:center; gap:3px; transition:gap 0.15s; }
+        .dash-card-link:hover { gap:6px; }
+        .dash-card-body   { padding:6px; }
+
+        .dash-two-col { display:grid; grid-template-columns:1fr 300px; gap:16px; align-items:stretch; }
+        .dash-left-col { display:flex; flex-direction:column; }
+        .dash-left-col .dash-card { flex:1; }
+
+        .dash-job-row  { display:flex; align-items:center; gap:12px; padding:11px 14px; border-radius:12px; text-decoration:none; transition:background 0.15s; }
+        .dash-job-row:hover { background:var(--surface-hover); }
+        .dash-job-icon { width:34px; height:34px; border-radius:9px; background:rgba(37,99,235,0.07); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .dash-job-title{ font-size:13px; font-weight:700; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .dash-job-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
+        .dash-job-badge{ padding:3px 10px; border-radius:99px; font-size:10.5px; font-weight:700; flex-shrink:0; display:flex; align-items:center; gap:4px; }
+        .dash-badge-dot{ width:5px; height:5px; border-radius:50%; }
+
+        .dash-pipeline   { padding:12px 18px 16px; display:flex; flex-direction:column; gap:11px; }
+        .dash-pipe-row   { display:flex; align-items:center; gap:9px; }
+        .dash-pipe-label { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text-secondary); min-width:100px; }
+        .dash-pipe-track { flex:1; height:5px; border-radius:99px; background:var(--border-soft); overflow:hidden; }
+        .dash-pipe-fill  { height:100%; border-radius:99px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
+        .dash-pipe-num   { font-size:12.5px; font-weight:800; color:var(--text-primary); min-width:18px; text-align:right; }
+
+        .dash-section-title{ font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:9px; display:flex; align-items:center; gap:6px; }
+        .dash-action-btn { display:flex; align-items:center; gap:11px; padding:11px 13px; border-radius:11px; text-decoration:none; border:1px solid var(--border-soft); background:var(--surface-card); box-shadow:var(--shadow-card); transition:all 0.17s; }
+        .dash-action-btn:hover { transform:translateX(2px); border-color:rgba(37,99,235,0.2); box-shadow:var(--shadow-card-hover); }
+        .dash-action-icon { width:32px; height:32px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+        .dash-action-title{ font-size:12.5px; font-weight:700; color:var(--text-primary); }
+        .dash-action-desc { font-size:11px; color:var(--text-muted); margin-top:1px; }
+
+        .dash-ai-cta { margin-top:14px; border-radius:14px; overflow:hidden; background:linear-gradient(135deg,#1e3a8a,#2563eb 55%,#4f46e5); padding:16px 18px; position:relative; box-shadow:0 6px 24px rgba(37,99,235,0.25); }
+        .dash-ai-cta::before { content:''; position:absolute; top:-30px; right:-30px; width:120px; height:120px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,0.08) 0%,transparent 70%); }
+        .dash-ai-cta-title{ font-size:13px; font-weight:800; color:white; position:relative; z-index:1; margin-bottom:3px; }
+        .dash-ai-cta-sub  { font-size:11px; color:rgba(255,255,255,0.58); position:relative; z-index:1; line-height:1.5; }
+        .dash-ai-cta-btn  { margin-top:11px; display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:8px; border:none; background:white; color:#2563eb; font-weight:700; font-size:12px; cursor:pointer; font-family:var(--font-body); text-decoration:none; position:relative; z-index:1; transition:all 0.15s; }
+        .dash-ai-cta-btn:hover { transform:scale(1.03); }
+
+        .dash-empty { padding:42px 20px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:10px; }
+        .dash-empty-icon { width:50px; height:50px; border-radius:13px; background:var(--surface-hover); border:1px solid var(--border-soft); display:flex; align-items:center; justify-content:center; }
+
+        @media(max-width:1200px){ .dash-stats{grid-template-columns:repeat(2,1fr)} .dash-charts-row,.dash-charts-row2{grid-template-columns:1fr} .dash-two-col{grid-template-columns:1fr} }
+        @media(max-width:768px) { .dash-main{margin-left:0} .dash-body{padding:16px 14px 80px} .dash-stats{grid-template-columns:1fr 1fr} .dash-greeting{flex-direction:column} }
       `}</style>
 
-      <div className="db-root">
+      <div className="dash-root">
         <Sidebar />
-        <div className="db-main">
+        <div className="dash-main">
           <AppHeader title="Dashboard" subtitle="Umurava AI — Talent Screening Platform" />
-          <div className="db-body">
+          <div className="dash-body">
 
             {/* Greeting */}
-            <div style={{ marginBottom:28, ...fade(.05) }}>
-              <h1 className="db-greet-title">{greeting}, {firstName} 👋</h1>
-              <p className="db-greet-sub">Here&apos;s your talent pipeline overview — {new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
+            <div className="dash-greeting">
+              <div style={{ position: "relative", zIndex: 1 }}>
+                <p className="dash-greeting-eyebrow">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
+                <h1 className="dash-greeting-title">{greeting}, {firstName} 👋</h1>
+                <p className="dash-greeting-sub">
+                  {loading ? "Loading your pipeline…"
+                    : jobs.length === 0 ? "Post your first job to begin AI-powered screening."
+                    : `${jobs.length} job${jobs.length !== 1 ? "s" : ""} · ${totalCandidates} candidate${totalCandidates !== 1 ? "s" : ""} · ${screeningJobs} in screening`}
+                </p>
+              </div>
+              <Link href="/jobs/create" className="dash-greeting-cta"><Zap size={14} /> Post a Job</Link>
             </div>
 
-            {/* Stats */}
-            <div className="db-stats">
-              {stats.map((s,i) => (
-                <div key={s.label} className="db-stat" style={{ "--sc":s.color, ...fade(.1+i*.07) } as any}>
-                  <div className="db-stat-top">
-                    <div className="db-stat-ico" style={{ background:s.bg }}><s.icon size={20} color={s.color} /></div>
-                    <div className="db-stat-live" style={{ background:`${s.color}16`,color:s.color }}>
-                      <span style={{ width:5,height:5,borderRadius:"50%",background:s.color,animation:"dbPulse 2.5s ease-in-out infinite" }} />
-                      Live
+            {/* Stat cards */}
+            <div className="dash-stats">
+              {stats.map((s, i) => (
+                <div key={s.label} className="dash-stat-card"
+                  style={{ animationDelay: `${i * 0.07}s`, ["--sac" as string]: s.color }}>
+                  <div className="dash-stat-top">
+                    <div className="dash-stat-icon" style={{ background: s.bg }}>
+                      <s.icon size={17} color={s.color} />
                     </div>
+                    <MiniSparkline data={s.spark} color={s.color} />
                   </div>
-                  <div className="db-stat-val">{loading?"—":s.value}</div>
-                  <div className="db-stat-label">{s.label}</div>
-                  <div className="db-stat-bottom">
-                    <span className="db-stat-trend">{s.trend}</span>
-                    <Sparkline data={s.spark} color={s.color} />
-                  </div>
+                  <p className="dash-stat-value">{loading ? "—" : s.value}</p>
+                  <p className="dash-stat-label">{s.label}</p>
+                  <p className="dash-stat-change" style={{ color: s.positive ? s.color : "var(--text-muted)" }}>
+                    {s.positive && <ArrowUpRight size={11} />}{s.change}
+                  </p>
                 </div>
               ))}
             </div>
 
-            {/* Banner */}
-            <div className="db-banner" style={fade(.38)}>
-              <div className="db-banner-dots" />
-              <div className="db-banner-ico" style={{ position:"relative",zIndex:1 }}><Sparkles size={26} color="white" /></div>
-              <div style={{ flex:1,minWidth:0,position:"relative",zIndex:1 }}>
-                <p className="db-banner-title">Umurava AI — Intelligent Talent Screening</p>
-                <p className="db-banner-sub">Post a job, upload candidates, and let our AI rank them in seconds. Bias-aware scoring powered by Gemini.</p>
-                <div className="db-banner-meta">
-                  {[{icon:Briefcase,val:`${jobs.length} job${jobs.length!==1?"s":""} posted`},{icon:Users,val:`${totalCandidates} candidate${totalCandidates!==1?"s":""}`},{icon:Brain,val:`${screeningJobs} screening${screeningJobs!==1?"s":""} active`}].map((chip,i)=>(
-                    <div key={i} className="db-banner-chip"><chip.icon size={12} color="rgba(255,255,255,0.7)" />{chip.val}</div>
-                  ))}
+            {/* Charts row 1: Candidate growth + Jobs posted */}
+            <div className="dash-charts-row">
+              <div className="dash-card">
+                <div className="dash-card-header">
+                  <div>
+                    <p className="dash-card-title"><Users size={14} color="#7c3aed" /> Candidate Growth</p>
+                    <p className="dash-card-sub">Cumulative candidates across all jobs</p>
+                  </div>
+                  <span className="dash-card-big">{loading ? "—" : totalCandidates}</span>
+                </div>
+                <div className="dash-chart-wrap">
+                  <AreaChart data={candidateSeries} color="#7c3aed" label="candidates" height={120} />
                 </div>
               </div>
-              <Link href="/jobs/create" className="db-banner-btn"><Plus size={15} /> Post a Job</Link>
+              <div className="dash-card">
+                <div className="dash-card-header">
+                  <div>
+                    <p className="dash-card-title"><Briefcase size={14} color="#2563eb" /> Jobs Posted</p>
+                    <p className="dash-card-sub">Total job postings over time</p>
+                  </div>
+                  <span className="dash-card-big">{loading ? "—" : jobs.length}</span>
+                </div>
+                <div className="dash-chart-wrap">
+                  <AreaChart data={jobSeries} color="#2563eb" label="jobs" height={120} />
+                </div>
+              </div>
             </div>
 
-            {/* 2-col */}
-            <div className="db-cols">
-              {/* Recent Jobs */}
-              <div className="db-card">
-                <div className="db-card-head">
-                  <span className="db-card-title"><Briefcase size={16} color="#2563eb" /> Recent Jobs</span>
-                  <Link href="/jobs" className="db-card-link">View all <ChevronRight size={13} /></Link>
-                </div>
-                {loading ? (
-                  <div style={{ padding:"40px 22px",textAlign:"center",color:"#94a3b8",fontSize:14 }}>Loading…</div>
-                ) : recentJobs.length===0 ? (
-                  <div className="db-empty">
-                    <div style={{ width:58,height:58,borderRadius:16,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center" }}><Briefcase size={24} color="#94a3b8" /></div>
-                    <p style={{ fontWeight:700,fontSize:15,color:"#0f172a" }}>No jobs yet</p>
-                    <p style={{ color:"#64748b",fontSize:13,maxWidth:260,lineHeight:1.6 }}>Create your first job posting to start screening candidates with AI.</p>
-                    <Link href="/jobs/create" style={{ marginTop:6,display:"inline-flex",alignItems:"center",gap:7,padding:"10px 20px",borderRadius:11,background:"linear-gradient(135deg,#2563eb,#7c3aed)",color:"#fff",fontWeight:700,fontSize:13.5,textDecoration:"none" }}>
-                      <Plus size={14} /> Post a Job
-                    </Link>
+            {/* Charts row 2: Bar chart + Donut */}
+            <div className="dash-charts-row2">
+              <div className="dash-card">
+                <div className="dash-card-header">
+                  <div>
+                    <p className="dash-card-title"><TrendingUp size={14} color="#0891b2" /> Pipeline Breakdown</p>
+                    <p className="dash-card-sub">Jobs and candidates by status</p>
                   </div>
-                ) : recentJobs.map((job,idx) => {
-                  const st = statusMap[job.status]||statusMap.closed;
-                  const pct = job.applicantsCount>0?Math.min(100,Math.round((job.applicantsCount/Math.max(job.applicantsCount,5))*100)):0;
-                  return (
-                    <Link key={job._id} href={`/jobs/${job._id}`} className="db-job">
-                      <div className="db-job-ico"><Briefcase size={17} color="#2563eb" /></div>
-                      <div style={{ flex:1,minWidth:0 }}>
-                        <p className="db-job-name">{job.title}</p>
-                        <p className="db-job-meta">{job.applicantsCount||0} candidates · {job.location||"Remote"}</p>
-                        <div style={{ marginTop:6 }}>
-                          <ProgressBar pct={pct} color={st.dot} delay={idx*120} />
-                        </div>
+                </div>
+                <div className="dash-chart-wrap">
+                  <BarChart bars={barData} height={130} />
+                </div>
+              </div>
+              <div className="dash-card">
+                <div className="dash-card-header">
+                  <div>
+                    <p className="dash-card-title"><Brain size={14} color="#0891b2" /> Job Status</p>
+                    <p className="dash-card-sub">Distribution by stage</p>
+                  </div>
+                </div>
+                <div className="dash-chart-wrap">
+                  <DonutChart
+                    segments={donutSegments.some((s) => s.value > 0) ? donutSegments : donutFallback}
+                    size={110}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom: Recent jobs + side panel */}
+            <div className="dash-two-col">
+              <div className="dash-left-col">
+                <div className="dash-card">
+                  <div className="dash-card-header" style={{ paddingBottom: 10 }}>
+                    <span className="dash-card-title"><Briefcase size={14} color="var(--brand-primary)" /> Recent Jobs</span>
+                    <Link href="/jobs" className="dash-card-link">View all <ArrowRight size={12} /></Link>
+                  </div>
+                  <div className="dash-card-body">
+                    {loading ? (
+                      <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                        <div style={{ width: 26, height: 26, border: "2.5px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 12px" }} />
+                        Loading…
                       </div>
-                      <span className="db-job-badge" style={{ background:st.bg,color:st.color }}>
-                        <span style={{ width:5,height:5,borderRadius:"50%",background:st.dot }} />
-                        {st.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-
-              {/* Quick Actions */}
-              <div>
-                <div className="db-eyebrow"><Zap size={13} color="#f59e0b" /> Quick Actions</div>
-                {quickActions.map(a => (
-                  <Link key={a.href} href={a.href} className="db-action">
-                    <div className="db-action-ico" style={{ background:a.bg }}><a.icon size={17} color={a.color} /></div>
-                    <div style={{ flex:1 }}>
-                      <p className="db-action-title">{a.title}</p>
-                      <p className="db-action-desc">{a.desc}</p>
-                    </div>
-                    <ChevronRight size={14} color="#cbd5e1" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* Charts row */}
-            <div className="db-bottom">
-              {/* Area chart */}
-              <div className="db-card">
-                <div className="db-card-head">
-                  <span className="db-card-title"><BarChart3 size={16} color="#2563eb" /> Candidate Growth</span>
-                  <span style={{ fontSize:11.5,fontWeight:600,color:"#94a3b8" }}>Last 7 days</span>
-                </div>
-                <div style={{ padding:"20px 22px 16px" }}>
-                  <div style={{ display:"flex",alignItems:"flex-end",gap:6,marginBottom:4 }}>
-                    <span style={{ fontFamily:"var(--font-display,sans-serif)",fontSize:32,fontWeight:800,color:"#0f172a",letterSpacing:"-1.5px",lineHeight:1 }}>{totalCandidates}</span>
-                    <span style={{ fontSize:13,color:"#16a34a",fontWeight:700,marginBottom:4 }}>total candidates</span>
+                    ) : recentJobs.length === 0 ? (
+                      <div className="dash-empty">
+                        <div className="dash-empty-icon"><Briefcase size={19} color="var(--text-muted)" /></div>
+                        <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)" }}>No jobs yet</p>
+                        <p style={{ color: "var(--text-muted)", fontSize: 12, maxWidth: 230 }}>Post your first job to start AI screening.</p>
+                        <Link href="/jobs/create" className="btn-primary" style={{ marginTop: 8, fontSize: 13 }}><Plus size={13} /> Post a Job</Link>
+                      </div>
+                    ) : recentJobs.map((job) => {
+                      const st = statusMap[job.status] || statusMap.closed;
+                      return (
+                        <Link key={job._id} href={`/jobs/${job._id}`} className="dash-job-row">
+                          <div className="dash-job-icon"><Briefcase size={15} color="#2563eb" /></div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p className="dash-job-title">{job.title}</p>
+                            <p className="dash-job-meta">{job.applicantsCount || 0} candidates · {job.location || "Remote"}</p>
+                          </div>
+                          <span className="dash-job-badge" style={{ background: st.bg, color: st.color }}>
+                            <span className="dash-badge-dot" style={{ background: st.dot }} />{st.label}
+                          </span>
+                        </Link>
+                      );
+                    })}
                   </div>
-                  <p style={{ fontSize:12.5,color:"#94a3b8",marginBottom:16 }}>Across all active job postings</p>
-                  <AreaChart data={areaData} labels={areaLabels} />
                 </div>
               </div>
 
-              {/* Donut chart */}
-              <div className="db-card">
-                <div className="db-card-head">
-                  <span className="db-card-title"><Target size={16} color="#7c3aed" /> Job Status</span>
-                  <span style={{ fontSize:11.5,fontWeight:600,color:"#94a3b8" }}>Breakdown</span>
-                </div>
-                <div style={{ padding:"22px 24px" }}>
-                  <DonutChart segments={[
-                    {label:"Open",      value:openJobs,      color:"#16a34a"},
-                    {label:"Screening", value:screeningJobs, color:"#2563eb"},
-                    {label:"Closed",    value:closedJobs,    color:"#94a3b8"},
-                  ]} />
-                  <div style={{ marginTop:20,display:"flex",flexDirection:"column",gap:10 }}>
-                    {[{label:"Open",value:openJobs,color:"#16a34a"},{label:"Screening",value:screeningJobs,color:"#2563eb"},{label:"Closed",value:closedJobs,color:"#94a3b8"}].map((sg,i)=>(
-                      <div key={sg.label}>
-                        <div style={{ display:"flex",justifyContent:"space-between",marginBottom:4 }}>
-                          <span style={{ fontSize:12,fontWeight:600,color:"#475569" }}>{sg.label}</span>
-                          <span style={{ fontSize:12,fontWeight:700,color:"#0f172a" }}>{sg.value}</span>
+              {/* Side panel */}
+              <div>
+                <div className="dash-card" style={{ marginBottom: 14 }}>
+                  <div className="dash-card-header" style={{ paddingBottom: 0 }}>
+                    <span className="dash-card-title"><TrendingUp size={14} color="var(--brand-primary)" /> Pipeline</span>
+                  </div>
+                  <div className="dash-pipeline">
+                    {[
+                      { label: "Open Jobs",   value: openJobs,       total: Math.max(jobs.length, 1), color: "#16a34a", dot: "#16a34a" },
+                      { label: "Screening",   value: screeningJobs,  total: Math.max(jobs.length, 1), color: "#2563eb", dot: "#2563eb" },
+                      { label: "Closed",      value: closedJobs,     total: Math.max(jobs.length, 1), color: "#94a3b8", dot: "#cbd5e1" },
+                      { label: "Candidates",  value: totalCandidates, total: Math.max(totalCandidates, 1), color: "#7c3aed", dot: "#7c3aed" },
+                    ].map((row) => (
+                      <div key={row.label} className="dash-pipe-row">
+                        <span className="dash-pipe-label">
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: row.dot, display: "inline-block", flexShrink: 0 }} />
+                          {row.label}
+                        </span>
+                        <div className="dash-pipe-track">
+                          <div className="dash-pipe-fill" style={{ width: loading ? "0%" : `${Math.min(100, (row.value / row.total) * 100)}%`, background: row.color }} />
                         </div>
-                        <ProgressBar pct={jobs.length>0?(sg.value/jobs.length)*100:0} color={sg.color} delay={i*150} />
+                        <span className="dash-pipe-num">{loading ? "—" : row.value}</span>
                       </div>
                     ))}
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Activity strip */}
-            <div className="db-strip">
-              <Activity size={15} color="#2563eb" />
-              <span style={{ fontSize:13,fontWeight:700,color:"#0f172a" }}>Platform Status</span>
-              {[{icon:Brain,label:"AI Screening",val:"Online",color:"#16a34a"},{icon:Sparkles,label:"Gemini AI",val:"Active",color:"#7c3aed"},{icon:Users,label:"Candidates",val:`${totalCandidates}`,color:"#0891b2"},{icon:Briefcase,label:"Jobs",val:`${jobs.length}`,color:"#2563eb"}].map(chip=>(
-                <div key={chip.label} className="db-strip-chip">
-                  <chip.icon size={13} color={chip.color} />
-                  <span style={{ color:"#94a3b8" }}>{chip.label}:</span>
-                  <span style={{ color:chip.color,fontWeight:700 }}>{loading?"…":chip.val}</span>
+                <p className="dash-section-title"><Sparkles size={12} color="var(--brand-primary)" /> Quick Actions</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {[
+                    { href: "/jobs/create", icon: Plus,       iconColor: "#2563eb", iconBg: "rgba(37,99,235,0.1)",  title: "Post a New Job",    desc: "Define role & requirements" },
+                    { href: "/applicants",  icon: Users,      iconColor: "#7c3aed", iconBg: "rgba(124,58,237,0.1)", title: "Upload Candidates", desc: "CSV, PDF, DOCX or manual" },
+                    { href: "/screenings",  icon: Brain,      iconColor: "#0891b2", iconBg: "rgba(8,145,178,0.1)",  title: "View Screenings",   desc: "AI-ranked results" },
+                    { href: "/candidates",  icon: ListChecks, iconColor: "#16a34a", iconBg: "rgba(22,163,74,0.1)",  title: "Browse Candidates", desc: "Explore the pool" },
+                  ].map((a) => (
+                    <Link key={a.href} href={a.href} className="dash-action-btn">
+                      <div className="dash-action-icon" style={{ background: a.iconBg }}><a.icon size={15} color={a.iconColor} /></div>
+                      <div style={{ flex: 1 }}>
+                        <p className="dash-action-title">{a.title}</p>
+                        <p className="dash-action-desc">{a.desc}</p>
+                      </div>
+                      <ArrowRight size={12} style={{ color: "var(--text-muted)" }} />
+                    </Link>
+                  ))}
                 </div>
-              ))}
+
+                <div className="dash-ai-cta">
+                  <p className="dash-ai-cta-title"><Sparkles size={12} style={{ display: "inline", marginRight: 5, verticalAlign: "middle" }} />Run AI Screening</p>
+                  <p className="dash-ai-cta-sub">Rank all candidates instantly with Gemini-powered bias-aware scoring.</p>
+                  <Link href="/screenings" className="dash-ai-cta-btn">Go <ArrowRight size={11} /></Link>
+                </div>
+              </div>
             </div>
 
           </div>
