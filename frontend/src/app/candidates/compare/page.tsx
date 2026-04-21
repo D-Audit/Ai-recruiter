@@ -156,7 +156,7 @@ function CompareContent() {
           border-radius: 14px; padding: 16px 20px;
           display: flex; align-items: flex-start; gap: 12px;
         }
-        .cp-bias-text { font-size: 13.5px; color: #92400e; line-height: 1.65; }
+        .cp-bias-text  { font-size: 13.5px; color: #92400e; line-height: 1.65; }
 
         /* Empty state */
         .cp-empty {
