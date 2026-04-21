@@ -12,7 +12,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Umurava AI — Talent Screening",
+  title: "Umurava AI ",
   description: "AI-powered talent screening platform. Screen hundreds of candidates in seconds with Gemini AI.",
   icons: { icon: "/favicon.ico" },
 };

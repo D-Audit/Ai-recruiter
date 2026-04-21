@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../store/slices/authSlice";
 import { RootState } from "../store";
 import {
-  LayoutDashboard, Briefcase, Users, LogOut, Brain,
+  LayoutDashboard, Briefcase, Users, LogOut,
   Menu, X, ListChecks, Settings, Zap,
 } from "lucide-react";
 import { clearAssistantContext } from "../store/slices/screeningSlice";
@@ -13,20 +13,20 @@ import { useEffect, useState } from "react";
 import { getMe } from "../services/authService";
 
 const navItems = [
-  { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard",   tag: null },
-  { href: "/jobs",       icon: Briefcase,        label: "Jobs",         tag: null },
-  { href: "/candidates", icon: Users,             label: "Candidates",   tag: null },
-  { href: "/screenings", icon: ListChecks,        label: "Screenings",   tag: "AI" },
+  { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard",  tag: null },
+  { href: "/jobs",       icon: Briefcase,        label: "Jobs",        tag: null },
+  { href: "/candidates", icon: Users,             label: "Candidates",  tag: null },
+  { href: "/screenings", icon: ListChecks,        label: "Screenings",  tag: "AI" },
 ];
 
 export default function Sidebar() {
-  const pathname  = usePathname();
-  const router    = useRouter();
-  const dispatch  = useDispatch();
-  const { user }  = useSelector((state: RootState) => state.auth);
-  const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
+  const router   = useRouter();
+  const dispatch = useDispatch();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const [isOpen,     setIsOpen]     = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  const [me, setMe] = useState<any>(null);
+  const [me,         setMe]         = useState<any>(null);
 
   useEffect(() => { setIsOpen(false); }, [pathname]);
   useEffect(() => {
@@ -49,16 +49,15 @@ export default function Sidebar() {
   return (
     <>
       <style>{`
-        /* ── Mobile trigger ── */
         .sb-trigger {
           display: none; position: fixed; top: 16px; left: 16px; z-index: 200;
           width: 40px; height: 40px; border-radius: 10px;
           background: #060d1a; border: 1px solid rgba(255,255,255,0.08);
           box-shadow: 0 4px 20px rgba(0,0,0,0.4);
           align-items: center; justify-content: center;
-          cursor: pointer; color: #64748b; transition: all 0.15s;
+          cursor: pointer; color: #94a3b8; transition: all 0.15s;
         }
-        .sb-trigger:hover { background: #0d1829; color: #94a3b8; }
+        .sb-trigger:hover { background: #0d1829; color: #e2e8f0; }
 
         .sb-overlay {
           display: none; position: fixed; inset: 0;
@@ -66,48 +65,46 @@ export default function Sidebar() {
           z-index: 149; animation: fadeIn 0.2s ease;
         }
 
-        /* ── Sidebar shell ── */
+        /* ── Shell ── */
         .sidebar {
           font-family: var(--font-body, system-ui);
           width: var(--sidebar-width, 260px);
           min-height: 100vh; position: fixed; left: 0; top: 0;
           display: flex; flex-direction: column; z-index: 150;
           background: #060d1a;
-          border-right: 1px solid rgba(255,255,255,0.04);
-          box-shadow: 4px 0 32px rgba(0,0,0,0.5);
+          border-right: 1px solid rgba(255,255,255,0.05);
+          box-shadow: 4px 0 40px rgba(0,0,0,0.55);
           transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
           overflow: hidden;
         }
-        /* Subtle ambient glow in top-left */
         .sidebar::before {
           content: '';
-          position: absolute; top: -60px; left: -60px;
-          width: 260px; height: 260px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(37,99,235,0.09) 0%, transparent 70%);
+          position: absolute; top: -80px; left: -80px;
+          width: 300px; height: 300px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(37,99,235,0.1) 0%, transparent 68%);
           pointer-events: none;
         }
-        /* Subtle ambient glow bottom-right */
         .sidebar::after {
           content: '';
           position: absolute; bottom: -80px; right: -80px;
-          width: 220px; height: 220px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(124,58,237,0.06) 0%, transparent 70%);
+          width: 240px; height: 240px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 68%);
           pointer-events: none;
         }
 
         /* ── Logo ── */
         .sb-logo {
-          padding: 20px 16px 16px;
-          border-bottom: 1px solid rgba(255,255,255,0.04);
+          padding: 22px 18px 18px;
+          border-bottom: 1px solid rgba(255,255,255,0.05);
           display: flex; align-items: center; gap: 12px;
           position: relative; z-index: 1;
         }
         @keyframes logoGlow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0), 0 4px 16px rgba(37,99,235,0.35); }
-          50%       { box-shadow: 0 0 0 6px rgba(37,99,235,0.08), 0 4px 20px rgba(37,99,235,0.5); }
+          50%       { box-shadow: 0 0 0 6px rgba(37,99,235,0.08), 0 4px 22px rgba(37,99,235,0.55); }
         }
         .sb-logo-icon {
-          width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+          width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
           background: linear-gradient(135deg, #1d4ed8 0%, #4f46e5 50%, #7c3aed 100%);
           display: flex; align-items: center; justify-content: center;
           animation: logoGlow 3.5s ease-in-out infinite;
@@ -116,147 +113,151 @@ export default function Sidebar() {
         .sb-logo-icon::after {
           content: '';
           position: absolute; top: 0; left: 0; right: 0; height: 50%;
-          background: linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 100%);
+          background: linear-gradient(180deg, rgba(255,255,255,0.2) 0%, transparent 100%);
           border-radius: 12px 12px 0 0;
         }
-        .sb-logo-wordmark { flex: 1; min-width: 0; }
         .sb-logo-name {
-          font-size: 15px; font-weight: 800; color: #f1f5f9;
+          font-size: 16px; font-weight: 800; color: #f1f5f9;
           letter-spacing: -0.4px; line-height: 1;
           font-family: var(--font-display, 'Syne', sans-serif);
         }
         .sb-logo-tag {
-          font-size: 9px; font-weight: 700; letter-spacing: 1.5px;
-          text-transform: uppercase; margin-top: 3px;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 1.6px;
+          text-transform: uppercase; margin-top: 4px;
           color: transparent;
-          background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+          background: linear-gradient(90deg, #60a5fa, #a78bfa);
           -webkit-background-clip: text; background-clip: text;
         }
 
         /* ── Section label ── */
         .sb-section-label {
-          padding: 20px 18px 7px;
-          font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.18);
-          text-transform: uppercase; letter-spacing: 1.8px;
+          padding: 20px 20px 8px;
+          font-size: 9.5px; font-weight: 700; color: rgba(255,255,255,0.22);
+          text-transform: uppercase; letter-spacing: 2px;
           position: relative; z-index: 1;
         }
 
         /* ── Nav ── */
         .sb-nav {
           flex: 1; padding: 2px 10px 8px;
-          display: flex; flex-direction: column; gap: 2px;
+          display: flex; flex-direction: column; gap: 3px;
           position: relative; z-index: 1;
         }
 
         .sb-link {
-          display: flex; align-items: center; gap: 10px;
-          padding: 9px 10px; border-radius: 10px;
+          display: flex; align-items: center; gap: 11px;
+          padding: 10px 12px; border-radius: 11px;
           text-decoration: none; font-weight: 500;
-          font-size: 13.5px; color: rgba(148,163,184,0.7);
-          transition: all 0.17s; position: relative;
+          font-size: 14.5px; color: rgba(148,163,184,0.75);
+          transition: all 0.18s; position: relative;
           border: 1px solid transparent;
+          letter-spacing: -0.01em;
         }
         .sb-link:hover {
-          color: #cbd5e1;
-          background: rgba(255,255,255,0.04);
-          border-color: rgba(255,255,255,0.04);
+          color: #e2e8f0;
+          background: rgba(255,255,255,0.06);
+          border-color: rgba(255,255,255,0.06);
         }
         .sb-link.active {
-          color: #e2e8f0;
-          background: rgba(37,99,235,0.12);
-          border-color: rgba(37,99,235,0.2);
-          font-weight: 600;
+          color: #ffffff;
+          background: rgba(37,99,235,0.15);
+          border-color: rgba(37,99,235,0.25);
+          font-weight: 700;
         }
-        /* Left accent bar */
         .sb-link.active::before {
           content: '';
-          position: absolute; left: -1px; top: 20%; height: 60%;
+          position: absolute; left: -1px; top: 18%; height: 64%;
           width: 3px; border-radius: 0 3px 3px 0;
           background: linear-gradient(180deg, #60a5fa, #818cf8);
         }
 
         .sb-icon {
-          width: 32px; height: 32px; border-radius: 8px;
+          width: 34px; height: 34px; border-radius: 9px;
           flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-          transition: all 0.17s; color: inherit;
+          transition: all 0.18s; color: inherit;
         }
         .sb-link.active .sb-icon {
-          background: rgba(59,130,246,0.15);
+          background: rgba(59,130,246,0.18);
           color: #93c5fd;
         }
         .sb-link-label { flex: 1; }
         .sb-ai-tag {
           font-size: 9px; font-weight: 800; letter-spacing: 0.8px;
-          padding: 2px 6px; border-radius: 5px;
-          background: linear-gradient(135deg, rgba(124,58,237,0.25), rgba(37,99,235,0.2));
-          color: #a78bfa; border: 1px solid rgba(124,58,237,0.2);
+          padding: 2px 7px; border-radius: 5px;
+          background: linear-gradient(135deg, rgba(124,58,237,0.28), rgba(37,99,235,0.22));
+          color: #c4b5fd; border: 1px solid rgba(124,58,237,0.25);
           text-transform: uppercase;
         }
 
         /* ── Divider ── */
         .sb-divider {
-          margin: 4px 10px;
+          margin: 6px 10px;
           height: 1px;
-          background: rgba(255,255,255,0.04);
+          background: rgba(255,255,255,0.05);
           position: relative; z-index: 1;
         }
 
         /* ── Footer ── */
         .sb-footer {
-          padding: 8px 10px 18px;
+          padding: 8px 10px 20px;
           position: relative; z-index: 1;
         }
+
+        /* User card */
         .sb-user {
-          display: flex; align-items: center; gap: 10px;
-          padding: 10px; border-radius: 10px;
+          display: flex; align-items: center; gap: 11px;
+          padding: 11px 12px; border-radius: 12px;
           cursor: pointer;
-          border: 1px solid rgba(255,255,255,0.05);
-          background: rgba(255,255,255,0.02);
+          border: 1px solid rgba(255,255,255,0.07);
+          background: rgba(255,255,255,0.04);
           transition: all 0.15s; margin-bottom: 4px;
           text-decoration: none;
         }
         .sb-user:hover {
-          background: rgba(255,255,255,0.05);
-          border-color: rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.08);
+          border-color: rgba(255,255,255,0.12);
         }
         .sb-avatar {
-          width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+          width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
           background: linear-gradient(135deg, #1d4ed8, #7c3aed);
           display: flex; align-items: center; justify-content: center;
-          font-size: 12px; font-weight: 800; color: white;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+          font-size: 12.5px; font-weight: 800; color: white;
+          box-shadow: 0 2px 10px rgba(37,99,235,0.35);
         }
         .sb-user-name {
-          font-size: 13px; font-weight: 600; color: #cbd5e1;
+          font-size: 13.5px; font-weight: 700; color: #e2e8f0;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .sb-user-email {
-          font-size: 10.5px; color: rgba(100,116,139,0.8);
+          font-size: 11px; color: rgba(148,163,184,0.65);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          margin-top: 1px;
-        }
-        .sb-footer-btn {
-          display: flex; align-items: center; gap: 9px;
-          padding: 8px 10px; border-radius: 9px;
-          border: none; background: transparent;
-          font-family: inherit; font-size: 13px; font-weight: 500;
-          width: 100%; text-align: left; cursor: pointer;
-          transition: all 0.15s; text-decoration: none;
-        }
-        .sb-footer-btn.settings {
-          color: rgba(100,116,139,0.7);
-        }
-        .sb-footer-btn.settings:hover {
-          color: #94a3b8; background: rgba(255,255,255,0.04);
-        }
-        .sb-footer-btn.signout {
-          color: rgba(100,116,139,0.6);
-        }
-        .sb-footer-btn.signout:hover {
-          color: #f87171; background: rgba(239,68,68,0.07);
+          margin-top: 2px;
         }
 
-        /* ── Logout modal ── */
+        /* Footer buttons */
+        .sb-footer-btn {
+          display: flex; align-items: center; gap: 10px;
+          padding: 9px 12px; border-radius: 10px;
+          border: none; background: transparent;
+          font-family: inherit; font-size: 14px; font-weight: 600;
+          width: 100%; text-align: left; cursor: pointer;
+          transition: all 0.15s; text-decoration: none;
+          letter-spacing: -0.01em;
+        }
+        .sb-footer-btn.settings {
+          color: rgba(148,163,184,0.8);
+        }
+        .sb-footer-btn.settings:hover {
+          color: #e2e8f0; background: rgba(255,255,255,0.05);
+        }
+        .sb-footer-btn.signout {
+          color: rgba(148,163,184,0.7);
+        }
+        .sb-footer-btn.signout:hover {
+          color: #fca5a5; background: rgba(239,68,68,0.08);
+        }
+
+        /* Logout modal */
         .sb-modal-overlay {
           position: fixed; inset: 0;
           background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
@@ -270,21 +271,21 @@ export default function Sidebar() {
         }
         .sb-modal-icon {
           width: 52px; height: 52px; border-radius: 14px;
-          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.18);
           display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
         }
-        .sb-modal-title { font-size: 17px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
-        .sb-modal-text { color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; margin-bottom: 22px; }
-        .sb-modal-btns { display: flex; gap: 10px; }
+        .sb-modal-title { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
+        .sb-modal-text  { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .sb-modal-btns  { display: flex; gap: 10px; }
         .sb-modal-cancel {
-          flex: 1; padding: 11px; border-radius: 10px;
+          flex: 1; padding: 12px; border-radius: 11px;
           border: 1.5px solid var(--border-soft); background: var(--surface-card);
           color: var(--text-secondary); font-weight: 600; font-size: 14px;
           cursor: pointer; font-family: inherit; transition: all 0.15s;
         }
         .sb-modal-cancel:hover { background: var(--surface-hover); }
         .sb-modal-confirm {
-          flex: 1; padding: 11px; border-radius: 10px; border: none;
+          flex: 1; padding: 12px; border-radius: 11px; border: none;
           background: #ef4444; color: white; font-weight: 700; font-size: 14px;
           cursor: pointer; font-family: inherit;
           box-shadow: 0 4px 14px rgba(239,68,68,0.3); transition: all 0.15s;
@@ -299,7 +300,6 @@ export default function Sidebar() {
         }
       `}</style>
 
-      {/* Mobile trigger */}
       <button className="sb-trigger" onClick={() => setIsOpen(true)} aria-label="Open menu">
         <Menu size={20} />
       </button>
@@ -310,16 +310,16 @@ export default function Sidebar() {
         {/* Logo */}
         <div className="sb-logo">
           <div className="sb-logo-icon">
-            <Zap size={19} color="white" />
+            <Zap size={20} color="white" />
           </div>
-          <div className="sb-logo-wordmark">
+          <div style={{ flex: 1, minWidth: 0 }}>
             <p className="sb-logo-name">Umurava AI</p>
             <p className="sb-logo-tag">Talent Screening</p>
           </div>
           {isOpen && (
             <button
               onClick={() => setIsOpen(false)}
-              style={{ marginLeft: "auto", background: "none", border: "none", color: "#4e6a82", cursor: "pointer", padding: 4, borderRadius: 7 }}
+              style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 4, borderRadius: 7 }}
             >
               <X size={18} />
             </button>
@@ -332,14 +332,8 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`sb-link${isActive ? " active" : ""}`}
-              >
-                <span className="sb-icon">
-                  <item.icon size={17} />
-                </span>
+              <Link key={item.href} href={item.href} className={`sb-link${isActive ? " active" : ""}`}>
+                <span className="sb-icon"><item.icon size={17} /></span>
                 <span className="sb-link-label">{item.label}</span>
                 {item.tag && <span className="sb-ai-tag">{item.tag}</span>}
               </Link>
@@ -360,22 +354,19 @@ export default function Sidebar() {
           </Link>
 
           <Link href="/settings" className="sb-footer-btn settings">
-            <Settings size={15} /> Settings
+            <Settings size={16} /> Settings
           </Link>
 
           <button className="sb-footer-btn signout" onClick={() => setShowLogout(true)}>
-            <LogOut size={15} /> Sign out
+            <LogOut size={16} /> Sign out
           </button>
         </div>
       </nav>
 
-      {/* Logout modal */}
       {showLogout && (
         <div className="sb-modal-overlay" onClick={() => setShowLogout(false)}>
           <div className="sb-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sb-modal-icon">
-              <LogOut size={22} color="#ef4444" />
-            </div>
+            <div className="sb-modal-icon"><LogOut size={22} color="#ef4444" /></div>
             <p className="sb-modal-title">Sign out?</p>
             <p className="sb-modal-text">You'll be redirected to the login page. Any unsaved changes will be lost.</p>
             <div className="sb-modal-btns">
