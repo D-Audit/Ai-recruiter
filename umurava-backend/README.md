@@ -11,9 +11,9 @@ Built by **Debug Thugs** · Umurava AI Hackathon 2026 · Kigali, Rwanda
 
 | | URL |
 |--|--|
-| 🌐 Frontend (Vercel) | https://umurava-ai.vercel.app |
-| ⚙️ Backend API (Railway) | https://umurava-backend.up.railway.app |
-| 📁 GitHub | https://github.com/donjesuskayiranga/ai-recruiter |
+| 🌐 Frontend (Vercel) | https://ai-umurava.vercel.app |
+| ⚙️ Backend API (Railway) | https://ai-recruiter-production-c6b5.up.railway.app/ |
+| 📁 GitHub | https://github.com/D-Audit/ai-recruiter |
 
 ---
 
@@ -61,22 +61,7 @@ Umurava AI is a full-stack recruiter platform that lets hiring teams:
 | Scenario 1: Umurava platform profiles | Select from seeded Umurava talent pool, official schema |
 | Scenario 2: External candidates | CSV upload, Excel (.xlsx), PDF resumes, DOCX, manual form entry |
 
-### What Makes Us Unique
 
-| Feature | Us | Competitors |
-|---------|-----|-------------|
-| Full backend with MongoDB | ✅ | ❌ Frontend-only |
-| Exact Umurava talent schema | ✅ | ❌ Custom schema |
-| Dual scenario handling | ✅ | Partial |
-| Side-by-side comparison table | ✅ | ❌ |
-| Upskilling paths per candidate | ✅ | ❌ |
-| Adjacent roles suggestion | ✅ | ❌ |
-| AI chat assistant (context-aware) | ✅ | Basic only |
-| Semantic 24h caching | ✅ | ✅ |
-| Email verification | ✅ | ✅ |
-| Confidence badges | ✅ | ✅ |
-| Bias detection notices | ✅ | ✅ |
-| Batch processing 100+ candidates | ✅ | ✅ |
 
 ---
 
@@ -284,7 +269,7 @@ STEP 16 Human recruiter reviews, compares, and decides
 | TypeScript | 5.x | Type-safe development |
 | Express.js | 4.x | REST API framework |
 | MongoDB + Mongoose | 7.x + 8.x | Database and ODM |
-| Google Gemini API | gemini-2.5-flash-lite | AI screening engine (mandatory) |
+| Google Gemini API | gemini-2.5-flash-lite | AI screening engine  |
 | JWT + Bcryptjs | 9.x + 3.x | Auth and password hashing |
 | Multer | 2.x | File upload handling |
 | csv-parser | 3.x | CSV file processing |
@@ -425,7 +410,7 @@ ai-recruiter/
 ### Step 1 — Clone
 
 ```bash
-git clone https://github.com/donjesuskayiranga/ai-recruiter.git
+git clone https://D-Audit/ai-recruiter.git
 cd ai-recruiter
 ```
 
@@ -623,134 +608,6 @@ curl -X POST https://umurava-backend.up.railway.app/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Who is the best candidate for React work?", "context": {}}'
 ```
-
----
-
-## 9. Deployment Guide
-
-### Deploy Backend to Railway
-
-**Step 1** — Go to https://railway.app and log in with GitHub
-
-**Step 2** — Click "New Project" → "Deploy from GitHub repo"
-
-**Step 3** — Select your `ai-recruiter` repository
-
-**Step 4** — Set the root directory to `umurava-backend`
-
-**Step 5** — Add all environment variables in Railway dashboard:
-
-```
-PORT             = 5000
-NODE_ENV         = production
-MONGODB_URI      = mongodb+srv://... (your Atlas URI)
-JWT_SECRET       = your_long_secret_key
-GEMINI_API_KEY   = your_gemini_api_key
-FRONTEND_URL     = https://your-app.vercel.app
-```
-
-**Step 6** — Set the start command:
-
-```
-npm run build && npm start
-```
-
-**Step 7** — Deploy. Railway gives you a URL like:
-```
-https://umurava-backend-production.up.railway.app
-```
-
----
-
-### Set Up MongoDB Atlas (for Railway)
-
-**Step 1** — Go to https://cloud.mongodb.com
-
-**Step 2** — Create a free M0 cluster (512MB free)
-
-**Step 3** — Create a database user (username + password)
-
-**Step 4** — Add `0.0.0.0/0` to IP allowlist (allow all for Railway)
-
-**Step 5** — Click "Connect" → "Connect your application"
-
-**Step 6** — Copy the connection string:
-```
-mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/umurava_db?retryWrites=true&w=majority
-```
-
-**Step 7** — Paste into `MONGODB_URI` on Railway
-
----
-
-### Deploy Frontend to Vercel
-
-**Step 1** — Go to https://vercel.com and log in with GitHub
-
-**Step 2** — Click "Add New Project" → Import `ai-recruiter`
-
-**Step 3** — Set root directory to `frontend`
-
-**Step 4** — Add environment variable:
-
-```
-NEXT_PUBLIC_API_URL = https://your-backend.up.railway.app/api
-```
-
-**Step 5** — Click Deploy. Vercel builds automatically.
-
-**Step 6** — Copy your Vercel URL (e.g. `https://umurava-ai.vercel.app`)
-
-**Step 7** — Go back to Railway → Update `FRONTEND_URL` to your Vercel URL → Redeploy
-
----
-
-### After Deployment — Seed the Database
-
-Run this once to add 5 Umurava test profiles to your Atlas database:
-
-```bash
-cd umurava-backend
-# Edit .env to use your Atlas MONGODB_URI temporarily
-npm run seed
-```
-
-Or use MongoDB Atlas Data Explorer to verify the `applicants` collection is populated.
-
----
-
-### Deployment Checklist
-
-```
-Backend (Railway):
-□ Repository connected
-□ Root directory = umurava-backend
-□ All 5 environment variables set
-□ Build command = npm run build && npm start
-□ Database seeded via npm run seed
-□ Health check at / returns { status: "ok" }
-
-Frontend (Vercel):
-□ Repository connected
-□ Root directory = frontend
-□ NEXT_PUBLIC_API_URL set to Railway URL + /api
-□ npm run build passes with no errors
-□ Login page loads and connects to backend
-
-Final checks:
-□ Register a new account — works
-□ Create a job — works
-□ Select Umurava profiles — works
-□ Run AI screening — works (requires Gemini key)
-□ GitHub repo is public
-□ README.md exists in root
-□ Submit on Umurava platform with:
-   - Live frontend URL
-   - Live backend URL
-   - GitHub URL
-   - 2 Google Slides presentation
-```
-
 ---
 
 ## 10. Assumptions and Limitations
@@ -801,11 +658,10 @@ Built with ❤️ for the Umurava AI Hackathon 2026 · Kigali, Rwanda
 
 | Member | Role | Responsibility |
 |--------|------|----------------|
-| Kayiranga Donjesus | Team Lead · AI + Backend | Gemini AI integration, backend APIs, database architecture |
-| Marius Sangwa | Frontend Developer | UI/UX, dashboard, screening results pages |
-| Member 3 | Backend Developer | Routes, data processing, file upload services |
-| Member 4 | UI/UX Designer | Figma designs, user experience, landing page |
-| Member 5 | Full Stack Support | Integration testing, deployment, documentation |
+| KAYIRANGA Don Jesus | Team Lead · AI + Backend | Gemini AI integration, backend APIs, database architecture |
+| IMPANO Umuhoza Hope | Frontend Developer | UI/UX, dashboard, screening results pages |
+| SANGWA Marius | Backend Developer | Routes, data processing, file upload services |
+| UTUJE Cadeau Isabelle | Full Stack Support | Integration testing, deployment, documentation |
 
 ---
 

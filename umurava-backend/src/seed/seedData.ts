@@ -1,10 +1,9 @@
-// src/seed/seedData.ts  —  run: npm run seed
+
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 dotenv.config();
 
-// Seed profiles have NO jobIds — they are the platform pool.
-// When a recruiter selects them for a job, jobIds gets populated via $addToSet.
+
 const profiles = [
   {
     firstName: "Alice", lastName: "Uwimana",
@@ -212,5 +211,4 @@ async function seed() {
 
   process.exit(0);
 }
-
 seed().catch((e) => { console.error("❌ Seed failed:", e); process.exit(1); });

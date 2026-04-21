@@ -11,8 +11,7 @@ function AuthRestorer({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch<AppDispatch>();
 
   useEffect(() => {
-    // On every page load/refresh: if a token exists in localStorage,
-    // call GET /auth/me to reload the user object into Redux.
+    
     dispatch(restoreUser());
   }, [dispatch]);
 
