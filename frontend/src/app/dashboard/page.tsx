@@ -325,8 +325,8 @@ export default function DashboardPage() {
         }
         .dash-greeting::before { content:''; position:absolute; top:-80px; right:-80px; width:280px; height:280px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,0.07) 0%,transparent 70%); pointer-events:none; }
         .dash-greeting-eyebrow { font-size:10px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase; color:rgba(255,255,255,0.45); margin-bottom:5px; }
-        .dash-greeting-title   { font-size:23px; font-weight:800; color:white; letter-spacing:-0.04em; font-family:var(--font-display,'Syne',sans-serif); }
-        .dash-greeting-sub     { font-size:13px; color:rgba(255,255,255,0.55); margin-top:6px; }
+        .dash-greeting-title   { font-size:26px; font-weight:800; color:white; letter-spacing:-0.04em; font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-greeting-sub     { font-size:14px; color:rgba(255,255,255,0.72); margin-top:6px; font-weight:500; }
         .dash-greeting-cta     { flex-shrink:0; display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; background:rgba(255,255,255,0.13); color:white; font-weight:700; font-size:13px; text-decoration:none; border:1px solid rgba(255,255,255,0.2); transition:all 0.18s; position:relative; z-index:1; }
         .dash-greeting-cta:hover { background:rgba(255,255,255,0.22); transform:translateY(-1px); }
 
@@ -337,48 +337,55 @@ export default function DashboardPage() {
         .dash-stat-card:hover::after { opacity:1; }
         .dash-stat-top   { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; }
         .dash-stat-icon  { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; }
-        .dash-stat-value { font-size:30px; font-weight:800; color:var(--text-primary); letter-spacing:-0.05em; line-height:1; font-family:var(--font-display,'Syne',sans-serif); }
-        .dash-stat-label { font-size:10.5px; color:var(--text-muted); font-weight:600; margin-top:4px; text-transform:uppercase; letter-spacing:0.07em; }
-        .dash-stat-change{ font-size:11px; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:3px; }
+        .dash-stat-value { font-size:32px; font-weight:900; color:var(--text-primary); letter-spacing:-0.05em; line-height:1; font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-stat-label { font-size:11.5px; color:var(--text-secondary); font-weight:700; margin-top:5px; text-transform:uppercase; letter-spacing:0.06em; }
+        .dash-stat-change{ font-size:12px; font-weight:700; margin-top:9px; display:flex; align-items:center; gap:4px; }
 
         .dash-charts-row  { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
         .dash-charts-row2 { display:grid; grid-template-columns:1.4fr 1fr; gap:16px; margin-bottom:20px; }
 
         .dash-card { background:var(--surface-card); border:1px solid var(--border-soft); border-radius:18px; box-shadow:var(--shadow-card); overflow:hidden; animation:cardIn 0.4s ease both; }
         .dash-card-header { padding:16px 20px 0; display:flex; align-items:flex-start; justify-content:space-between; }
-        .dash-card-title  { font-size:13px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:7px; }
-        .dash-card-sub    { font-size:11px; color:var(--text-muted); margin-top:2px; }
-        .dash-card-big    { font-size:22px; font-weight:800; color:var(--text-primary); font-family:var(--font-display,'Syne',sans-serif); }
+        .dash-card-title  { font-size:14px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:7px; }
+        .dash-card-sub    { font-size:12px; color:var(--text-secondary); margin-top:3px; font-weight:500; }
+        .dash-card-big    { font-size:26px; font-weight:900; color:var(--text-primary); font-family:var(--font-display,'Syne',sans-serif); }
         .dash-chart-wrap  { padding:12px 18px 16px; }
         .dash-card-link   { font-size:12px; font-weight:600; color:var(--brand-primary); text-decoration:none; display:flex; align-items:center; gap:3px; transition:gap 0.15s; }
         .dash-card-link:hover { gap:6px; }
         .dash-card-body   { padding:6px; }
 
-        .dash-two-col { display:grid; grid-template-columns:1fr 300px; gap:16px; align-items:stretch; }
-        .dash-left-col { display:flex; flex-direction:column; }
-        .dash-left-col .dash-card { flex:1; }
+        .dash-two-col { display:grid; grid-template-columns:1fr 300px; gap:16px; align-items:start; }
+        .dash-left-col { display:flex; flex-direction:column; gap:16px; }
+        .dash-insight-row { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:12px; transition:background 0.15s; }
+        .dash-insight-row:hover { background:var(--surface-hover); }
+        .dash-insight-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:white; flex-shrink:0; }
+        .dash-insight-name { font-size:13px; font-weight:700; color:var(--text-primary); }
+        .dash-insight-meta { font-size:11px; color:var(--text-muted); margin-top:1px; }
+        .dash-score-pill { padding:3px 9px; border-radius:99px; font-size:11px; font-weight:800; flex-shrink:0; }
+        .dash-score-bar-wrap { flex:1; height:4px; border-radius:99px; background:var(--border-soft); overflow:hidden; }
+        .dash-score-bar { height:100%; border-radius:99px; transition:width 0.7s cubic-bezier(0.4,0,0.2,1); }
 
         .dash-job-row  { display:flex; align-items:center; gap:12px; padding:11px 14px; border-radius:12px; text-decoration:none; transition:background 0.15s; }
         .dash-job-row:hover { background:var(--surface-hover); }
         .dash-job-icon { width:34px; height:34px; border-radius:9px; background:rgba(37,99,235,0.07); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-        .dash-job-title{ font-size:13px; font-weight:700; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .dash-job-meta { font-size:11px; color:var(--text-muted); margin-top:2px; }
+        .dash-job-title{ font-size:13.5px; font-weight:700; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .dash-job-meta { font-size:12px; color:var(--text-secondary); margin-top:2px; font-weight:500; }
         .dash-job-badge{ padding:3px 10px; border-radius:99px; font-size:10.5px; font-weight:700; flex-shrink:0; display:flex; align-items:center; gap:4px; }
         .dash-badge-dot{ width:5px; height:5px; border-radius:50%; }
 
         .dash-pipeline   { padding:12px 18px 16px; display:flex; flex-direction:column; gap:11px; }
         .dash-pipe-row   { display:flex; align-items:center; gap:9px; }
-        .dash-pipe-label { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text-secondary); min-width:100px; }
+        .dash-pipe-label { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:600; color:var(--text-primary); min-width:100px; }
         .dash-pipe-track { flex:1; height:5px; border-radius:99px; background:var(--border-soft); overflow:hidden; }
         .dash-pipe-fill  { height:100%; border-radius:99px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
-        .dash-pipe-num   { font-size:12.5px; font-weight:800; color:var(--text-primary); min-width:18px; text-align:right; }
+        .dash-pipe-num   { font-size:14px; font-weight:800; color:var(--text-primary); min-width:18px; text-align:right; }
 
         .dash-section-title{ font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:9px; display:flex; align-items:center; gap:6px; }
         .dash-action-btn { display:flex; align-items:center; gap:11px; padding:11px 13px; border-radius:11px; text-decoration:none; border:1px solid var(--border-soft); background:var(--surface-card); box-shadow:var(--shadow-card); transition:all 0.17s; }
         .dash-action-btn:hover { transform:translateX(2px); border-color:rgba(37,99,235,0.2); box-shadow:var(--shadow-card-hover); }
         .dash-action-icon { width:32px; height:32px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-        .dash-action-title{ font-size:12.5px; font-weight:700; color:var(--text-primary); }
-        .dash-action-desc { font-size:11px; color:var(--text-muted); margin-top:1px; }
+        .dash-action-title{ font-size:13px; font-weight:700; color:var(--text-primary); }
+        .dash-action-desc { font-size:11.5px; color:var(--text-secondary); margin-top:1px; font-weight:500; }
 
         .dash-ai-cta { margin-top:14px; border-radius:14px; overflow:hidden; background:linear-gradient(135deg,#1e3a8a,#2563eb 55%,#4f46e5); padding:16px 18px; position:relative; box-shadow:0 6px 24px rgba(37,99,235,0.25); }
         .dash-ai-cta::before { content:''; position:absolute; top:-30px; right:-30px; width:120px; height:120px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,0.08) 0%,transparent 70%); }
@@ -494,6 +501,7 @@ export default function DashboardPage() {
             {/* Bottom: Recent jobs + side panel */}
             <div className="dash-two-col">
               <div className="dash-left-col">
+                {/* Recent Jobs */}
                 <div className="dash-card">
                   <div className="dash-card-header" style={{ paddingBottom: 10 }}>
                     <span className="dash-card-title"><Briefcase size={14} color="var(--brand-primary)" /> Recent Jobs</span>
@@ -501,8 +509,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="dash-card-body">
                     {loading ? (
-                      <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
-                        <div style={{ width: 26, height: 26, border: "2.5px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 12px" }} />
+                      <div style={{ padding: 28, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                        <div style={{ width: 24, height: 24, border: "2.5px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 10px" }} />
                         Loading…
                       </div>
                     ) : recentJobs.length === 0 ? (
@@ -525,6 +533,54 @@ export default function DashboardPage() {
                             <span className="dash-badge-dot" style={{ background: st.dot }} />{st.label}
                           </span>
                         </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Candidate Insights card */}
+                <div className="dash-card">
+                  <div className="dash-card-header" style={{ paddingBottom: 12 }}>
+                    <div>
+                      <span className="dash-card-title"><Users size={14} color="#7c3aed" /> Candidate Insights</span>
+                      <p className="dash-card-sub">CV load per job posting</p>
+                    </div>
+                    <Link href="/candidates" className="dash-card-link">View all <ArrowRight size={12} /></Link>
+                  </div>
+                  <div className="dash-card-body" style={{ paddingBottom: 8 }}>
+                    {totalCandidates === 0 ? (
+                      <div style={{ padding: "18px 14px", display: "flex", alignItems: "center", gap: 14 }}>
+                        <div style={{ width: 42, height: 42, borderRadius: 11, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <Users size={17} color="#7c3aed" />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 3 }}>No candidates uploaded yet</p>
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>Upload CVs to a job then run AI screening to see ranked scores here.</p>
+                          <Link href="/applicants" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 7, fontSize: 12, fontWeight: 700, color: "#7c3aed", textDecoration: "none" }}>
+                            Upload candidates <ArrowRight size={11} />
+                          </Link>
+                        </div>
+                      </div>
+                    ) : jobs.slice(0, 5).map((job, i) => {
+                      const colors = ["#7c3aed","#2563eb","#0891b2","#16a34a","#f59e0b"];
+                      const c = colors[i % colors.length];
+                      const maxCandidates = Math.max(...jobs.map((j: any) => j.applicantsCount || 0), 1);
+                      const pct = Math.min(100, ((job.applicantsCount || 0) / maxCandidates) * 100);
+                      const initials = job.title.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+                      return (
+                        <div key={job._id} className="dash-insight-row">
+                          <div className="dash-insight-avatar" style={{ background: c, width: 32, height: 32, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "white", flexShrink: 0 }}>{initials}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p className="dash-insight-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.title}</p>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+                              <div className="dash-score-bar-wrap">
+                                <div className="dash-score-bar" style={{ width: `${pct}%`, background: c }} />
+                              </div>
+                              <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{job.applicantsCount || 0} cv{job.applicantsCount !== 1 ? "s" : ""}</span>
+                            </div>
+                          </div>
+                          <span className="dash-score-pill" style={{ background: `${c}15`, color: c }}>{job.status}</span>
+                        </div>
                       );
                     })}
                   </div>

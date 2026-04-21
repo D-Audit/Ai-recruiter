@@ -16,7 +16,7 @@ function CompareContent() {
   const sp = useSearchParams();
   const jobId = sp.get("jobId") || "";
   const ids = sp.get("ids")?.split(",").filter(Boolean) || [];
-  const backHref = jobId ? `/screenings/${jobId}` : "/screenings";
+  const backHref = jobId ? `/screenings?jobId=${jobId}` : "/screenings";
 
   const mutedLink: CSSProperties = {
     color: "#64748b",

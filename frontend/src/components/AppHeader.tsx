@@ -78,16 +78,23 @@ const AppHeader: React.FC<AppHeaderProps> = ({
 
         .header-wrapper {
           position: sticky; top: 0; z-index: 100;
-          background: rgba(255,255,255,0.92);
-          backdrop-filter: blur(20px) saturate(1.4);
-          -webkit-backdrop-filter: blur(20px) saturate(1.4);
-          border-bottom: 1px solid rgba(226,232,240,0.7);
-          box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 4px 24px rgba(0,0,0,0.03);
+          background: rgba(255,255,255,0.96);
+          backdrop-filter: blur(24px) saturate(1.6);
+          -webkit-backdrop-filter: blur(24px) saturate(1.6);
+          border-bottom: 1px solid rgba(226,232,240,0.8);
+          box-shadow: 0 1px 0 rgba(0,0,0,0.05), 0 4px 28px rgba(0,0,0,0.04);
+        }
+        /* Colored accent line at very top of header */
+        .header-wrapper::before {
+          content: '';
+          position: absolute; top: 0; left: 0; right: 0; height: 2.5px;
+          background: linear-gradient(90deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
+          z-index: 1;
         }
         html.dark .header-wrapper {
-          background: rgba(13,17,23,0.88);
-          border-bottom-color: rgba(255,255,255,0.05);
-          box-shadow: 0 1px 0 rgba(0,0,0,0.2), 0 4px 24px rgba(0,0,0,0.15);
+          background: rgba(8,12,20,0.95);
+          border-bottom-color: rgba(255,255,255,0.06);
+          box-shadow: 0 1px 0 rgba(0,0,0,0.3), 0 4px 28px rgba(0,0,0,0.2);
         }
 
         .app-header {
@@ -99,20 +106,17 @@ const AppHeader: React.FC<AppHeaderProps> = ({
         /* Left: page identity */
         .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
         .header-page-icon {
-          width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
-          background: linear-gradient(135deg, rgba(37,99,235,0.1), rgba(124,58,237,0.08));
-          border: 1px solid rgba(37,99,235,0.12);
-          display: flex; align-items: center; justify-content: center;
+          display: none;
         }
         .header-title {
-          font-size: 16px; font-weight: 800; color: var(--text-primary);
-          letter-spacing: -0.03em; line-height: 1.2;
+          font-size: 17px; font-weight: 800; color: var(--text-primary);
+          letter-spacing: -0.04em; line-height: 1.2;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           font-family: var(--font-display, 'Syne', sans-serif);
         }
         .header-subtitle {
-          font-size: 11.5px; color: var(--text-muted); margin-top: 1px;
-          white-space: nowrap;
+          font-size: 12px; color: var(--text-secondary); margin-top: 2px;
+          white-space: nowrap; font-weight: 500;
         }
 
         /* Right controls */
@@ -209,7 +213,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
           box-shadow: 0 2px 6px rgba(37,99,235,0.3);
         }
         .header-profile-name {
-          font-size: 13px; font-weight: 600; color: var(--text-primary);
+          font-size: 13px; font-weight: 700; color: var(--text-primary);
         }
 
         /* ── Profile dropdown ── */
@@ -303,11 +307,11 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       <header className="app-header">
         {/* Left */}
         <div className="header-left">
-          <div className="header-page-icon">
-            <span style={{ fontSize: 14, fontWeight: 800, background: "var(--brand-gradient)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              {title.slice(0, 1)}
-            </span>
-          </div>
+          {/* Gradient left accent bar */}
+          <div style={{
+            width: 3, height: 32, borderRadius: 99, flexShrink: 0,
+            background: "linear-gradient(180deg, #2563eb, #7c3aed)",
+          }} />
           <div>
             <h1 className="header-title">{title}</h1>
             {subtitle && <p className="header-subtitle">{subtitle}</p>}

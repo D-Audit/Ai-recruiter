@@ -3,45 +3,45 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
-import { getAllJobs } from "../../services/jobService";
-import { deleteJob } from "../../services/jobService";  // ← FIX: was "../../store/slices/jobSlice" (doesn't export deleteJob)
-import { AppDispatch, RootState } from "../../store";
+import { getAllJobs, deleteJob } from "../../services/jobService";
+import { AppDispatch } from "../../store";
 import toast from "react-hot-toast";
 import {
   Briefcase, Plus, Trash2, Users, MapPin, Clock,
-  Search, ChevronRight, Eye, Sparkles,
+  Search, Eye, Sparkles, ChevronRight, Building2,
+  TrendingUp, CircleDot, CheckCircle, XCircle, Filter,
 } from "lucide-react";
 
 export default function JobsPage() {
-  const router = useRouter();
+  const router  = useRouter();
   const dispatch = useDispatch<AppDispatch>();
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [jobs, setJobs]               = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState("");
+  const [filter, setFilter]           = useState<"all"|"open"|"screening"|"closed">("all");
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting, setDeleting]       = useState(false);
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) { router.push("/"); return; }
-    getAllJobs()
-      .then((d) => setJobs(d.jobs || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    getAllJobs().then((d) => setJobs(d.jobs || [])).catch(() => {}).finally(() => setLoading(false));
   }, [router]);
 
-  const filtered = jobs.filter((j) =>
-    !search || j.title?.toLowerCase().includes(search.toLowerCase()) || j.location?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = jobs.filter((j) => {
+    const matchSearch = !search || j.title?.toLowerCase().includes(search.toLowerCase()) || j.location?.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === "all" || j.status === filter;
+    return matchSearch && matchFilter;
+  });
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await deleteJob(deleteTarget.id);   // ← now calls service directly (no dispatch needed)
+      await deleteJob(deleteTarget.id);
       setJobs((prev) => prev.filter((j) => j._id !== deleteTarget.id));
       toast.success("Job deleted");
       setDeleteTarget(null);
@@ -52,66 +52,147 @@ export default function JobsPage() {
     }
   };
 
-  const statusConfig: Record<string, { bg: string; color: string; dot: string; label: string }> = {
-    open:      { bg: "#dcfce7", color: "#16a34a", dot: "#22c55e", label: "Open" },
-    screening: { bg: "#dbeafe", color: "#2563eb", dot: "#3b82f6", label: "Screening" },
-    closed:    { bg: "#f1f5f9", color: "#64748b", dot: "#94a3b8", label: "Closed" },
+  const statusConfig: Record<string, { bg: string; color: string; dot: string; label: string; icon: any }> = {
+    open:      { bg: "rgba(22,163,74,0.1)",  color: "#15803d", dot: "#22c55e", label: "Open",      icon: CircleDot },
+    screening: { bg: "rgba(37,99,235,0.1)",  color: "#1d4ed8", dot: "#3b82f6", label: "Screening", icon: TrendingUp },
+    closed:    { bg: "rgba(100,116,139,0.1)",color: "#475569", dot: "#94a3b8", label: "Closed",    icon: XCircle },
+  };
+
+  const counts = {
+    all: jobs.length,
+    open: jobs.filter(j => j.status === "open").length,
+    screening: jobs.filter(j => j.status === "screening").length,
+    closed: jobs.filter(j => j.status === "closed").length,
   };
 
   return (
     <>
       <style>{`
-        .jp-root { display: flex; font-family: var(--font-body, system-ui); }
-        .jp-main { margin-left: var(--sidebar-width); min-height: 100vh; background: var(--surface-base); flex: 1; display: flex; flex-direction: column; }
-        .jp-body { padding: 28px 40px 100px; flex: 1; animation: fadeIn 0.28s ease; }
+        .jp-root { display:flex; font-family:var(--font-body); }
+        .jp-main { margin-left:var(--sidebar-width); min-height:100vh; background:var(--surface-base); flex:1; display:flex; flex-direction:column; }
+        .jp-body { padding:24px 32px 100px; flex:1; }
 
-        .jp-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
-        .jp-search-wrap { flex: 1; min-width: 220px; max-width: 340px; position: relative; }
-        .jp-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+        /* ── Stats bar ── */
+        .jp-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; }
+        .jp-stat {
+          background:var(--surface-card); border:1px solid var(--border-soft);
+          border-radius:14px; padding:16px 18px;
+          box-shadow:var(--shadow-card); cursor:pointer;
+          transition:all 0.15s; border-bottom:2px solid transparent;
+          display:flex; align-items:center; gap:12px;
+        }
+        .jp-stat:hover { transform:translateY(-1px); box-shadow:var(--shadow-card-hover); }
+        .jp-stat.active { border-bottom-color:var(--stat-accent,#2563eb); background:var(--surface-hover); }
+        .jp-stat-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .jp-stat-val  { font-size:22px; font-weight:900; color:var(--text-primary); line-height:1; font-family:var(--font-display,'Syne',sans-serif); }
+        .jp-stat-lbl  { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.07em; margin-top:2px; }
+
+        /* ── Toolbar ── */
+        .jp-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+        .jp-search-wrap { position:relative; flex:1; min-width:220px; max-width:380px; }
+        .jp-search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
         .jp-search {
-          width: 100%; padding: 10px 14px 10px 38px; border-radius: 11px;
-          border: 1.5px solid var(--border-input); background: var(--surface-card);
-          color: var(--text-primary); font-size: 14px; font-family: var(--font-body); outline: none;
-          transition: all var(--transition-fast);
+          width:100%; padding:11px 14px 11px 40px; border-radius:11px;
+          border:1.5px solid var(--border-input); background:var(--surface-card);
+          color:var(--text-primary); font-size:14px; font-family:var(--font-body); outline:none;
+          box-shadow:var(--shadow-card); transition:all 0.15s;
         }
-        .jp-search:focus { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        .jp-search::placeholder { color: var(--text-muted); }
+        .jp-search:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(37,99,235,0.1); }
+        .jp-search::placeholder { color:var(--text-muted); }
+        .jp-count { font-size:13px; color:var(--text-secondary); font-weight:600; margin-left:auto; }
 
-        .jp-count { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+        /* ── Jobs list ── */
+        .jp-list { display:flex; flex-direction:column; gap:0; background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:18px; overflow:hidden; box-shadow:var(--shadow-card); }
 
-        /* Job cards grid */
-        .jp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-        .jp-card {
-          background: var(--surface-card); border: 1.5px solid var(--border-soft);
-          border-radius: 18px; padding: 22px 24px; box-shadow: var(--shadow-card);
-          display: flex; flex-direction: column; gap: 14px;
-          transition: all var(--transition-fast); position: relative;
+        .jp-list-header {
+          display:grid; grid-template-columns:2fr 1fr 1fr 100px 160px;
+          padding:10px 20px; border-bottom:1px solid var(--border-muted);
+          background:var(--surface-subtle);
         }
-        .jp-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card-hover); border-color: rgba(37,99,235,0.2); }
+        .jp-list-header span { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); }
 
-        .jp-card-title { font-size: 16px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; line-height: 1.3; }
-        .jp-card-meta { display: flex; flex-wrap: wrap; gap: 10px; }
-        .jp-card-meta-item { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-muted); font-weight: 500; }
-        .jp-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        .jp-status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 11.5px; font-weight: 700; }
+        .jp-row {
+          display:grid; grid-template-columns:2fr 1fr 1fr 100px 160px;
+          padding:16px 20px; border-bottom:1px solid var(--border-muted);
+          align-items:center; transition:background 0.13s; gap:8px;
+          text-decoration:none;
+        }
+        .jp-row:last-child { border-bottom:none; }
+        .jp-row:hover { background:var(--surface-hover); }
 
-        .jp-skills { display: flex; flex-wrap: wrap; gap: 5px; }
-        .jp-skill { padding: 3px 9px; border-radius: 6px; font-size: 11.5px; font-weight: 600; background: rgba(37,99,235,0.06); color: #2563eb; border: 1px solid rgba(37,99,235,0.12); }
+        .jp-row-title { font-size:14px; font-weight:800; color:var(--text-primary); margin-bottom:4px; letter-spacing:-0.01em; }
+        .jp-row-meta  { display:flex; flex-wrap:wrap; gap:10px; }
+        .jp-row-meta-item { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-secondary); font-weight:500; }
 
-        .jp-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border-muted); margin-top: auto; }
-        .jp-view-link { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 700; color: var(--brand-primary); text-decoration: none; transition: gap var(--transition-fast); }
-        .jp-view-link:hover { gap: 8px; }
-        .jp-delete-btn { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); font-family: var(--font-body); }
-        .jp-delete-btn:hover { background: rgba(239,68,68,0.08); color: #ef4444; border-color: rgba(239,68,68,0.15); }
+        .jp-skills { display:flex; flex-wrap:wrap; gap:5px; }
+        .jp-skill {
+          padding:3px 9px; border-radius:6px; font-size:11.5px; font-weight:600;
+          background:rgba(37,99,235,0.07); color:#2563eb;
+          border:1px solid rgba(37,99,235,0.14);
+        }
+        .jp-skill-more { background:var(--surface-subtle); color:var(--text-muted); border-color:var(--border-soft); }
 
-        .jp-screen-link { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 8px; border: 1.5px solid rgba(37,99,235,0.2); background: rgba(37,99,235,0.06); color: #2563eb; font-size: 12px; font-weight: 700; text-decoration: none; transition: all var(--transition-fast); }
-        .jp-screen-link:hover { background: rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.3); }
+        .jp-cand-cell { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:var(--text-primary); }
+        .jp-cand-icon { width:28px; height:28px; border-radius:8px; background:rgba(124,58,237,0.1); display:flex; align-items:center; justify-content:center; }
 
-        /* Delete modal */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn 0.15s ease; }
-        .modal-box { background: var(--surface-card); border: 1.5px solid var(--border-soft); border-radius: 18px; padding: 28px; max-width: 380px; width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,0.2); animation: scaleIn 0.15s ease; }
+        .jp-status-badge { display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border-radius:99px; font-size:12px; font-weight:700; }
+        .jp-status-dot   { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 
-        @media (max-width: 768px) { .jp-main { margin-left: 0; } .jp-body { padding: 20px 16px 80px; } .jp-grid { grid-template-columns: 1fr; } }
+        /* Actions column */
+        .jp-actions { display:flex; align-items:center; gap:6px; }
+        .jp-btn-view {
+          display:inline-flex; align-items:center; gap:4px;
+          padding:6px 12px; border-radius:8px;
+          background:rgba(37,99,235,0.08); color:#2563eb;
+          font-size:12px; font-weight:700; text-decoration:none;
+          border:1.5px solid rgba(37,99,235,0.15);
+          transition:all 0.13s;
+        }
+        .jp-btn-view:hover { background:rgba(37,99,235,0.16); border-color:rgba(37,99,235,0.3); }
+        .jp-btn-screen {
+          display:inline-flex; align-items:center; gap:4px;
+          padding:6px 12px; border-radius:8px;
+          background:linear-gradient(135deg,#4f46e5,#7c3aed); color:white;
+          font-size:12px; font-weight:700; text-decoration:none;
+          box-shadow:0 2px 8px rgba(124,58,237,0.3);
+          transition:all 0.13s;
+        }
+        .jp-btn-screen:hover { transform:translateY(-1px); box-shadow:0 4px 14px rgba(124,58,237,0.4); }
+        .jp-btn-delete {
+          display:inline-flex; align-items:center; justify-content:center;
+          width:30px; height:30px; border-radius:8px;
+          border:1.5px solid transparent; background:transparent;
+          color:var(--text-muted); cursor:pointer; transition:all 0.13s;
+        }
+        .jp-btn-delete:hover { background:rgba(239,68,68,0.08); color:#ef4444; border-color:rgba(239,68,68,0.2); }
+
+        /* ── Empty state ── */
+        .jp-empty {
+          padding:72px 40px; text-align:center;
+          display:flex; flex-direction:column; align-items:center; gap:12px;
+        }
+        .jp-empty-icon {
+          width:72px; height:72px; border-radius:20px;
+          background:linear-gradient(135deg,rgba(37,99,235,0.08),rgba(124,58,237,0.06));
+          border:1.5px solid rgba(37,99,235,0.12);
+          display:flex; align-items:center; justify-content:center; margin-bottom:4px;
+        }
+
+        /* ── Skeleton ── */
+        .jp-skeleton-row { display:grid; grid-template-columns:2fr 1fr 1fr 100px 160px; padding:20px; gap:8px; border-bottom:1px solid var(--border-muted); }
+
+        /* ── Delete modal ── */
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(6px); z-index:300; display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn 0.15s ease; }
+        .modal-box { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:20px; padding:28px; max-width:380px; width:100%; box-shadow:var(--shadow-lg); animation:scaleIn 0.15s ease; }
+
+        @media(max-width:900px){
+          .jp-list-header,.jp-row { grid-template-columns:1fr 80px 130px; }
+          .jp-list-header span:nth-child(2),
+          .jp-list-header span:nth-child(3),
+          .jp-row>*:nth-child(2),
+          .jp-row>*:nth-child(3) { display:none; }
+        }
+        @media(max-width:768px){ .jp-main{margin-left:0} .jp-body{padding:16px 14px 80px} }
       `}</style>
 
       <div className="jp-root">
@@ -127,123 +208,162 @@ export default function JobsPage() {
             }
           />
           <div className="jp-body">
+
+            {/* Stats bar */}
+            <div className="jp-stats">
+              {([
+                { key: "all",      label: "All Jobs",   color: "#2563eb", bg: "rgba(37,99,235,0.1)",  icon: Briefcase  },
+                { key: "open",     label: "Open",       color: "#16a34a", bg: "rgba(22,163,74,0.1)",  icon: CircleDot  },
+                { key: "screening",label: "Screening",  color: "#4f46e5", bg: "rgba(79,70,229,0.1)",  icon: TrendingUp },
+                { key: "closed",   label: "Closed",     color: "#64748b", bg: "rgba(100,116,139,0.1)",icon: CheckCircle},
+              ] as const).map((s) => (
+                <div
+                  key={s.key}
+                  className={`jp-stat${filter === s.key ? " active" : ""}`}
+                  style={{ ["--stat-accent" as string]: s.color }}
+                  onClick={() => setFilter(s.key)}
+                >
+                  <div className="jp-stat-icon" style={{ background: s.bg }}>
+                    <s.icon size={17} color={s.color} />
+                  </div>
+                  <div>
+                    <p className="jp-stat-val">{loading ? "—" : counts[s.key]}</p>
+                    <p className="jp-stat-lbl">{s.label}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Toolbar */}
             <div className="jp-toolbar">
               <div className="jp-search-wrap">
                 <span className="jp-search-icon"><Search size={15} /></span>
-                <input className="jp-search" placeholder="Search jobs…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input className="jp-search" placeholder="Search by title or location…" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               {!loading && (
-                <p className="jp-count">
-                  {filtered.length} job{filtered.length !== 1 ? "s" : ""}
-                </p>
+                <p className="jp-count">{filtered.length} job{filtered.length !== 1 ? "s" : ""}</p>
               )}
             </div>
 
-            {loading ? (
-              <div className="jp-grid">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 18, padding: 24, height: 200 }}>
-                    <div className="skeleton" style={{ height: 18, width: "70%", marginBottom: 12, borderRadius: 8 }} />
-                    <div className="skeleton" style={{ height: 13, width: "50%", marginBottom: 8, borderRadius: 6 }} />
-                    <div className="skeleton" style={{ height: 13, width: "40%", borderRadius: 6 }} />
+            {/* List */}
+            <div className="jp-list">
+              {/* Header */}
+              <div className="jp-list-header">
+                <span>Job Title</span>
+                <span>Skills</span>
+                <span>Candidates</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </div>
+
+              {loading ? (
+                [1, 2, 3].map((i) => (
+                  <div key={i} className="jp-skeleton-row">
+                    <div><div className="skeleton" style={{ height: 16, width: "60%", marginBottom: 8, borderRadius: 6 }} /><div className="skeleton" style={{ height: 12, width: "40%", borderRadius: 6 }} /></div>
+                    <div className="skeleton" style={{ height: 24, width: 120, borderRadius: 6 }} />
+                    <div className="skeleton" style={{ height: 24, width: 80, borderRadius: 6 }} />
+                    <div className="skeleton" style={{ height: 28, width: 90, borderRadius: 99 }} />
+                    <div className="skeleton" style={{ height: 30, width: 130, borderRadius: 8 }} />
                   </div>
-                ))}
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="empty-state" style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 18, padding: "64px 40px" }}>
-                <div className="empty-icon">
-                  <Briefcase size={28} color="var(--text-muted)" />
+                ))
+              ) : filtered.length === 0 ? (
+                <div className="jp-empty">
+                  <div className="jp-empty-icon">
+                    <Briefcase size={28} color="#2563eb" />
+                  </div>
+                  <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)" }}>
+                    {search || filter !== "all" ? "No jobs match your filters" : "No jobs yet"}
+                  </p>
+                  <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 320, lineHeight: 1.6, textAlign: "center" }}>
+                    {search || filter !== "all" ? "Try adjusting your search or filter." : "Post your first job to start screening candidates with AI."}
+                  </p>
+                  {!search && filter === "all" && (
+                    <Link href="/jobs/create" className="btn-primary" style={{ marginTop: 8 }}>
+                      <Plus size={14} /> Post a Job
+                    </Link>
+                  )}
                 </div>
-                <p style={{ fontWeight: 700, fontSize: 17, color: "var(--text-primary)" }}>
-                  {search ? "No jobs match your search" : "No jobs yet"}
-                </p>
-                <p style={{ color: "var(--text-muted)", fontSize: 14, maxWidth: 320, textAlign: "center", lineHeight: 1.6 }}>
-                  {search ? "Try a different search term." : "Post your first job to start screening candidates with AI."}
-                </p>
-                {!search && (
-                  <Link href="/jobs/create" className="btn-primary" style={{ marginTop: 10 }}>
-                    <Plus size={14} /> Post a Job
-                  </Link>
-                )}
-              </div>
-            ) : (
-              <div className="jp-grid">
-                {filtered.map((job) => {
+              ) : (
+                filtered.map((job) => {
                   const sc = statusConfig[job.status] || statusConfig.closed;
+                  const StatusIcon = sc.icon;
                   return (
-                    <div key={job._id} className="jp-card">
+                    <div key={job._id} className="jp-row">
+                      {/* Title + meta */}
                       <div>
-                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-                          <h3 className="jp-card-title">{job.title}</h3>
-                          <span className="jp-status-badge" style={{ background: sc.bg, color: sc.color, flexShrink: 0 }}>
-                            <span className="jp-status-dot" style={{ background: sc.dot }} />
-                            {sc.label}
-                          </span>
-                        </div>
-                        <div className="jp-card-meta">
-                          {job.location && <span className="jp-card-meta-item"><MapPin size={12} /> {job.location}</span>}
-                          {job.jobType && <span className="jp-card-meta-item"><Briefcase size={12} /> {job.jobType}</span>}
-                          {job.yearsOfExperience !== undefined && <span className="jp-card-meta-item"><Clock size={12} /> {job.yearsOfExperience}+ yrs</span>}
+                        <p className="jp-row-title">{job.title}</p>
+                        <div className="jp-row-meta">
+                          {job.location && <span className="jp-row-meta-item"><MapPin size={11} /> {job.location}</span>}
+                          {job.jobType  && <span className="jp-row-meta-item"><Building2 size={11} /> {job.jobType}</span>}
+                          {job.yearsOfExperience !== undefined && <span className="jp-row-meta-item"><Clock size={11} /> {job.yearsOfExperience}+ yrs</span>}
                         </div>
                       </div>
 
-                      {(job.requiredSkills?.length ?? 0) > 0 && (
-                        <div className="jp-skills">
-                          {job.requiredSkills.slice(0, 4).map((s: string) => (
-                            <span key={s} className="jp-skill">{s}</span>
-                          ))}
-                          {job.requiredSkills.length > 4 && (
-                            <span className="jp-skill" style={{ background: "var(--surface-hover)", color: "var(--text-muted)", borderColor: "var(--border-soft)" }}>
-                              +{job.requiredSkills.length - 4}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      {/* Skills */}
+                      <div className="jp-skills">
+                        {(job.requiredSkills || []).slice(0, 3).map((s: string) => (
+                          <span key={s} className="jp-skill">{s}</span>
+                        ))}
+                        {(job.requiredSkills?.length ?? 0) > 3 && (
+                          <span className="jp-skill jp-skill-more">+{job.requiredSkills.length - 3}</span>
+                        )}
+                      </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Users size={13} style={{ color: "var(--text-muted)" }} />
-                        <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 500 }}>
-                          {job.applicantsCount ?? 0} candidate{(job.applicantsCount ?? 0) !== 1 ? "s" : ""}
+                      {/* Candidates */}
+                      <div className="jp-cand-cell">
+                        <div className="jp-cand-icon">
+                          <Users size={13} color="#7c3aed" />
+                        </div>
+                        <span>{job.applicantsCount ?? 0}</span>
+                        <span style={{ color: "var(--text-muted)", fontWeight: 500, fontSize: 12 }}>candidate{(job.applicantsCount ?? 0) !== 1 ? "s" : ""}</span>
+                      </div>
+
+                      {/* Status */}
+                      <div>
+                        <span className="jp-status-badge" style={{ background: sc.bg, color: sc.color }}>
+                          <span className="jp-status-dot" style={{ background: sc.dot }} />
+                          {sc.label}
                         </span>
                       </div>
 
-                      <div className="jp-card-footer">
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <Link href={`/jobs/${job._id}`} className="jp-view-link">
-                            <Eye size={13} /> View <ChevronRight size={12} />
+                      {/* Actions */}
+                      <div className="jp-actions">
+                        <Link href={`/jobs/${job._id}`} className="jp-btn-view">
+                          <Eye size={12} /> View
+                        </Link>
+                        {(job.applicantsCount ?? 0) > 0 && (
+                          <Link href={`/screenings?jobId=${job._id}`} className="jp-btn-screen">
+                            <Sparkles size={12} /> Screen
                           </Link>
-                          {(job.applicantsCount ?? 0) > 0 && (
-                            <Link href={`/screenings?jobId=${job._id}`} className="jp-screen-link">
-                              <Sparkles size={12} /> Screen
-                            </Link>
-                          )}
-                        </div>
-                        <button className="jp-delete-btn" onClick={() => setDeleteTarget({ id: job._id, title: job.title })}>
-                          <Trash2 size={13} /> Delete
+                        )}
+                        <button className="jp-btn-delete" onClick={() => setDeleteTarget({ id: job._id, title: job.title })} title="Delete job">
+                          <Trash2 size={13} />
                         </button>
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </div>
+
           </div>
         </div>
       </div>
 
+      {/* Delete modal */}
       {deleteTarget && (
         <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: 48, height: 48, borderRadius: 13, background: "rgba(239,68,68,0.08)", border: "1.5px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-              <Trash2 size={20} color="#ef4444" />
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: "rgba(239,68,68,0.08)", border: "1.5px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
+              <Trash2 size={22} color="#ef4444" />
             </div>
-            <p style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)", marginBottom: 8 }}>Delete job?</p>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 22 }}>
-              &quot;<strong>{deleteTarget.title}</strong>&quot; and all its screening data will be permanently removed.
+            <p style={{ fontWeight: 800, fontSize: 18, color: "var(--text-primary)", marginBottom: 8 }}>Delete job?</p>
+            <p style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 24 }}>
+              "<strong>{deleteTarget.title}</strong>" and all screening data will be permanently removed.
             </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1.5px solid var(--border-soft)", background: "var(--surface-card)", color: "var(--text-secondary)", fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body)" }}>Cancel</button>
-              <button onClick={handleDelete} disabled={deleting} style={{ flex: 1, padding: 11, borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-body)" }}>
+              <button onClick={() => setDeleteTarget(null)} className="btn-secondary" style={{ flex: 1, justifyContent: "center" }}>Cancel</button>
+              <button onClick={handleDelete} disabled={deleting} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-body)", fontSize: 14, boxShadow: "0 4px 14px rgba(239,68,68,0.3)" }}>
                 {deleting ? "Deleting…" : "Delete"}
               </button>
             </div>

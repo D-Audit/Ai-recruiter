@@ -8,505 +8,380 @@ import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
 import ScreeningResults from "../../components/ScreeningResults";
 import { getAllJobs } from "../../services/jobService";
-import { triggerScreening, fetchResults, clearResults } from "../../store/slices/screeningSlice";
+import { triggerScreening, fetchResults } from "../../store/slices/screeningSlice";
 import { AppDispatch, RootState } from "../../store";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import type { CandidateResult } from "../../types";
 import {
-  ListChecks, Briefcase, Download, Sparkles, Users,
-  Brain, ArrowRight, RefreshCw, MapPin, Clock,
-  ChevronRight, Search, Upload, CheckCircle2, AlertCircle,
+  ListChecks, Briefcase, BarChart2, Upload, Download,
+  Sparkles, Users, Brain, ArrowRight, Play, AlertTriangle,
+  CheckCircle, Clock, Zap,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-/* ── CSV export — unchanged ─────────────────────────────────────────────── */
 function downloadScreeningCSV(results: any, jobTitle: string) {
   const headers = ["Rank","Name","Email","Score","Recommendation","Confidence","Skills Matched","Skills Missing","Strengths","Gaps"];
   const rows = (results.rankedCandidates || []).map((r: CandidateResult, i: number) => {
     const c = typeof r.candidateId === "object" ? r.candidateId as any : {};
-    const name = c ? `${c.firstName||""} ${c.lastName||""}`.trim() : `Candidate ${i+1}`;
-    return [r.rank,name,c?.email||"",r.score,r.recommendation,r.confidence,
-      (r.skillsMatched||[]).join("; "),(r.skillsMissing||[]).join("; "),
-      (r.strengths||"").replace(/"/g,"'"),(r.gaps||"").replace(/"/g,"'")];
+    const name = c ? `${c.firstName || ""} ${c.lastName || ""}`.trim() : `Candidate ${i + 1}`;
+    return [r.rank, name, c?.email || "", r.score, r.recommendation, r.confidence, (r.skillsMatched || []).join("; "), (r.skillsMissing || []).join("; "), (r.strengths || "").replace(/"/g, "'"), (r.gaps || "").replace(/"/g, "'")];
   });
-  const csv = [headers,...rows].map(row=>row.map((v:any)=>`"${String(v??"").replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv],{type:"text/csv;charset=utf-8;"});
+  const csv = [headers, ...rows].map((row) => row.map((v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  a.href=url; a.download=`screening-${jobTitle.replace(/\s+/g,"-").toLowerCase()}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = `screening-${jobTitle.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click(); URL.revokeObjectURL(url);
 }
 
-const STATUS_CFG: Record<string,{bg:string;color:string;dot:string;label:string}> = {
-  open:      {bg:"#dcfce7",color:"#15803d",dot:"#22c55e",label:"Open"},
-  screening: {bg:"#dbeafe",color:"#1d4ed8",dot:"#3b82f6",label:"Screening"},
-  closed:    {bg:"#f1f5f9",color:"#475569",dot:"#94a3b8",label:"Closed"},
-};
-
 function ScreeningsInner() {
-  const dispatch     = useDispatch<AppDispatch>();
-  const router       = useRouter();
+  const dispatch = useDispatch<AppDispatch>();
+  const router   = useRouter();
   const searchParams = useSearchParams();
-  const { results, loading: loadingRes, error: err, fromCache } = useSelector((s: RootState) => s.screening);
+  const { results, loading: loadingRes, error: err } = useSelector((s: RootState) => s.screening);
 
-  const [jobs,         setJobs]         = useState<any[]>([]);
-  const [jobsLoading,  setJobsLoading]  = useState(true);
-  const [selectedJobId,setSelectedJobId]= useState(searchParams.get("jobId") || "");
-  const [resultsLoaded,setResultsLoaded]= useState(false);
-  const [loading,      setLoading]      = useState(false);
-  const [search,       setSearch]       = useState("");
+  const [jobs, setJobs]           = useState<any[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(true);
+  const [jobId, setJobId]         = useState(searchParams.get("jobId") || "");
+  const [topN, setTopN]           = useState<10 | 20 | "all">("all");
 
-  /* initial load */
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) { router.push("/"); return; }
-    getAllJobs()
-      .then(d => setJobs(d.jobs || []))
-      .catch(() => {})
-      .finally(() => setJobsLoading(false));
+    getAllJobs().then((d) => setJobs(d.jobs || [])).catch(() => {}).finally(() => setJobsLoading(false));
   }, [router]);
 
-  /* if url has jobId on mount, pre-select but do NOT auto-load */
   useEffect(() => {
     const qJobId = searchParams.get("jobId");
-    if (qJobId) setSelectedJobId(qJobId);
+    if (qJobId) { setJobId(qJobId); dispatch(fetchResults(qJobId)); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* when job changes, reset results */
-  const handleJobChange = (jobId: string) => {
-    setSelectedJobId(jobId);
-    setResultsLoaded(false);
-    dispatch(clearResults());
-    router.replace(jobId ? `/screenings?jobId=${encodeURIComponent(jobId)}` : "/screenings", { scroll: false });
+  const handleLoad = () => {
+    if (!jobId) return;
+    dispatch(fetchResults(jobId));
+    router.replace(`/screenings?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
   };
 
-  /* MAIN ACTION: Load Results (same as candidates page pattern) */
-  const handleLoadResults = async () => {
-    if (!selectedJobId) return;
-    setLoading(true);
-    setResultsLoaded(false);
-    dispatch(clearResults());
+  const handleRunScreening = async () => {
+    if (!jobId) return;
     try {
-      await dispatch(fetchResults(selectedJobId)).unwrap();
-      setResultsLoaded(true);
-    } catch {
-      toast.error("No screening results found. Run AI screening from the job page first.");
-      setResultsLoaded(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
- 
-  const handleRerun = async () => {
-    if (!selectedJobId) return;
-    toast("Re-running AI screening…", { icon:"🔄", duration:3000, style:{background:"#eff6ff",color:"#1e40af",fontWeight:600} });
-    try {
-      await dispatch(triggerScreening(selectedJobId)).unwrap();
-      toast.success("Re-screening complete — results updated!");
+      await dispatch(triggerScreening(jobId)).unwrap();
+      toast.success("AI screening complete!");
+      router.replace(`/screenings?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
     } catch (e: unknown) {
-      toast.error(typeof e === "string" ? e : "Re-screening failed.");
+      toast.error(typeof e === "string" ? e : "Screening failed. Make sure candidates are uploaded.");
     }
   };
 
-  const selectedJob = jobs.find(j => j._id === selectedJobId);
-  const hasCands    = (selectedJob?.applicantsCount ?? 0) > 0;
-  const filtered    = jobs.filter(j =>
-    !search ||
-    j.title?.toLowerCase().includes(search.toLowerCase()) ||
-    j.location?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const statsFromResults = results ? {
-    total:       results.totalApplicants ?? 0,
-    shortlisted: results.shortlistedCount ?? 0,
-    topScore:    results.rankedCandidates?.[0]?.score ?? 0,
-    avgScore:    results.rankedCandidates?.length
-      ? Math.round(results.rankedCandidates.reduce((s:number,c:CandidateResult)=>s+c.score,0)/results.rankedCandidates.length)
-      : 0,
-  } : null;
+  const selectedJob  = jobs.find((j) => j._id === jobId);
+  const hasApplicants = (selectedJob?.applicantsCount ?? 0) > 0;
 
   return (
     <>
       <style>{`
-        /* ── Scoped styles: sc- prefix ── */
-        .sc-root { display:flex; font-family:var(--font-body,system-ui); }
-        .sc-main { margin-left:var(--sidebar-width,260px); min-height:100vh; background:var(--surface-base,#f8fafc); flex:1; display:flex; flex-direction:column; }
-        .sc-body  { padding:0 32px 80px; flex:1; animation:fadeIn .24s ease; }
+        .sc-root    { display:flex; font-family:var(--font-body); }
+        .sc-main    { margin-left:var(--sidebar-width); min-height:100vh; background:var(--surface-base); flex:1; display:flex; flex-direction:column; }
+        .sc-content { padding:24px 32px 80px; flex:1; max-width:1100px; }
 
-        /* ── Hero ── */
-        .sc-hero { padding:24px 0 20px; border-bottom:1px solid var(--border-muted,#f1f5f9); margin-bottom:24px; display:flex; align-items:flex-end; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-        .sc-hero-title { font-size:22px; font-weight:800; color:var(--text-primary,#0f172a); letter-spacing:-.025em; margin-bottom:3px; }
-        .sc-hero-sub   { font-size:13.5px; color:var(--text-muted,#94a3b8); }
-
-        /* ── Selector card — identical pattern to Candidates page ── */
-        .sc-selector {
-          background:var(--surface-card,#fff);
-          border:1px solid var(--border-soft,#e2e8f0);
-          border-radius:20px; padding:22px 24px; margin-bottom:20px;
-          box-shadow:0 1px 3px rgba(0,0,0,.06);
-          animation:fadeIn .24s ease;
+        /* ── Control card ── */
+        .sc-control {
+          background:var(--surface-card); border:1.5px solid var(--border-soft);
+          border-radius:18px; padding:22px 26px; margin-bottom:20px;
+          box-shadow:var(--shadow-card);
+          border-left:4px solid #7c3aed;
         }
-        .sc-selector-head   { display:flex; align-items:center; gap:10px; margin-bottom:5px; }
-        .sc-selector-icon   { width:36px; height:36px; border-radius:10px; background:rgba(37,99,235,.09); display:flex; align-items:center; justify-content:center; }
-        .sc-selector-title  { font-size:15px; font-weight:800; color:var(--text-primary,#0f172a); }
-        .sc-selector-sub    { font-size:13px; color:var(--text-muted,#94a3b8); margin-bottom:16px; line-height:1.5; }
-        .sc-selector-row    { display:flex; gap:10px; align-items:stretch; flex-wrap:wrap; }
+        .sc-control-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+        .sc-control-title { font-size:16px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:8px; }
+        .sc-control-sub   { font-size:13px; color:var(--text-secondary); margin-top:3px; line-height:1.5; }
 
-        .sc-select-wrap { position:relative; flex:1; min-width:220px; max-width:500px; }
-        .sc-select-ico  { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--text-muted,#94a3b8); pointer-events:none; }
-        .sc-select {
-          width:100%; padding:11px 36px 11px 40px; border-radius:12px;
-          border:1.5px solid var(--border-input,#e2e8f0); background:var(--surface-input,#f8fafc);
-          font-family:inherit; font-size:14px; font-weight:600; color:var(--text-primary,#0f172a);
-          cursor:pointer; outline:none; appearance:none;
-          background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-          background-repeat:no-repeat; background-position:right 13px center;
-          transition:border-color .15s,box-shadow .15s;
+        /* How it works steps */
+        .sc-steps { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
+        .sc-step {
+          display:flex; align-items:center; gap:8px;
+          padding:8px 14px; border-radius:10px;
+          background:var(--surface-subtle); border:1px solid var(--border-muted);
+          font-size:12.5px; font-weight:600; color:var(--text-secondary);
         }
-        .sc-select:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.1); }
-
-        .sc-load-btn {
-          padding:11px 22px; border-radius:12px; border:none;
-          background:linear-gradient(135deg,#2563eb,#7c3aed); color:#fff;
-          font-weight:700; font-size:14px; font-family:inherit; cursor:pointer;
-          display:flex; align-items:center; gap:7px; white-space:nowrap;
-          box-shadow:0 4px 14px rgba(37,99,235,.25); transition:all .18s ease;
+        .sc-step-num {
+          width:20px; height:20px; border-radius:50%;
+          background:var(--brand-gradient); color:white;
+          font-size:10px; font-weight:800; display:flex; align-items:center; justify-content:center;
           flex-shrink:0;
         }
-        .sc-load-btn:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 8px 24px rgba(37,99,235,.38); }
-        .sc-load-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }
+        .sc-step-arrow { color:var(--text-muted); }
 
-        /* Selected job info strip */
-        .sc-job-strip {
-          margin-top:13px; padding:11px 15px; border-radius:11px;
-          background:rgba(37,99,235,.05); border:1px solid rgba(37,99,235,.12);
-          display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+        /* Select row */
+        .sc-select-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .sc-select-wrap { position:relative; flex:1; min-width:220px; max-width:480px; }
+        .sc-select-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
+        .sc-select {
+          width:100%; padding:12px 36px 12px 40px; border-radius:11px;
+          border:1.5px solid var(--border-input); background:var(--surface-input);
+          font-family:var(--font-body); font-size:14px; color:var(--text-primary);
+          cursor:pointer; outline:none; appearance:none;
+          background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+          background-repeat:no-repeat; background-position:right 12px center;
+          box-shadow:var(--shadow-card); transition:all 0.15s;
         }
-        .sc-job-strip-item { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-secondary,#334155); font-weight:500; }
-        .sc-job-strip-badge { padding:2px 9px; border-radius:99px; font-size:11px; font-weight:700; }
+        .sc-select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(37,99,235,0.1); }
 
-        /* No candidates warning */
-        .sc-no-cands-warn {
-          margin-top:13px; padding:12px 16px; border-radius:11px;
-          background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.2);
-          display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px;
-          color:#92400e;
+        /* Primary run button */
+        .sc-run-btn {
+          padding:12px 24px; border-radius:11px; border:none;
+          background:linear-gradient(135deg,#7c3aed,#4f46e5,#2563eb); color:white;
+          font-weight:800; font-size:14px; font-family:var(--font-body);
+          cursor:pointer; box-shadow:0 4px 18px rgba(124,58,237,0.4);
+          display:flex; align-items:center; gap:8px; white-space:nowrap;
+          transition:all 0.15s; position:relative; overflow:hidden; letter-spacing:-0.01em;
         }
+        .sc-run-btn::before { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.1),transparent); background-size:200% 100%; animation:shimmer 2.5s infinite; }
+        .sc-run-btn:hover { transform:translateY(-1px); box-shadow:0 6px 24px rgba(124,58,237,0.5); }
+        .sc-run-btn:disabled { opacity:0.55; cursor:not-allowed; transform:none; box-shadow:none; }
+        .sc-run-btn:disabled::before { animation:none; }
 
-        /* ── Stats mini row ── */
-        .sc-stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; animation:fadeIn .3s ease; }
-        .sc-stat-mini {
-          background:var(--surface-card,#fff); border:1px solid var(--border-soft,#e2e8f0);
-          border-radius:14px; padding:14px 16px; text-align:center;
-          box-shadow:0 1px 3px rgba(0,0,0,.05);
+        /* Secondary load button */
+        .sc-load-btn {
+          padding:12px 20px; border-radius:11px;
+          border:1.5px solid var(--border-soft); background:var(--surface-card);
+          color:var(--text-secondary); font-weight:700; font-size:14px;
+          font-family:var(--font-body); cursor:pointer;
+          display:flex; align-items:center; gap:7px; white-space:nowrap;
+          transition:all 0.15s;
         }
-        .sc-stat-mini-val { font-size:22px; font-weight:800; color:var(--text-primary,#0f172a); letter-spacing:-.04em; line-height:1; }
-        .sc-stat-mini-lbl { font-size:11px; color:var(--text-muted,#94a3b8); font-weight:600; margin-top:3px; text-transform:uppercase; letter-spacing:.04em; }
+        .sc-load-btn:hover { border-color:var(--brand-primary); color:var(--brand-primary); background:rgba(37,99,235,0.04); }
+        .sc-load-btn:disabled { opacity:0.5; cursor:not-allowed; }
 
-        /* ── Results panel ── */
-        .sc-results-panel {
-          background:var(--surface-card,#fff); border:1px solid var(--border-soft,#e2e8f0);
-          border-radius:20px; box-shadow:0 1px 3px rgba(0,0,0,.06); overflow:hidden;
-          animation:fadeIn .3s ease;
+        /* Banners */
+        .sc-no-cand-banner {
+          margin-top:14px; padding:12px 16px; border-radius:11px;
+          background:rgba(234,179,8,0.08); border:1.5px solid rgba(234,179,8,0.25);
+          display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+          font-size:13.5px; color:#92400e; font-weight:600;
         }
-        .sc-results-context {
-          padding:11px 20px; background:rgba(22,163,74,.05); border-bottom:1px solid rgba(22,163,74,.1);
-          display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--text-secondary,#334155);
-        }
-        .sc-results-hd {
-          padding:16px 20px; border-bottom:1px solid var(--border-muted,#f1f5f9);
-          display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-        }
-        .sc-results-title { font-size:15px; font-weight:800; color:var(--text-primary,#0f172a); display:flex; align-items:center; gap:8px; }
-        .sc-results-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-        .sc-results-body { padding:4px; }
-
-        .sc-btn-outline {
-          display:inline-flex; align-items:center; gap:6px; padding:8px 15px; border-radius:10px;
-          font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;
-          border:1px solid rgba(37,99,235,.2); background:rgba(37,99,235,.05); color:#2563eb;
-          transition:all .15s ease;
-        }
-        .sc-btn-outline:hover:not(:disabled) { background:rgba(37,99,235,.1); border-color:rgba(37,99,235,.38); }
-        .sc-btn-outline:disabled { opacity:.5; cursor:not-allowed; }
-
-        .sc-btn-ghost {
-          display:inline-flex; align-items:center; gap:6px; padding:8px 15px; border-radius:10px;
-          font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;
-          border:1px solid var(--border-soft,#e2e8f0); background:var(--surface-card,#fff); color:var(--text-secondary,#334155);
-          transition:all .15s ease;
-        }
-        .sc-btn-ghost:hover { border-color:#16a34a; color:#16a34a; background:rgba(22,163,74,.05); }
-
-        .sc-cache-tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:99px; background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.2); font-size:11px; font-weight:700; color:#92400e; }
-
-        /* ── Prompt (nothing selected yet) ── */
-        .sc-prompt {
-          background:var(--surface-card,#fff); border:1.5px dashed var(--border-soft,#e2e8f0);
-          border-radius:20px; padding:72px 40px; text-align:center;
-          display:flex; flex-direction:column; align-items:center; gap:14px;
-          animation:fadeIn .24s ease;
+        .sc-success-banner {
+          margin-top:14px; padding:12px 16px; border-radius:11px;
+          background:rgba(22,163,74,0.08); border:1px solid rgba(22,163,74,0.2);
+          display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+          font-size:13.5px; color:var(--text-secondary); font-weight:500;
         }
 
-        /* ── Error state ── */
-        .sc-error {
-          background:rgba(220,38,38,.05); border:1px solid rgba(220,38,38,.15);
-          border-radius:14px; padding:16px 20px;
-          display:flex; align-items:flex-start; gap:11px;
-          animation:fadeIn .24s ease;
+        /* Results header */
+        .sc-results-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+        .sc-results-title  { font-size:16px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:8px; }
+        .sc-results-ctrls  { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .sc-topn-select {
+          font-size:13px; border:1.5px solid var(--border-input); border-radius:9px;
+          background:var(--surface-card); color:var(--text-primary);
+          padding:6px 10px; outline:none; font-family:var(--font-body);
+          font-weight:600; cursor:pointer;
         }
-
-        /* ── Skel ── */
-        .sc-skel { height:14px; border-radius:99px; background:linear-gradient(90deg,#f1f5f9 25%,#e8edf3 50%,#f1f5f9 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; }
-
-        @keyframes sc-spin { to{transform:rotate(360deg)} }
-
-        @media(max-width:1100px){ .sc-stats-row{grid-template-columns:repeat(2,1fr)} }
-        @media(max-width:768px){
-          .sc-main{margin-left:0}
-          .sc-body{padding:0 14px 80px}
-          .sc-stats-row{grid-template-columns:1fr 1fr}
+        .sc-csv-btn {
+          display:flex; align-items:center; gap:7px; padding:8px 16px;
+          border-radius:9px; border:1.5px solid var(--border-soft);
+          background:var(--surface-card); color:var(--text-secondary);
+          font-weight:700; font-size:13px; cursor:pointer; font-family:var(--font-body);
+          transition:all 0.15s;
         }
-        @media(max-width:480px){ .sc-stats-row{grid-template-columns:1fr} }
+        .sc-csv-btn:hover { border-color:#16a34a; color:#16a34a; background:rgba(22,163,74,0.06); }
+        .sc-rerun-btn {
+          display:flex; align-items:center; gap:6px; padding:8px 14px;
+          border-radius:9px; border:none;
+          background:rgba(124,58,237,0.1); color:#7c3aed;
+          font-weight:700; font-size:13px; cursor:pointer; font-family:var(--font-body);
+          transition:all 0.15s;
+        }
+        .sc-rerun-btn:hover { background:rgba(124,58,237,0.18); }
+
+        /* Empty state */
+        .sc-empty {
+          background:var(--surface-card); border-radius:18px;
+          border:1.5px solid var(--border-soft); padding:64px 40px;
+          text-align:center; display:flex; flex-direction:column;
+          align-items:center; gap:12px; box-shadow:var(--shadow-card);
+        }
+        .sc-empty-icon { width:76px; height:76px; border-radius:22px; display:flex; align-items:center; justify-content:center; margin-bottom:4px; }
+        .sc-workflow-steps { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:480px; width:100%; margin-top:20px; }
+        .sc-workflow-step {
+          background:var(--surface-subtle); border:1.5px solid var(--border-muted);
+          border-radius:14px; padding:16px 12px; text-align:center;
+          transition:all 0.15s;
+        }
+        .sc-workflow-step:hover { border-color:var(--brand-primary); transform:translateY(-2px); }
+        .sc-workflow-step-icon { width:38px; height:38px; border-radius:11px; background:var(--surface-card); border:1.5px solid var(--border-soft); display:flex; align-items:center; justify-content:center; margin:0 auto 8px; }
+
+        /* Error */
+        .sc-error { display:flex; align-items:flex-start; gap:12px; background:rgba(220,38,38,0.07); border:1.5px solid rgba(220,38,38,0.2); border-radius:13px; padding:16px 18px; color:#dc2626; font-size:14px; }
+
+        @media(max-width:768px){ .sc-main{margin-left:0} .sc-content{padding:16px 14px 80px} .sc-select-row{flex-direction:column; align-items:stretch} .sc-steps{display:none} }
       `}</style>
 
       <div className="sc-root">
         <Sidebar />
         <div className="sc-main">
-          <AppHeader
-            title="Screenings"
-            subtitle="AI-powered candidate ranking"
-            actions={
-              results && selectedJobId ? (
-                <div style={{ display:"flex", gap:8 }}>
-                  <button className="sc-btn-outline" onClick={handleRerun} disabled={loadingRes || loading}>
-                    <RefreshCw size={13} style={{ animation: (loadingRes||loading) ? "sc-spin 1s linear infinite" : "none" }} />
-                    Re-run
-                  </button>
-                  <button className="sc-btn-ghost" onClick={() => downloadScreeningCSV(results, selectedJob?.title || "results")}>
-                    <Download size={13} /> Export CSV
-                  </button>
+          <AppHeader title="Screenings" subtitle="AI-powered candidate ranking with Gemini" />
+          <div className="sc-content">
+
+            {/* Control card */}
+            <div className="sc-control">
+              <div className="sc-control-top">
+                <div>
+                  <p className="sc-control-title">
+                    <Brain size={18} color="#7c3aed" /> AI Candidate Screening
+                  </p>
+                  <p className="sc-control-sub">
+                    Select a job and run Gemini-powered screening to instantly rank and score all candidates.
+                  </p>
                 </div>
-              ) : undefined
-            }
-          />
-
-          <div className="sc-body">
-
-            {/* ── Page hero ── */}
-            <div className="sc-hero">
-              <div>
-                <h1 className="sc-hero-title">AI Screenings</h1>
-                <p className="sc-hero-sub">Select a job and load its Gemini AI screening results</p>
               </div>
-            </div>
 
-            {/* ══ SELECTOR CARD — same UX as Candidates page ══ */}
-            <div className="sc-selector">
-              <div className="sc-selector-head">
-                <div className="sc-selector-icon">
-                  <ListChecks size={17} color="#2563eb" />
-                </div>
-                <p className="sc-selector-title">Select a Job</p>
+              {/* How it works */}
+              <div className="sc-steps">
+                {[
+                  { num: "1", icon: <Briefcase size={13} color="#2563eb" />, label: "Select a job" },
+                  { num: "→", icon: null, label: null },
+                  { num: "2", icon: <Upload size={13} color="#7c3aed" />, label: "Ensure candidates are uploaded" },
+                  { num: "→", icon: null, label: null },
+                  { num: "3", icon: <Zap size={13} color="#0891b2" />, label: "Run AI Screening" },
+                ].map((s, i) =>
+                  s.label ? (
+                    <div key={i} className="sc-step">
+                      <span className="sc-step-num">{s.num}</span>
+                      {s.icon}
+                      <span>{s.label}</span>
+                    </div>
+                  ) : (
+                    <span key={i} className="sc-step-arrow" style={{ display: "flex", alignItems: "center" }}>→</span>
+                  )
+                )}
               </div>
-              <p className="sc-selector-sub">
-                Choose a job posting to view its AI screening results, then click "Load Results".
-              </p>
 
-              <div className="sc-selector-row">
-                {/* Job dropdown */}
+              {/* Job selector + actions */}
+              <div className="sc-select-row">
                 <div className="sc-select-wrap">
-                  <span className="sc-select-ico"><Briefcase size={15} /></span>
-                  <select
-                    className="sc-select"
-                    value={selectedJobId}
-                    onChange={e => handleJobChange(e.target.value)}
-                    disabled={jobsLoading}
-                  >
-                    <option value="">
-                      {jobsLoading ? "Loading jobs…" : "— Choose a job posting —"}
-                    </option>
-                    {jobs.map(j => (
+                  <span className="sc-select-icon"><Briefcase size={15} /></span>
+                  <select className="sc-select" value={jobId} onChange={(e) => setJobId(e.target.value)} disabled={jobsLoading}>
+                    <option value="">{jobsLoading ? "Loading jobs…" : "Select a job posting…"}</option>
+                    {jobs.map((j) => (
                       <option key={j._id} value={j._id}>
-                        {j.title}{j.location ? ` · ${j.location}` : ""} ({j.applicantsCount||0} candidates)
+                        {j.title}{j.applicantsCount ? ` — ${j.applicantsCount} candidates` : " — 0 candidates"}
                       </option>
                     ))}
                   </select>
                 </div>
 
-                {/* Load Results button */}
                 <button
-                  className="sc-load-btn"
-                  onClick={handleLoadResults}
-                  disabled={!selectedJobId || !hasCands || loading}
+                  className="sc-run-btn"
+                  onClick={handleRunScreening}
+                  disabled={!jobId || loadingRes || !hasApplicants}
+                  title={!hasApplicants && jobId ? "Upload candidates first" : ""}
                 >
-                  {loading ? (
-                    <>
-                      <span style={{ display:"inline-block", width:14, height:14, border:"2px solid rgba(255,255,255,.35)", borderTopColor:"#fff", borderRadius:"50%", animation:"sc-spin 0.8s linear infinite" }} />
-                      Loading…
-                    </>
-                  ) : (
-                    <><ListChecks size={15} /> Load Results</>
-                  )}
+                  <Brain size={15} />
+                  {loadingRes ? "Running AI…" : "Run AI Screening"}
+                </button>
+
+                <button className="sc-load-btn" onClick={handleLoad} disabled={!jobId || loadingRes}>
+                  <BarChart2 size={15} />
+                  Load Results
                 </button>
               </div>
 
-              {/* Selected job info strip */}
-              {selectedJob && (
-                <>
-                  <div className="sc-job-strip">
-                    <Briefcase size={13} color="#2563eb" />
-                    <strong style={{ fontSize:13, color:"var(--text-primary,#0f172a)" }}>{selectedJob.title}</strong>
-                    {selectedJob.location && (
-                      <span className="sc-job-strip-item"><MapPin size={11} /> {selectedJob.location}</span>
-                    )}
-                    {selectedJob.yearsOfExperience !== undefined && (
-                      <span className="sc-job-strip-item"><Clock size={11} /> {selectedJob.yearsOfExperience}+ yrs exp</span>
-                    )}
-                    <span className="sc-job-strip-item"><Users size={11} /> {selectedJob.applicantsCount||0} candidates</span>
-                    <span
-                      className="sc-job-strip-badge"
-                      style={{
-                        background: STATUS_CFG[selectedJob.status]?.bg || "#f1f5f9",
-                        color:      STATUS_CFG[selectedJob.status]?.color || "#475569",
-                      }}
-                    >
-                      {STATUS_CFG[selectedJob.status]?.label || selectedJob.status}
-                    </span>
-                    <Link
-                      href={`/jobs/${selectedJob._id}`}
-                      style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:4, fontSize:12.5, fontWeight:700, color:"var(--brand-primary,#2563eb)", textDecoration:"none" }}
-                    >
-                      View job <ChevronRight size={12} />
-                    </Link>
-                  </div>
+              {/* Warnings / success banners */}
+              {jobId && !hasApplicants && !jobsLoading && (
+                <div className="sc-no-cand-banner">
+                  <AlertTriangle size={16} color="#d97706" />
+                  <span>This job has no candidates uploaded yet.</span>
+                  <Link href={`/applicants?jobId=${jobId}`} style={{ display: "flex", alignItems: "center", gap: 5, fontWeight: 800, color: "#2563eb", textDecoration: "none", padding: "4px 12px", borderRadius: 7, background: "rgba(37,99,235,0.1)", marginLeft: "auto", fontSize: 13 }}>
+                    <Upload size={13} /> Upload Candidates <ArrowRight size={12} />
+                  </Link>
+                </div>
+              )}
 
-                  {/* No candidates warning */}
-                  {!hasCands && (
-                    <div className="sc-no-cands-warn">
-                      <AlertCircle size={15} color="#d97706" style={{ flexShrink:0 }} />
-                      <span>This job has no candidates yet. Upload candidates first before running AI screening.</span>
-                      <Link
-                        href={`/applicants?jobId=${selectedJob._id}`}
-                        style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:5, fontWeight:700, color:"#92400e", textDecoration:"none", whiteSpace:"nowrap", fontSize:12.5 }}
-                      >
-                        <Upload size={12} /> Upload Candidates
-                      </Link>
-                    </div>
-                  )}
-                </>
+              {selectedJob && results && (
+                <div className="sc-success-banner">
+                  <CheckCircle size={15} color="#16a34a" />
+                  <strong style={{ color: "var(--text-primary)" }}>{selectedJob.title}</strong>
+                  <span>·</span>
+                  <span><strong style={{ color: "var(--text-primary)" }}>{results.totalApplicants}</strong> screened</span>
+                  <span>·</span>
+                  <span><strong style={{ color: "#16a34a" }}>{results.shortlistedCount}</strong> shortlisted</span>
+                </div>
               )}
             </div>
 
-            {/* ══ CONTENT BELOW SELECTOR ══ */}
-
-            {/* Nothing selected */}
-            {!selectedJobId && !jobsLoading && (
-              <div className="sc-prompt">
-                <div style={{ width:68, height:68, borderRadius:20, background:"rgba(37,99,235,.07)", border:"1.5px dashed rgba(37,99,235,.2)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  <Brain size={30} color="#2563eb" />
-                </div>
-                <p style={{ fontWeight:800, fontSize:17, color:"var(--text-primary,#0f172a)" }}>Select a job to get started</p>
-                <p style={{ color:"var(--text-muted,#94a3b8)", fontSize:13.5, maxWidth:320, lineHeight:1.6 }}>
-                  Choose a job from the dropdown above and click <strong>Load Results</strong> to view its AI-ranked candidates.
-                </p>
-                {jobs.length === 0 && (
-                  <Link
-                    href="/jobs/create"
-                    style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"10px 20px", borderRadius:12, background:"linear-gradient(135deg,#2563eb,#7c3aed)", color:"#fff", fontSize:13.5, fontWeight:700, textDecoration:"none", boxShadow:"0 4px 14px rgba(37,99,235,.25)", marginTop:4 }}
-                  >
-                    <Briefcase size={14} /> Post Your First Job <ArrowRight size={13} />
-                  </Link>
-                )}
-              </div>
-            )}
-
-            {/* Loading spinner */}
-            {loading && (
-              <div style={{ background:"var(--surface-card,#fff)", border:"1px solid var(--border-soft,#e2e8f0)", borderRadius:20, padding:"56px 32px", textAlign:"center", boxShadow:"0 1px 3px rgba(0,0,0,.06)" }}>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:12, color:"var(--text-muted,#94a3b8)", fontSize:14, fontWeight:600 }}>
-                  <Brain size={20} color="#2563eb" style={{ animation:"sc-spin 2s linear infinite" }} />
-                  Loading AI screening results for &ldquo;{selectedJob?.title}&rdquo;…
-                </div>
-              </div>
-            )}
+            {/* Loading */}
+            {loadingRes && <LoadingSpinner label="Running AI screening with Gemini…" />}
 
             {/* Error */}
-            {!loading && err && (
+            {err && !loadingRes && (
               <div className="sc-error">
-                <AlertCircle size={17} color="#dc2626" style={{ flexShrink:0, marginTop:1 }} />
-                <div>
-                  <p style={{ fontWeight:700, fontSize:13.5, color:"#dc2626", marginBottom:4 }}>No results found</p>
-                  <p style={{ fontSize:13, color:"#b91c1c", lineHeight:1.5 }}>
-                    {typeof err === "string" ? err : "Run AI screening from the job page first, then load results here."}
-                  </p>
-                  {selectedJob && (
-                    <Link href={`/jobs/${selectedJobId}`} style={{ display:"inline-flex", alignItems:"center", gap:5, marginTop:10, fontSize:13, fontWeight:700, color:"#dc2626", textDecoration:"none" }}>
-                      Go to job page <ArrowRight size={13} />
-                    </Link>
-                  )}
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{typeof err === "string" ? err : "Could not load screening results. Please try again."}</span>
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!loadingRes && !results && !err && (
+              <div className="sc-empty">
+                <div className="sc-empty-icon" style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.1),rgba(37,99,235,0.08))", border: "1.5px solid rgba(124,58,237,0.15)" }}>
+                  <Brain size={32} color="#7c3aed" />
+                </div>
+                <p style={{ fontWeight: 900, fontSize: 22, color: "var(--text-primary)", letterSpacing: "-0.03em" }}>
+                  Ready to screen candidates
+                </p>
+                <p style={{ color: "var(--text-secondary)", fontSize: 14, maxWidth: 420, lineHeight: 1.65, textAlign: "center" }}>
+                  Select a job above and click <strong>Run AI Screening</strong> to get an instant ranked shortlist with scores, strengths, and skill gaps powered by Gemini.
+                </p>
+                <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                  <Link href="/jobs" className="btn-primary">
+                    <Briefcase size={14} /> Go to Jobs <ArrowRight size={13} />
+                  </Link>
+                  <Link href="/applicants" className="btn-secondary">
+                    <Upload size={14} /> Upload Candidates
+                  </Link>
+                </div>
+                <div className="sc-workflow-steps">
+                  {[
+                    { icon: <Briefcase size={16} color="#2563eb" />, step: "1", label: "Post a Job", color: "#2563eb" },
+                    { icon: <Users size={16} color="#7c3aed" />,     step: "2", label: "Upload CVs",  color: "#7c3aed" },
+                    { icon: <Sparkles size={16} color="#0891b2" />,  step: "3", label: "Run Screening", color: "#0891b2" },
+                  ].map((s) => (
+                    <div key={s.step} className="sc-workflow-step">
+                      <div className="sc-workflow-step-icon">{s.icon}</div>
+                      <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Step {s.step}</p>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginTop: 3 }}>{s.label}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
             {/* Results */}
-            {!loading && resultsLoaded && results && selectedJobId && (
+            {!loadingRes && results && (
               <>
-                {/* Summary stats */}
-                {statsFromResults && (
-                  <div className="sc-stats-row">
-                    {[
-                      { label:"Screened",    val: String(statsFromResults.total),       color:"var(--text-primary,#0f172a)" },
-                      { label:"Shortlisted", val: String(statsFromResults.shortlisted), color:"#7c3aed" },
-                      { label:"Top Score",   val: `${statsFromResults.topScore}`,       color:"#16a34a" },
-                      { label:"Avg Score",   val: `${statsFromResults.avgScore}`,       color:"#2563eb" },
-                    ].map(s => (
-                      <div key={s.label} className="sc-stat-mini">
-                        <p className="sc-stat-mini-val" style={{ color: s.color }}>{s.val}</p>
-                        <p className="sc-stat-mini-lbl">{s.label}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Results card */}
-                <div className="sc-results-panel">
-                  <div className="sc-results-context">
-                    <CheckCircle2 size={13} color="#16a34a" />
-                    <strong>{selectedJob?.title || "Selected job"}</strong>
-                    <span>·</span>
-                    <span>{statsFromResults?.total} candidates screened</span>
-                    <span>·</span>
-                    <span style={{ color:"#7c3aed", fontWeight:700 }}>{statsFromResults?.shortlisted} shortlisted</span>
-                    {fromCache && <span className="sc-cache-tag">⚡ Cached</span>}
-                  </div>
-
-                  <div className="sc-results-hd">
-                    <p className="sc-results-title">
-                      <Sparkles size={16} color="#7c3aed" />
-                      AI Screening Results
-                    </p>
-                    <div className="sc-results-controls">
-                      <button className="sc-btn-outline" onClick={handleRerun} disabled={loadingRes||loading}>
-                        <RefreshCw size={12} /> Re-run Screening
-                      </button>
-                      <button className="sc-btn-ghost" onClick={() => downloadScreeningCSV(results, selectedJob?.title||"results")}>
-                        <Download size={13} /> Download CSV
-                      </button>
+                <div className="sc-results-header">
+                  <p className="sc-results-title">
+                    <Sparkles size={18} color="#7c3aed" />
+                    {selectedJob?.title || "Screening"} — AI Results
+                  </p>
+                  <div className="sc-results-ctrls">
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <label style={{ fontSize: 12.5, color: "var(--text-secondary)", fontWeight: 600 }}>Show top</label>
+                      <select value={topN} onChange={(e) => setTopN(e.target.value as any)} className="sc-topn-select">
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value="all">All</option>
+                      </select>
                     </div>
-                  </div>
-
-                  <div className="sc-results-body">
-                    <ScreeningResults
-                      jobId={selectedJobId}
-                      results={results}
-                      fromCache={fromCache}
-                      displayTopN="all"
-                    />
+                    <button className="sc-rerun-btn" onClick={handleRunScreening} disabled={loadingRes}>
+                      <Play size={13} /> Re-run
+                    </button>
+                    <button className="sc-csv-btn" onClick={() => downloadScreeningCSV(results, selectedJob?.title || "results")}>
+                      <Download size={14} /> Export CSV
+                    </button>
                   </div>
                 </div>
+                <ScreeningResults jobId={jobId} results={results} fromCache={false} displayTopN={topN} />
               </>
             )}
 
