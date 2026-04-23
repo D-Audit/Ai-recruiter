@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.model";
 import dotenv from 'dotenv';
 
+
 dotenv.config();
 const generateToken = (id: string, email: string, name: string) => {
   return jwt.sign(

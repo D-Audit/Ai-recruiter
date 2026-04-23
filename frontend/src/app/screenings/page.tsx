@@ -55,6 +55,21 @@ function ScreeningsInner() {
       .finally(() => setLoadingJobs(false));
   }, [router]);
 
+  /* Auto-load results if redirected from upload page with autoload=1 */
+  useEffect(() => {
+    const autoload = searchParams.get("autoload");
+    const qJobId   = searchParams.get("jobId");
+    if (autoload === "1" && qJobId) {
+      setSelectedJobId(qJobId);
+      dispatch(fetchResults(qJobId))
+        .then(() => setResultsLoaded(true))
+        .catch(() => {});
+      // Clean the URL so refreshing doesn't re-trigger
+      router.replace(`/screenings?jobId=${encodeURIComponent(qJobId)}`, { scroll: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /* When job changes in dropdown — reset, don't auto-load */
   const handleJobChange = (jobId: string) => {
     setSelectedJobId(jobId);
@@ -215,7 +230,8 @@ function ScreeningsInner() {
                 <Briefcase size={17} color="#2563eb" /> Select a Job
               </p>
               <p className="sc-selector-sub">
-                Choose a job, then click <strong>Load Results</strong> to view the AI screening for that position.
+                Choose a job, then click <strong>Load Results</strong> to view AI screening results for that position.
+                Results from a just-completed screening appear automatically.
               </p>
 
               <div className="sc-select-row">

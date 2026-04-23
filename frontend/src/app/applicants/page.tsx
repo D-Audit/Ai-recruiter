@@ -309,10 +309,10 @@ function ApplicantsPageContent() {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     setScreeningRunning(true);
     try {
-      const qs = topN !== "all" ? `?topN=${topN}` : "";
       await (dispatch as any)(triggerScreening(selectedJob)).unwrap();
       toast.success("AI screening complete! Redirecting to results…");
-      router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}`);
+      // Pass autoload=1 so screenings page shows results without clicking Load Results
+      router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}&autoload=1`);
     } catch (e: unknown) {
       toast.error(typeof e === "string" ? e : "Screening failed. Make sure candidates are uploaded.");
     } finally {
@@ -557,17 +557,16 @@ function ApplicantsPageContent() {
         .ap-load-btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(37,99,235,0.4); }
         .ap-load-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; box-shadow:none; }
 
-        .ap-tabs { display:flex; gap:4px; background:var(--surface-hover); border-radius:12px; padding:4px; margin-bottom:20px; flex-wrap:wrap; }
-        .ap-tab { padding:9px 16px; border-radius:9px; border:none; font-size:13.5px; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.18s; color:var(--text-muted); background:transparent; }
-        .ap-tab.active { background:var(--surface-card); color:var(--text-primary); box-shadow:var(--shadow-card); }
+        .ap-tabs { display:flex; gap:6px; background:var(--surface-hover); border-radius:14px; padding:5px; margin-bottom:20px; flex-wrap:wrap; }
+        .ap-tab { padding:11px 20px; border-radius:10px; border:none; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; transition:all 0.18s; color:var(--text-secondary); background:transparent; display:flex; align-items:center; gap:7px; }
+        .ap-tab:hover:not(.active) { background:rgba(255,255,255,0.6); color:var(--text-primary); }
+        .ap-tab.active { background:linear-gradient(135deg,#2563eb,#4f46e5); color:white; box-shadow:0 4px 14px rgba(37,99,235,0.3); }
 
-        .ap-dropzone { border:2.5px dashed rgba(37,99,235,0.3); border-radius:18px; padding:52px 32px; text-align:center; cursor:pointer; transition:all 0.2s; background:linear-gradient(135deg,rgba(37,99,235,0.03),rgba(124,58,237,0.02)); }
-        .ap-dropzone:hover,.ap-dropzone.drag { border-color:#2563eb; background:rgba(37,99,235,0.07); transform:scale(1.005); }
-        .ap-dropzone-icon { width:64px; height:64px; border-radius:18px; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; box-shadow:0 4px 16px rgba(0,0,0,0.08); }
-        .ap-dropzone-title { font-size:18px; font-weight:800; color:var(--text-primary); margin-bottom:6px; letter-spacing:-0.02em; font-family:var(--font-display,"Syne",sans-serif); }
-        .ap-dropzone-sub { font-size:14px; color:var(--text-secondary); font-weight:500; line-height:1.5; }
-        .ap-dropzone-formats { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:12px; flex-wrap:wrap; }
-        .ap-fmt-chip { padding:3px 10px; border-radius:99px; font-size:11.5px; font-weight:700; background:rgba(37,99,235,0.08); color:#2563eb; border:1px solid rgba(37,99,235,0.15); }
+        .ap-dropzone { border:2.5px dashed rgba(37,99,235,0.28); border-radius:18px; padding:52px 32px; text-align:center; cursor:pointer; transition:all 0.2s; background:linear-gradient(135deg,rgba(37,99,235,0.02),rgba(124,58,237,0.01)); }
+        .ap-dropzone:hover,.ap-dropzone.drag { border-color:#2563eb; background:rgba(37,99,235,0.06); transform:scale(1.005); }
+        .ap-dropzone-icon { width:64px; height:64px; border-radius:18px; background:rgba(37,99,235,0.1); border:1.5px solid rgba(37,99,235,0.15); display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
+        .ap-dropzone-title { font-size:18px; font-weight:800; color:var(--text-primary); margin-bottom:6px; letter-spacing:-0.02em; }
+        .ap-dropzone-sub { font-size:13.5px; color:var(--text-secondary); font-weight:500; line-height:1.5; }
 
         /* File progress row */
         .ap-fp-row { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
@@ -726,12 +725,13 @@ function ApplicantsPageContent() {
             {/* ── Tabs ── */}
             <div className="ap-tabs">
               {[
-                { id: "list",     label: "Candidate List" },
-                { id: "umurava",  label: "Umurava Profiles" },
-                { id: "external", label: "Upload File" },
-                { id: "manual",   label: "Manual Entry" },
+                { id: "list",     label: "Candidate List",    emoji: "👥" },
+                { id: "umurava",  label: "Umurava Profiles",  emoji: "🌍" },
+                { id: "external", label: "Upload Files",      emoji: "📤" },
+                { id: "manual",   label: "Manual Entry",      emoji: "✏️"  },
               ].map((t) => (
                 <button key={t.id} className={`ap-tab${activeTab === t.id ? " active" : ""}`} onClick={() => setActiveTab(t.id as any)}>
+                  <span style={{ fontSize: 15 }}>{t.emoji}</span>
                   {t.label}
                 </button>
               ))}
@@ -853,23 +853,23 @@ function ApplicantsPageContent() {
                 {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16 }}>Select a job first to upload files.</p>}
 
                 {/* Sub-tab buttons */}
-                <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
                   {([
-                    { id: "csv",    label: "CSV / Excel", icon: "📊", color: "#2563eb", bg: "rgba(37,99,235,0.08)", activeBg: "linear-gradient(135deg,#2563eb,#1d4ed8)" },
-                    { id: "resume", label: "PDF / DOCX",  icon: "📄", color: "#7c3aed", bg: "rgba(124,58,237,0.08)", activeBg: "linear-gradient(135deg,#7c3aed,#4f46e5)" },
-                    { id: "url",    label: "Import URL",  icon: "🔗", color: "#0891b2", bg: "rgba(8,145,178,0.08)", activeBg: "linear-gradient(135deg,#0891b2,#0e7490)" },
+                    { id: "csv",    label: "CSV / Excel",  emoji: "📊", color: "#2563eb", activeBg: "linear-gradient(135deg,#2563eb,#1d4ed8)", activeShadow: "0 4px 14px rgba(37,99,235,0.35)" },
+                    { id: "resume", label: "PDF / DOCX",   emoji: "📄", color: "#7c3aed", activeBg: "linear-gradient(135deg,#7c3aed,#4f46e5)", activeShadow: "0 4px 14px rgba(124,58,237,0.35)" },
+                    { id: "url",    label: "Import URL",   emoji: "🔗", color: "#0891b2", activeBg: "linear-gradient(135deg,#0891b2,#0e7490)", activeShadow: "0 4px 14px rgba(8,145,178,0.3)" },
                   ] as const).map((t) => (
                     <button key={t.id} onClick={() => setFileSubTab(t.id)} style={{
                       padding: "12px 22px", borderRadius: 12,
                       border: fileSubTab === t.id ? "none" : `1.5px solid ${t.color}30`,
-                      background: fileSubTab === t.id ? t.activeBg : t.bg,
+                      background: fileSubTab === t.id ? t.activeBg : `${t.color}0d`,
                       color: fileSubTab === t.id ? "white" : t.color,
                       fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
                       display: "flex", alignItems: "center", gap: 8,
-                      boxShadow: fileSubTab === t.id ? `0 4px 14px ${t.color}40` : "none",
+                      boxShadow: fileSubTab === t.id ? t.activeShadow : "none",
                       transition: "all 0.15s",
                     }}>
-                      <span>{t.icon}</span> {t.label}
+                      <span style={{ fontSize: 15 }}>{t.emoji}</span> {t.label}
                     </button>
                   ))}
                 </div>
@@ -879,15 +879,9 @@ function ApplicantsPageContent() {
                   <div>
                     <div {...getCSVRootProps()} className={`ap-dropzone${isCSVDrag ? " drag" : ""}`}>
                       <input {...getCSVInputProps()} />
-                      <div className="ap-dropzone-icon" style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.12),rgba(37,99,235,0.06))", border: "1.5px solid rgba(37,99,235,0.18)" }}>
-                        <FileSpreadsheet size={28} color="#2563eb" />
-                      </div>
-                      <p className="ap-dropzone-title">Drop your spreadsheet here</p>
-                      <p className="ap-dropzone-sub">or click to browse — supports CSV, Excel (.xlsx), and .xls</p>
-                      <div className="ap-dropzone-formats">
-                        {[".csv", ".xlsx", ".xls"].map(f => <span key={f} className="ap-fmt-chip">{f}</span>)}
-                        <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>· Max 5 MB</span>
-                      </div>
+                      <div className="ap-dropzone-icon"><FileSpreadsheet size={22} color="#2563eb" /></div>
+                      <p className="ap-dropzone-title">Drop a CSV or Excel file here</p>
+                      <p className="ap-dropzone-sub">or click to browse · Max 5 MB</p>
                     </div>
 
                     {csvPreviewLoading && (
@@ -950,8 +944,7 @@ function ApplicantsPageContent() {
                             background: uploading ? "var(--surface-hover)" : "linear-gradient(135deg,#2563eb,#4f46e5,#7c3aed)",
                             color: uploading ? "var(--text-muted)" : "white",
                             border: "none", fontWeight: 800, fontSize: 15.5,
-                            cursor: uploading ? "not-allowed" : "pointer",
-                            fontFamily: "inherit",
+                            cursor: uploading ? "not-allowed" : "pointer", fontFamily: "inherit",
                             boxShadow: uploading ? "none" : "0 5px 20px rgba(37,99,235,0.38)",
                             transition: "all 0.15s", letterSpacing: "-0.01em",
                           }}
@@ -963,7 +956,7 @@ function ApplicantsPageContent() {
                         </button>
                         {!uploading && (
                           <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, fontWeight: 500 }}>
-                            This will add {csvPreview.totalCandidates} candidate{csvPreview.totalCandidates !== 1 ? "s" : ""} to <strong>{selectedJobObj?.title || "the selected job"}</strong>
+                            Adds to <strong>{selectedJobObj?.title || "selected job"}</strong> and shows in Candidate List tab
                           </p>
                         )}
                       </div>
@@ -974,19 +967,31 @@ function ApplicantsPageContent() {
                 {/* ── Resume sub-tab ── */}
                 {fileSubTab === "resume" && (
                   <div>
+                    {/* Info banner explaining PDF parsing */}
+                    <div style={{ background: "rgba(124,58,237,0.06)", border: "1.5px solid rgba(124,58,237,0.15)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 9 }}>
+                      <span style={{ fontSize: 17, flexShrink: 0 }}>ℹ️</span>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)", marginBottom: 3 }}>How PDF / DOCX upload works</p>
+                        <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+                          Drop one or more files — AI extracts <strong>name, email, skills, and experience</strong> automatically.
+                          A preview will appear so you can review before the candidates are saved.
+                        </p>
+                      </div>
+                    </div>
+
                     <div {...getResumeRootProps()} className={`ap-dropzone${isResumeDrag ? " drag" : ""}`}
                       style={{ borderColor: "rgba(124,58,237,0.3)", background: "linear-gradient(135deg,rgba(124,58,237,0.03),rgba(79,70,229,0.02))" }}>
                       <input {...getResumeInputProps()} />
-                      <div className="ap-dropzone-icon" style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.12),rgba(79,70,229,0.08))", border: "1.5px solid rgba(124,58,237,0.2)" }}>
+                      <div className="ap-dropzone-icon" style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.14),rgba(79,70,229,0.1))", border: "1.5px solid rgba(124,58,237,0.2)", width: 64, height: 64, borderRadius: 18 }}>
                         <FileText size={28} color="#7c3aed" />
                       </div>
                       <p className="ap-dropzone-title">Drop candidate resumes here</p>
-                      <p className="ap-dropzone-sub">AI will automatically extract name, email, skills, and experience from each file</p>
-                      <div className="ap-dropzone-formats">
-                        {[".pdf", ".docx", ".doc", ".txt"].map(f => (
-                          <span key={f} className="ap-fmt-chip" style={{ background: "rgba(124,58,237,0.08)", color: "#7c3aed", borderColor: "rgba(124,58,237,0.2)" }}>{f}</span>
+                      <p className="ap-dropzone-sub">AI will extract name, email, skills and experience from each file</p>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                        {[".pdf", ".docx", ".doc", ".txt"].map(fmt => (
+                          <span key={fmt} style={{ padding: "3px 10px", borderRadius: 99, fontSize: 12, fontWeight: 700, background: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.2)" }}>{fmt}</span>
                         ))}
-                        <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>· 10 MB each · Multiple files OK</span>
+                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>· 10 MB each · Multiple OK</span>
                       </div>
                     </div>
 
@@ -1013,34 +1018,34 @@ function ApplicantsPageContent() {
                       </div>
                     )}
 
-                    {/* Staged PDF results — shown after upload, recruiter reviews then confirms */}
+                    {/* Staged PDF results — review then confirm */}
                     {resumeResults.length > 0 && (
-                      <div style={{ marginTop: 18, background: "var(--surface-card)", border: "1.5px solid rgba(124,58,237,0.2)", borderRadius: 16, padding: 22, boxShadow: "var(--shadow-card)" }}>
+                      <div style={{ marginTop: 18, background: "var(--surface-card)", border: "1.5px solid rgba(124,58,237,0.2)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
                         {/* Header */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                          <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(124,58,237,0.1)", border: "1px solid rgba(124,58,237,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <FileText size={20} color="#7c3aed" />
+                        <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(124,58,237,0.12)", background: "rgba(124,58,237,0.04)", display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 11, background: resumeUploaded ? "#dcfce7" : "rgba(124,58,237,0.1)", border: `1px solid ${resumeUploaded ? "#bbf7d0" : "rgba(124,58,237,0.2)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {resumeUploaded ? <CheckCircle2 size={20} color="#15803d" /> : <FileText size={20} color="#7c3aed" />}
                           </div>
                           <div style={{ flex: 1 }}>
-                            <p style={{ fontWeight: 800, fontSize: 15, color: "var(--text-primary)" }}>
-                              {resumeResults.length} resume{resumeResults.length !== 1 ? "s" : ""} parsed — review before uploading
+                            <p style={{ fontWeight: 800, fontSize: 14.5, color: "var(--text-primary)" }}>
+                              {resumeUploaded ? `✅ ${resumeUploadedCount} candidate${resumeUploadedCount !== 1 ? "s" : ""} uploaded successfully!` : `${resumeResults.length} resume${resumeResults.length !== 1 ? "s" : ""} parsed — review before saving`}
                             </p>
-                            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
-                              Confirm these candidates look correct, then click <strong>Upload to Job</strong>.
+                            <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
+                              {resumeUploaded ? "Candidates are ready. You can now run AI screening." : "Check the parsed data below, then click Upload to save."}
                             </p>
                           </div>
                         </div>
 
                         {/* Candidate rows */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                        <div style={{ padding: "10px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
                           {resumeResults.map((r, i) => {
                             const initials = r.candidateName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
                             return (
-                              <div key={i} className="ap-staged-row">
+                              <div key={i} className="ap-staged-row" style={{ margin: "0 4px" }}>
                                 <div className="ap-staged-avatar">{initials}</div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{r.candidateName}</p>
-                                  <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>{r.email} · {r.fileName}</p>
+                                  <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 1 }}>{r.email} · {r.fileName}</p>
                                 </div>
                                 <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
                                   {r.skillsCount > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>{r.skillsCount} skills</span>}
@@ -1052,16 +1057,14 @@ function ApplicantsPageContent() {
                           })}
                         </div>
 
-                        {/* Already uploaded message or confirm button */}
-                        {resumeUploaded ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderRadius: 11, background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
-                            <CheckCircle size={17} color="#15803d" />
-                            <span style={{ fontSize: 14, fontWeight: 700, color: "#14532d" }}>{resumeUploadedCount} candidate{resumeUploadedCount !== 1 ? "s" : ""} uploaded successfully!</span>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                            <p style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>
-                              These {resumeResults.length} candidate{resumeResults.length !== 1 ? "s" : ""} are ready to be added to <strong>{selectedJobObj?.title || "the selected job"}</strong>.
+                        {/* Action row */}
+                        {!resumeUploaded && (
+                          <div style={{ padding: "14px 20px", borderTop: "1px solid rgba(124,58,237,0.1)", background: "var(--surface-card)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                            <p style={{ fontSize: 13, color: "var(--text-secondary)", flex: 1, fontWeight: 500 }}>
+                              {resumeResults.length} candidate{resumeResults.length !== 1 ? "s" : ""} ready to add to <strong>{selectedJobObj?.title || "the job"}</strong>
+                            </p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              Already uploaded automatically ✓
                             </p>
                           </div>
                         )}

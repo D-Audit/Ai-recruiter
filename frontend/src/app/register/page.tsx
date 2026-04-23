@@ -100,7 +100,7 @@ export default function RegisterPage() {
         .rg-tabs { display: flex; border: 1.5px solid #e8edf3; border-radius: 10px; overflow: hidden; margin-bottom: 22px; }
         .rg-tab { flex: 1; padding: 11px 16px; text-align: center; font-family: var(--f); font-size: 13.5px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: #94a3b8; transition: all 0.15s; letter-spacing: -0.1px; }
         .rg-tab + .rg-tab { border-left: 1.5px solid #e8edf3; }
-        .rg-tab.on { color: var(--blue); background: #fff; font-weight: 700; }
+        .rg-tab.on { color: white; background: var(--blue); font-weight: 700; border-radius: 8px; }
         .rg-tab:not(.on):hover { background: #f8fafc; color: #475569; }
 
         .rg-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }

@@ -153,7 +153,7 @@ export default function LoginPage() {
           color: #94a3b8; transition: all 0.15s; letter-spacing: -0.1px;
         }
         .lg-tab + .lg-tab { border-left: 1.5px solid #e8edf3; }
-        .lg-tab.on { color: var(--blue); background: #fff; font-weight: 700; }
+        .lg-tab.on { color: white; background: var(--blue); font-weight: 700; border-radius: 8px; }
         .lg-tab:not(.on):hover { background: #f8fafc; color: #475569; }
 
         /* Fields */

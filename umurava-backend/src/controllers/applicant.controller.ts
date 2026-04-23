@@ -390,20 +390,18 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    // Extract text from PDF or DOCX from URL buffer
     let rawText = "";
     if (kind === "pdf") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const pdfParse = require("pdf-parse");
       rawText = (await pdfParse(buffer)).text || "";
     } else if (kind === "docx") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
       const mammoth = require("mammoth");
       rawText = (await mammoth.extractRawText({ buffer })).value || "";
     } else if (kind === "text") {
       rawText = buffer.toString("utf-8");
     } else {
-      // HTML page
+
       rawText = htmlToText(buffer.toString("utf-8"));
     }
 
@@ -415,7 +413,6 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    // Use Gemini for URL content (single call — acceptable rate limit risk)
     console.log(`🤖 Parsing URL content with Gemini (${rawText.length} chars)`);
     const parsed = await parseResumeUrl(url, rawText);
 
@@ -505,7 +502,6 @@ export const removeApplicantFromJob = async (req: any, res: Response): Promise<v
       return;
     }
 
-    // Remove this job from the applicant's jobIds
     applicant.jobIds = applicant.jobIds.filter((id) => String(id) !== String(jobId));
 
     if (applicant.jobIds.length === 0) {
@@ -515,13 +511,11 @@ export const removeApplicantFromJob = async (req: any, res: Response): Promise<v
       await applicant.save();
     }
 
-    // Clean up screening results for this job
     await ScreeningResult.updateMany(
       { jobId },
       { $pull: { rankedCandidates: { candidateId: applicant._id } } }
     );
 
-    // Re-sync screening result counts
     const screeningResults = await ScreeningResult.find({ jobId });
     for (const sr of screeningResults) {
       await ScreeningResult.findByIdAndUpdate(sr._id, {
