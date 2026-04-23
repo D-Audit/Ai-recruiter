@@ -1,3 +1,5 @@
+// umurava-backend/src/controllers/screening.controller.ts
+
 import { Response } from "express";
 import Job from "../models/Job.model";
 import Applicant from "../models/Applicant.model";
@@ -42,7 +44,8 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId } = req.params;
 
-    const job = await Job.findById(jobId);
+    // Only allow screening on jobs that belong to the logged-in recruiter
+    const job = await Job.findOne({ _id: jobId, createdBy: req.user.id });
     if (!job) {
       res.status(404).json({ success: false, message: "Job not found" });
       return;
@@ -89,17 +92,17 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
         totalApplicants:  screeningOutput.totalApplicants,
         shortlistedCount: screeningOutput.shortlistedCount,
         rankedCandidates: screeningOutput.rankedCandidates.map((r) => ({
-          candidateId:    r.candidateId,
-          rank:           r.rank,
-          score:          r.score,
-          strengths:      r.strengths,
-          gaps:           r.gaps,
-          recommendation: r.recommendation,
-          skillsMatched:  r.skillsMatched  || [],
-          skillsMissing:  r.skillsMissing  || [],
-          confidence:     r.confidence     || "Medium",
+          candidateId:     r.candidateId,
+          rank:            r.rank,
+          score:           r.score,
+          strengths:       r.strengths,
+          gaps:            r.gaps,
+          recommendation:  r.recommendation,
+          skillsMatched:   r.skillsMatched   || [],
+          skillsMissing:   r.skillsMissing   || [],
+          confidence:      r.confidence      || "Medium",
           upskillingPaths: r.upskillingPaths || [],
-          adjacentRoles:   r.adjacentRoles  || [],
+          adjacentRoles:   r.adjacentRoles   || [],
         })),
         biasNotice: screeningOutput.biasNotice,
         screenedAt: screeningOutput.screenedAt,
@@ -123,7 +126,16 @@ export const runScreening = async (req: any, res: Response): Promise<void> => {
 
 export const getResults = async (req: any, res: Response): Promise<void> => {
   try {
-    const result = await ScreeningResult.findOne({ jobId: req.params.jobId })
+    const { jobId } = req.params;
+
+    // Verify the job belongs to the logged-in recruiter before returning results
+    const job = await Job.findOne({ _id: jobId, createdBy: req.user.id });
+    if (!job) {
+      res.status(404).json({ success: false, message: "Job not found" });
+      return;
+    }
+
+    const result = await ScreeningResult.findOne({ jobId })
       .populate("rankedCandidates.candidateId")
       .sort({ screenedAt: -1 });
 
@@ -143,9 +155,14 @@ export const getResults = async (req: any, res: Response): Promise<void> => {
 
 export const getAllScreenings = async (req: any, res: Response): Promise<void> => {
   try {
-    const results = await ScreeningResult.find()
+    // Only return screenings for jobs that belong to the logged-in recruiter
+    const recruiterJobs = await Job.find({ createdBy: req.user.id }).select("_id");
+    const jobIds = recruiterJobs.map((j) => j._id);
+
+    const results = await ScreeningResult.find({ jobId: { $in: jobIds } })
       .populate("jobId", "title")
       .sort({ screenedAt: -1 });
+
     res.json({ success: true, data: results });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to retrieve screenings" });
@@ -175,7 +192,8 @@ export const compareSelectedCandidates = async (
       return;
     }
 
-    const job = await Job.findById(jobId);
+    // Verify the job belongs to the logged-in recruiter
+    const job = await Job.findOne({ _id: jobId, createdBy: req.user.id });
     if (!job) {
       res.status(404).json({ success: false, message: "Job not found" });
       return;

@@ -1,3 +1,5 @@
+// umurava-backend/src/controllers/job.controller.ts
+
 import { Response } from "express";
 import Job from "../models/Job.model";
 
@@ -12,6 +14,7 @@ export const createJob = async (req: any, res: Response): Promise<void> => {
 
 export const getAllJobs = async (req: any, res: Response): Promise<void> => {
   try {
+    // Only return jobs created by the logged-in recruiter
     const jobs = await Job.find({ createdBy: req.user.id }).sort({ createdAt: -1 });
     res.json({ success: true, count: jobs.length, jobs });
   } catch (error) {
@@ -21,7 +24,8 @@ export const getAllJobs = async (req: any, res: Response): Promise<void> => {
 
 export const getJob = async (req: any, res: Response): Promise<void> => {
   try {
-    const job = await Job.findById(req.params.id);
+    // Only allow access if the job belongs to the logged-in recruiter
+    const job = await Job.findOne({ _id: req.params.id, createdBy: req.user.id });
     if (!job) {
       res.status(404).json({ success: false, message: "Job not found" });
       return;
@@ -34,9 +38,12 @@ export const getJob = async (req: any, res: Response): Promise<void> => {
 
 export const updateJob = async (req: any, res: Response): Promise<void> => {
   try {
-    const job = await Job.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-    });
+    // Only allow update if the job belongs to the logged-in recruiter
+    const job = await Job.findOneAndUpdate(
+      { _id: req.params.id, createdBy: req.user.id },
+      req.body,
+      { new: true }
+    );
     if (!job) {
       res.status(404).json({ success: false, message: "Job not found" });
       return;
@@ -49,7 +56,12 @@ export const updateJob = async (req: any, res: Response): Promise<void> => {
 
 export const deleteJob = async (req: any, res: Response): Promise<void> => {
   try {
-    await Job.findByIdAndDelete(req.params.id);
+    // Only allow delete if the job belongs to the logged-in recruiter
+    const job = await Job.findOneAndDelete({ _id: req.params.id, createdBy: req.user.id });
+    if (!job) {
+      res.status(404).json({ success: false, message: "Job not found" });
+      return;
+    }
     res.json({ success: true, message: "Job deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to delete job" });
