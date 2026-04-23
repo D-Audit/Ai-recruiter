@@ -1,17 +1,45 @@
+// umurava-backend/src/controllers/applicant.controller.ts
+
 import { Response } from "express";
 import fs from "fs";
 import Applicant from "../models/Applicant.model";
 import Job from "../models/Job.model";
+import ScreeningResult from "../models/ScreeningResult.model";
 import { parseCSVFile } from "../services/csv.service";
 import { parsePDFResume } from "../services/pdf.service";
 import { parseXLSXFile } from "../services/xlsx.service";
-import { parseResumeFile } from "../services/resume.service";
-import { callGeminiWithRetry } from "../services/ai.service";
+import { parseResumeFile, parseResumeUrl } from "../services/resume.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STANDARD HANDLERS
+// Helper: safely delete a temp file (non-fatal)
 // ─────────────────────────────────────────────────────────────────────────────
+function cleanupFile(filePath?: string): void {
+  if (filePath && fs.existsSync(filePath)) {
+    try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+  }
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: link an applicant to a job, handling duplicates gracefully
+// ─────────────────────────────────────────────────────────────────────────────
+async function linkApplicantToJob(profile: any, jobId: string): Promise<{ applicant: any; isNew: boolean }> {
+  const existing = await Applicant.findOne({ email: profile.email });
+  if (existing) {
+    await Applicant.findByIdAndUpdate(existing._id, {
+      $addToSet: { jobIds: jobId },
+    });
+    return { applicant: existing, isNew: false };
+  }
+  const applicant = await Applicant.create({
+    ...profile,
+    jobIds: [jobId],
+  });
+  return { applicant, isNew: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/:jobId
+// ─────────────────────────────────────────────────────────────────────────────
 export const getApplicants = async (req: any, res: Response): Promise<void> => {
   try {
     const applicants = await Applicant.find({ jobIds: req.params.jobId });
@@ -21,24 +49,54 @@ export const getApplicants = async (req: any, res: Response): Promise<void> => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/profile/:id
+// Fetch a single applicant by their MongoDB _id
+// ─────────────────────────────────────────────────────────────────────────────
+export const getApplicantById = async (req: any, res: Response): Promise<void> => {
+  try {
+    const applicant = await Applicant.findById(req.params.id);
+    if (!applicant) {
+      res.status(404).json({ success: false, message: "Applicant not found" });
+      return;
+    }
+    res.json({ success: true, applicant });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: "Failed to get applicant" });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/umurava
+// ─────────────────────────────────────────────────────────────────────────────
 export const getUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const profiles = await Applicant.find({ source: "umurava" }).limit(200);
     res.json({ success: true, count: profiles.length, profiles });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Failed to get profiles" });
+    res.status(500).json({ success: false, message: "Failed to get Umurava profiles" });
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/csv
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadCSV = async (req: any, res: Response): Promise<void> => {
+  const filePath = req.file?.path;
   try {
-    if (!req.file) { res.status(400).json({ success: false, message: "No file uploaded" }); return; }
+    if (!req.file) {
+      res.status(400).json({ success: false, message: "No file uploaded" });
+      return;
+    }
     const { jobId } = req.body;
-    if (!jobId) { res.status(400).json({ success: false, message: "jobId is required" }); return; }
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
 
-    const parsed = await parseCSVFile(req.file.path);
+    const parsed = await parseCSVFile(filePath);
     if (parsed.length === 0) {
-      res.status(400).json({ success: false, message: "No valid rows in CSV." });
+      res.status(400).json({ success: false, message: "No valid rows found in CSV. Check that it has firstName/lastName/email columns." });
       return;
     }
 
@@ -51,41 +109,72 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
     const count = Array.isArray(inserted) ? inserted.length : 0;
     if (count > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: count } });
 
-    res.json({ success: true, count, message: `${count} applicants uploaded from CSV` });
+    res.json({
+      success: true,
+      count,
+      message: `${count} applicant${count !== 1 ? "s" : ""} uploaded from CSV${parsed.length > count ? ` (${parsed.length - count} duplicates skipped)` : ""}`,
+    });
   } catch (error: any) {
+    console.error("❌ CSV upload error:", error);
     res.status(500).json({ success: false, message: "CSV upload failed: " + error.message });
+  } finally {
+    cleanupFile(filePath);
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/pdf
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadPDF = async (req: any, res: Response): Promise<void> => {
+  const filePath = req.file?.path;
   try {
-    if (!req.file) { res.status(400).json({ success: false, message: "No file uploaded" }); return; }
+    if (!req.file) {
+      res.status(400).json({ success: false, message: "No file uploaded" });
+      return;
+    }
     const { jobId } = req.body;
-    if (!jobId) { res.status(400).json({ success: false, message: "jobId is required" }); return; }
-
-    const parsed = await parsePDFResume(req.file.path);
-    if (!parsed.email) {
-      res.status(400).json({ success: false, message: "Could not extract applicant information from PDF" });
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
       return;
     }
 
-    const applicant = await Applicant.create({ ...parsed, jobIds: [jobId] });
-    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
-    res.status(201).json({ success: true, count: 1, applicant });
+    console.log(`📄 Parsing PDF: ${req.file.originalname}`);
+    const parsed = await parsePDFResume(filePath);
+
+    const { applicant, isNew } = await linkApplicantToJob({ ...parsed, resumeUrl: req.file.originalname }, jobId);
+    if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
+    res.status(isNew ? 201 : 200).json({
+      success: true,
+      count: 1,
+      applicant,
+      message: isNew ? "Applicant created" : "Applicant already existed — linked to job",
+    });
   } catch (error: any) {
+    console.error("❌ PDF upload error:", error);
     res.status(500).json({ success: false, message: "PDF upload failed: " + error.message });
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/xlsx
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadXLSX = async (req: any, res: Response): Promise<void> => {
+  const filePath = req.file?.path;
   try {
-    if (!req.file) { res.status(400).json({ success: false, message: "No file uploaded" }); return; }
+    if (!req.file) {
+      res.status(400).json({ success: false, message: "No file uploaded" });
+      return;
+    }
     const { jobId } = req.body;
-    if (!jobId) { res.status(400).json({ success: false, message: "jobId is required" }); return; }
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
 
-    const parsed = await parseXLSXFile(req.file.path);
+    const parsed = await parseXLSXFile(filePath);
     if (parsed.length === 0) {
-      res.status(400).json({ success: false, message: "No valid rows in XLSX." });
+      res.status(400).json({ success: false, message: "No valid rows found in XLSX." });
       return;
     }
 
@@ -98,166 +187,343 @@ export const uploadXLSX = async (req: any, res: Response): Promise<void> => {
     const count = Array.isArray(inserted) ? inserted.length : 0;
     if (count > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: count } });
 
-    res.json({ success: true, count, message: `${count} applicants uploaded from XLSX` });
+    res.json({
+      success: true,
+      count,
+      message: `${count} applicant${count !== 1 ? "s" : ""} uploaded from XLSX`,
+    });
   } catch (error: any) {
+    console.error("❌ XLSX upload error:", error);
     res.status(500).json({ success: false, message: "XLSX upload failed: " + error.message });
+  } finally {
+    cleanupFile(filePath);
   }
 };
 
-export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/resume
+// ─────────────────────────────────────────────────────────────────────────────
+export const uploadResume = async (req: any, res: Response): Promise<void> => {
+  const filePath = req.file?.path;
   try {
-    const { jobId, profileIds } = req.body;
-    if (!jobId || !profileIds?.length) { res.status(400).json({ success: false, message: "jobId and profileIds required" }); return; }
-
-    const alreadyLinked = await Applicant.find({ _id: { $in: profileIds }, jobIds: jobId }).select("_id");
-    const alreadyLinkedIds = new Set(alreadyLinked.map((p) => String(p._id)));
-    const newProfileIds = profileIds.filter((id: string) => !alreadyLinkedIds.has(String(id)));
-
-    if (newProfileIds.length === 0) {
-      res.json({ success: true, count: 0, message: "All selected profiles are already linked" });
+    if (!req.file) {
+      res.status(400).json({ success: false, message: "No file uploaded" });
       return;
     }
-
-    await Applicant.updateMany({ _id: { $in: newProfileIds } }, { $addToSet: { jobIds: jobId } });
-    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: newProfileIds.length } });
-
-    res.json({ success: true, count: newProfileIds.length });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-export const uploadResume = async (req: any, res: Response): Promise<void> => {
-  try {
-    if (!req.file) { res.status(400).json({ success: false, message: "No file uploaded" }); return; }
     const { jobId } = req.body;
     if (!jobId) {
-      if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      res.status(400).json({ success: false, message: "jobId is required" }); return;
-    }
-
-    const parsed = await parseResumeFile(req.file.path);
-    if (!parsed.email) {
-      res.status(400).json({ success: false, message: "Could not extract applicant info" });
+      cleanupFile(filePath);
+      res.status(400).json({ success: false, message: "jobId is required" });
       return;
     }
 
-    const applicant = await Applicant.create({ ...parsed, jobIds: [jobId], resumeUrl: "" });
-    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+    console.log(`📄 Parsing resume: ${req.file.originalname}`);
+    const parsed = await parseResumeFile(filePath);
 
-    res.status(201).json({ success: true, count: 1, applicant });
+    const { applicant, isNew } = await linkApplicantToJob(
+      { ...parsed, resumeUrl: req.file.originalname },
+      jobId
+    );
+    if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
+    res.status(isNew ? 201 : 200).json({
+      success: true,
+      count: 1,
+      applicant,
+      message: isNew ? "Applicant created" : "Applicant already existed — linked to this job",
+    });
   } catch (error: any) {
-    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    console.error("❌ Resume upload error:", error);
+    cleanupFile(filePath);
     res.status(500).json({ success: false, message: "Resume upload failed: " + error.message });
   }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADVANCED URL IMPORT LOGIC
+// POST /api/applicants/upload/url
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function parseTextWithGemini(text: string): Promise<any> {
-  const prompt = `Extract the following information from this resume/profile text and return ONLY a valid JSON object with no explanation, no markdown, no backticks.
-{ "firstName": "", "lastName": "", "email": "", "headline": "", "bio": "", "location": "", "skills": [{ "name": "", "level": "Intermediate", "yearsOfExperience": 0 }], "languages": [{ "name": "", "proficiency": "Fluent" }], "experience": [{ "company": "", "role": "", "startDate": "", "endDate": "", "description": "", "technologies": [], "isCurrent": false }], "education": [{ "institution": "", "degree": "", "fieldOfStudy": "", "startYear": 0, "endYear": 0 }], "certifications": [{ "name": "", "issuer": "", "issueDate": "" }], "projects": [{ "name": "", "description": "", "technologies": [], "role": "" }], "availability": { "status": "Available", "type": "Full-time", "startDate": "" }, "socialLinks": { "linkedin": "", "github": "", "portfolio": "" } }
-Text: ${text.slice(0, 12000)}`;
-  const raw = await callGeminiWithRetry(prompt);
-  try { return JSON.parse(raw.replace(/```json|```/g, "").trim()); } 
-  catch { throw new Error("Gemini returned invalid JSON"); }
+const BLOCKED_DOMAINS = [
+  "linkedin.com", "instagram.com", "facebook.com",
+  "twitter.com", "x.com", "tiktok.com",
+];
+
+async function fetchUrl(url: string): Promise<{ buffer: Buffer; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const lib = parsedUrl.protocol === "https:" ? require("https") : require("http");
+    const request = lib.request(
+      {
+        hostname: parsedUrl.hostname,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; UmuravaAI/1.0; +https://umurava.ai)",
+          "Accept": "text/html,application/pdf,text/plain,*/*",
+        },
+        timeout: 15000,
+      },
+      (response: any) => {
+        if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
+          return fetchUrl(response.headers.location).then(resolve).catch(reject);
+        }
+        if (response.statusCode !== 200) {
+          return reject(new Error(`URL returned HTTP ${response.statusCode}`));
+        }
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () =>
+          resolve({ buffer: Buffer.concat(chunks), contentType: response.headers["content-type"] || "" })
+        );
+      }
+    );
+    request.on("error", reject);
+    request.on("timeout", () => {
+      request.destroy();
+      reject(new Error("Request timed out after 15 seconds"));
+    });
+    request.end();
+  });
 }
 
-type FileKind = "csv" | "xlsx" | "xls" | "pdf" | "docx" | "html" | "text";
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-function detectKind(contentType: string, url: string): FileKind {
+type UrlKind = "csv" | "xlsx" | "xls" | "pdf" | "docx" | "text" | "html";
+
+function detectKind(contentType: string, url: string): UrlKind {
   const ct = contentType.toLowerCase();
   const ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
   if (ct.includes("text/csv") || ext === "csv") return "csv";
   if (ct.includes("application/vnd.ms-excel") || ext === "xls") return "xls";
   if (ct.includes("spreadsheetml") || ct.includes("vnd.openxmlformats") || ext === "xlsx") return "xlsx";
   if (ct.includes("application/pdf") || ext === "pdf") return "pdf";
-  if (ct.includes("wordprocessingml") || ct.includes("application/msword") || ext === "docx" || ext === "doc") return "docx";
+  if (ct.includes("application/vnd.openxmlformats") && ext === "docx") return "docx";
   if (ct.includes("text/plain") || ext === "txt") return "text";
   return "html";
-}
-
-function parseSpreadsheetBuffer(buffer: Buffer, kind: "csv" | "xlsx" | "xls"): any[] {
-  const XLSX = require("xlsx");
-  const workbook = kind === "csv" ? XLSX.read(buffer.toString("utf-8"), { type: "string" }) : XLSX.read(buffer, { type: "buffer" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-  const results: any[] = [];
-  
-  for (const row of rows) {
-    const firstName = (row.firstName || row.first_name || (row.name || "").split(" ")[0] || "").toString().trim();
-    const lastName = (row.lastName || row.last_name || (row.name || "").split(" ").slice(1).join(" ") || "").toString().trim();
-    const email = (row.email || row.Email || "").toString().trim();
-    if (!(firstName || lastName) || !email) continue;
-
-    results.push({
-      firstName, lastName, email,
-      headline: (row.headline || "").toString(),
-      skills: [], languages: [], experience: [], education: [], certifications: [], projects: [],
-      availability: { status: "Available", type: "Full-time", startDate: "" },
-      socialLinks: { linkedin: "", github: "", portfolio: "" },
-      source: "external",
-    });
-  }
-  return results;
-}
-
-async function fetchUrl(url: string): Promise<{ buffer: Buffer; contentType: string }> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const lib = parsedUrl.protocol === "https:" ? require("https") : require("http");
-    const req = lib.request({ hostname: parsedUrl.hostname, path: parsedUrl.pathname + parsedUrl.search, method: "GET", headers: { "User-Agent": "Mozilla/5.0" } }, (res: any) => {
-      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) return fetchUrl(res.headers.location).then(resolve).catch(reject);
-      if (res.statusCode !== 200) return reject(new Error(`URL returned HTTP ${res.statusCode}`));
-      const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
-      res.on("end", () => resolve({ buffer: Buffer.concat(chunks), contentType: res.headers["content-type"] || "" }));
-    });
-    req.on("error", reject); req.end();
-  });
-}
-
-function htmlToText(html: string): string {
-  return html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, url } = req.body;
-    if (!jobId || !url) { res.status(400).json({ success: false, message: "jobId and url are required" }); return; }
 
+    if (!jobId || !url) {
+      res.status(400).json({ success: false, message: "jobId and url are required" });
+      return;
+    }
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      res.status(400).json({ success: false, message: "Invalid URL format. Please provide a full URL including https://" });
+      return;
+    }
+
+    const isBlocked = BLOCKED_DOMAINS.some((d) => parsedUrl.hostname.includes(d));
+    if (isBlocked) {
+      res.status(400).json({
+        success: false,
+        message:
+          "LinkedIn and social media URLs cannot be imported automatically — they block external access. " +
+          "Please download the candidate's resume as a PDF and upload it instead.",
+      });
+      return;
+    }
+
+    console.log(`🌐 Fetching URL: ${url}`);
     const { buffer, contentType } = await fetchUrl(url);
     const kind = detectKind(contentType, url);
 
     if (kind === "csv" || kind === "xlsx" || kind === "xls") {
-      const rows = parseSpreadsheetBuffer(buffer, kind);
-      if (rows.length === 0) { res.status(400).json({ success: false, message: `No valid rows in URL file.` }); return; }
-      
-      const applicants = rows.map(r => ({ ...r, jobIds: [jobId] }));
-      const inserted = await Applicant.insertMany(applicants, { ordered: false }).catch(e => e.insertedDocs || []);
-      if (inserted.length > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: inserted.length } });
-      res.json({ success: true, count: inserted.length });
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const XLSX = require("xlsx");
+      const workbook = kind === "csv"
+        ? XLSX.read(buffer.toString("utf-8"), { type: "string" })
+        : XLSX.read(buffer, { type: "buffer" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      const applicants: any[] = [];
+      for (const row of rows) {
+        const firstName = (row.firstName || row.first_name || (row.name || "").split(" ")[0] || "").toString().trim();
+        const lastName  = (row.lastName  || row.last_name  || (row.name || "").split(" ").slice(1).join(" ") || "").toString().trim();
+        const email     = (row.email || row.Email || "").toString().trim();
+        if (!(firstName || lastName) || !email) continue;
+        applicants.push({
+          firstName, lastName, email,
+          headline: (row.headline || "").toString(),
+          skills: [], languages: [], experience: [], education: [],
+          certifications: [], projects: [],
+          availability: { status: "Available", type: "Full-time", startDate: "" },
+          socialLinks: { linkedin: "", github: "", portfolio: "" },
+          source: "external",
+          jobIds: [jobId],
+        });
+      }
+
+      if (applicants.length === 0) {
+        res.status(400).json({ success: false, message: "No valid rows found in the spreadsheet URL." });
+        return;
+      }
+
+      const inserted = await Applicant.insertMany(applicants, { ordered: false }).catch((e) => {
+        if (e.code === 11000 || e.writeErrors) return e.insertedDocs || [];
+        throw e;
+      });
+      const count = Array.isArray(inserted) ? inserted.length : 0;
+      if (count > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: count } });
+
+      res.json({ success: true, count, message: `${count} applicants imported from URL` });
       return;
     }
 
     let rawText = "";
-    if (kind === "pdf") { const pdfParse = require("pdf-parse"); rawText = (await pdfParse(buffer)).text; }
-    else if (kind === "docx") { const mammoth = require("mammoth"); rawText = (await mammoth.extractRawText({ buffer })).value; }
-    else if (kind === "text") { rawText = buffer.toString("utf-8"); }
-    else { rawText = htmlToText(buffer.toString("utf-8")); }
+    if (kind === "pdf") {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const pdfParse = require("pdf-parse");
+      rawText = (await pdfParse(buffer)).text || "";
+    } else if (kind === "docx") {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mammoth = require("mammoth");
+      rawText = (await mammoth.extractRawText({ buffer })).value || "";
+    } else if (kind === "text") {
+      rawText = buffer.toString("utf-8");
+    } else {
+      rawText = htmlToText(buffer.toString("utf-8"));
+    }
 
-    if (rawText.length < 50) { res.status(422).json({ success: false, message: "Not enough text found at URL." }); return; }
+    if (rawText.trim().length < 50) {
+      res.status(422).json({
+        success: false,
+        message: "Not enough readable text found at this URL. If it's a login-protected page or a scanned PDF, please download and upload the file directly.",
+      });
+      return;
+    }
 
-    const parsed = await parseTextWithGemini(rawText);
-    if (!parsed.email) { res.status(400).json({ success: false, message: "Could not extract complete profile." }); return; }
+    console.log(`🤖 Parsing URL content with Gemini (${rawText.length} chars)`);
+    const parsed = await parseResumeUrl(url, rawText);
 
-    const applicant = await Applicant.create({ ...parsed, jobIds: [jobId], source: "external", resumeUrl: url });
-    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+    const { applicant, isNew } = await linkApplicantToJob(parsed, jobId);
+    if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
 
-    res.status(201).json({ success: true, count: 1, applicant });
+    res.status(isNew ? 201 : 200).json({
+      success: true,
+      count: 1,
+      applicant,
+      message: isNew ? "Applicant imported from URL" : "Applicant already existed — linked to this job",
+    });
   } catch (error: any) {
+    console.error("❌ URL import error:", error);
     res.status(500).json({ success: false, message: "URL import failed: " + error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/manual
+// ─────────────────────────────────────────────────────────────────────────────
+export const submitManualApplicant = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { jobId, ...profileData } = req.body;
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
+    if (!profileData.firstName || !profileData.lastName || !profileData.email) {
+      res.status(400).json({ success: false, message: "firstName, lastName, and email are required" });
+      return;
+    }
+
+    const { applicant, isNew } = await linkApplicantToJob(
+      { ...profileData, source: profileData.source || "external" },
+      jobId
+    );
+    if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
+    res.status(isNew ? 201 : 200).json({ success: true, count: 1, applicant });
+  } catch (error: any) {
+    console.error("❌ Manual applicant error:", error);
+    res.status(500).json({ success: false, message: "Manual applicant submit failed: " + error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/select
+// ─────────────────────────────────────────────────────────────────────────────
+export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { jobId, profileIds } = req.body;
+    if (!jobId || !profileIds?.length) {
+      res.status(400).json({ success: false, message: "jobId and profileIds are required" });
+      return;
+    }
+
+    const alreadyLinked = await Applicant.find({ _id: { $in: profileIds }, jobIds: jobId }).select("_id");
+    const alreadyLinkedIds = new Set(alreadyLinked.map((p) => String(p._id)));
+    const newIds = profileIds.filter((id: string) => !alreadyLinkedIds.has(String(id)));
+
+    if (newIds.length === 0) {
+      res.json({ success: true, count: 0, message: "All selected profiles are already linked to this job" });
+      return;
+    }
+
+    await Applicant.updateMany({ _id: { $in: newIds } }, { $addToSet: { jobIds: jobId } });
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: newIds.length } });
+
+    res.json({ success: true, count: newIds.length });
+  } catch (error: any) {
+    console.error("❌ Umurava profile select error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/applicants/:jobId/applicant/:applicantId
+// ─────────────────────────────────────────────────────────────────────────────
+export const removeApplicantFromJob = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { jobId, applicantId } = req.params;
+
+    const applicant = await Applicant.findById(applicantId);
+    if (!applicant) {
+      res.status(404).json({ success: false, message: "Applicant not found" });
+      return;
+    }
+
+    applicant.jobIds = applicant.jobIds.filter((id) => String(id) !== String(jobId));
+
+    if (applicant.jobIds.length === 0) {
+      await Applicant.findByIdAndDelete(applicantId);
+    } else {
+      await applicant.save();
+    }
+
+    await ScreeningResult.updateMany(
+      { jobId },
+      { $pull: { rankedCandidates: { candidateId: applicant._id } } }
+    );
+
+    const screeningResults = await ScreeningResult.find({ jobId });
+    for (const sr of screeningResults) {
+      await ScreeningResult.findByIdAndUpdate(sr._id, {
+        totalApplicants:  sr.rankedCandidates.length,
+        shortlistedCount: sr.rankedCandidates.filter((c) => c.score >= 60).length,
+      });
+    }
+
+    await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: -1 } });
+
+    res.json({ success: true, message: "Applicant removed from job successfully" });
+  } catch (error: any) {
+    console.error("❌ Remove applicant error:", error);
+    res.status(500).json({ success: false, message: "Failed to remove applicant: " + error.message });
   }
 };

@@ -5,39 +5,36 @@ import { useDispatch, useSelector } from "react-redux";
 import { logout } from "../store/slices/authSlice";
 import { RootState } from "../store";
 import {
-  LayoutDashboard, Briefcase, Users, LogOut, Brain,
-  Menu, X, ListChecks, Sparkles, Settings,
+  LayoutDashboard, Briefcase, Users, LogOut,
+  Menu, X, ListChecks, Settings,
 } from "lucide-react";
 import { clearAssistantContext } from "../store/slices/screeningSlice";
 import { useEffect, useState } from "react";
 import { getMe } from "../services/authService";
+import AnimatedLogo from "./AnimatedLogo";
 
 const navItems = [
-  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/jobs", icon: Briefcase, label: "Jobs" },
-  { href: "/applicants", icon: Users, label: "Applicants" },
-  { href: "/screenings", icon: ListChecks, label: "Screenings" },
+  { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard",  tag: null },
+  { href: "/jobs",       icon: Briefcase,        label: "Jobs",        tag: null },
+  { href: "/candidates", icon: Users,             label: "Candidates",  tag: null },
+  { href: "/screenings", icon: ListChecks,        label: "Screenings",  tag: "AI" },
 ];
 
 export default function Sidebar() {
-  const pathname  = usePathname();
-  const router    = useRouter();
-  const dispatch  = useDispatch();
-  const { user }  = useSelector((state: RootState) => state.auth);
-  const [isOpen, setIsOpen] = useState(false);
+  const pathname = usePathname();
+  const router   = useRouter();
+  const dispatch = useDispatch();
+  const { user } = useSelector((state: RootState) => state.auth);
+  const [isOpen,     setIsOpen]     = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  const [me, setMe] = useState<any>(null);
+  const [me,         setMe]         = useState<any>(null);
 
   useEffect(() => { setIsOpen(false); }, [pathname]);
-
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
-
-  useEffect(() => {
-    getMe().then((d) => setMe(d.user)).catch(() => {});
-  }, []);
+  useEffect(() => { getMe().then((d) => setMe(d.user)).catch(() => {}); }, []);
 
   const displayUser = me || user;
   const initials = displayUser?.name
@@ -53,170 +50,225 @@ export default function Sidebar() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@700;800&display=swap');
-
         .sb-trigger {
           display: none; position: fixed; top: 16px; left: 16px; z-index: 200;
-          width: 42px; height: 42px; border-radius: 12px; background: #0a1628;
-          border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-          align-items: center; justify-content: center; cursor: pointer;
-          color: #94a3b8; transition: background 0.18s ease;
+          width: 40px; height: 40px; border-radius: 10px;
+          background: #f7f7f8; border: 1px solid var(--border-soft);
+          box-shadow: 0 8px 20px rgba(16,24,40,0.12);
+          align-items: center; justify-content: center;
+          cursor: pointer; color: #94a3b8; transition: all 0.15s;
         }
-        .sb-trigger:hover { background: #111f3a; color: #e2e8f0; }
+        .sb-trigger:hover { background: var(--surface-hover); color: var(--text-primary); }
 
         .sb-overlay {
           display: none; position: fixed; inset: 0;
-          background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
-          z-index: 149; animation: sbFadeIn 0.2s ease;
+          background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
+          z-index: 149; animation: fadeIn 0.2s ease;
         }
-        @keyframes sbFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+        /* ── Shell ── */
         .sidebar {
-          font-family: 'DM Sans', sans-serif;
-          background: #0f172a;
-          background-image:
-            radial-gradient(ellipse at 20% 10%, rgba(37,99,235,0.1) 0%, transparent 60%),
-            radial-gradient(ellipse at 80% 90%, rgba(124,58,237,0.07) 0%, transparent 60%);
-          width: 260px; min-height: 100vh;
-          position: fixed; left: 0; top: 0;
+          font-family: var(--font-body, system-ui);
+          width: var(--sidebar-width, 260px);
+          min-height: 100vh; position: fixed; left: 0; top: 0;
           display: flex; flex-direction: column; z-index: 150;
-          border-right: 1px solid rgba(255,255,255,0.06);
-          box-shadow: 4px 0 32px rgba(0,0,0,0.4);
-          transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+          background: #f7f7f8;
+          border-right: 1px solid var(--border-soft);
+          box-shadow: none;
+          transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+          overflow: hidden;
+        }
+        .sidebar::before {
+          content: '';
+          position: absolute; top: -80px; left: -80px;
+          width: 300px; height: 300px; border-radius: 50%;
+          background: none;
+          pointer-events: none;
+        }
+        .sidebar::after {
+          content: '';
+          position: absolute; bottom: -80px; right: -80px;
+          width: 240px; height: 240px; border-radius: 50%;
+          background: none;
+          pointer-events: none;
         }
 
+        /* ── Logo ── */
         .sb-logo {
-          padding: 24px 20px 20px;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
+          padding: 18px 14px 14px;
+          border-bottom: 1px solid var(--border-muted);
           display: flex; align-items: center; gap: 12px;
+          position: relative; z-index: 1;
         }
-        .sb-logo-icon {
-          width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
-          background: linear-gradient(135deg, #2563eb, #7c3aed);
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 4px 12px rgba(37,99,235,0.4);
-        }
-        .sb-logo-name { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 800; color: #f1f5f9; letter-spacing: -0.3px; }
-        .sb-logo-tag { font-size: 10px; color: #475569; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
 
+        /* ── Section label ── */
         .sb-section-label {
-          padding: 16px 20px 6px; font-size: 10px; font-weight: 700;
-          color: #2d4a6b; text-transform: uppercase; letter-spacing: 1px;
+          padding: 20px 20px 8px;
+          font-size: 9.5px; font-weight: 700; color: var(--text-muted);
+          text-transform: uppercase; letter-spacing: 2px;
+          position: relative; z-index: 1;
         }
 
-        .sb-nav { flex: 1; padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; }
+        /* ── Nav ── */
+        .sb-nav {
+          flex: 1; padding: 2px 10px 8px;
+          display: flex; flex-direction: column; gap: 3px;
+          position: relative; z-index: 1;
+        }
 
         .sb-link {
-          display: flex; align-items: center; gap: 12px;
-          padding: 11px 12px; border-radius: 10px;
-          text-decoration: none; font-weight: 500; font-size: 14px;
-          color: #64748b; transition: all 0.18s ease; position: relative;
+          display: flex; align-items: center; gap: 11px;
+          padding: 10px 12px; border-radius: 11px;
+          text-decoration: none; font-weight: 500;
+          font-size: 14.5px; color: var(--text-secondary);
+          transition: all 0.18s; position: relative;
+          border: 1px solid transparent;
+          letter-spacing: -0.01em;
         }
-        .sb-link:hover { color: #cbd5e1; background: #1e293b; }
+        .sb-link:hover {
+          color: var(--text-primary);
+          background: var(--surface-hover);
+          border-color: var(--border-muted);
+        }
         .sb-link.active {
-          color: #93c5fd;
-          background: linear-gradient(135deg, rgba(37,99,235,0.2), rgba(124,58,237,0.12));
-          box-shadow: 0 0 0 1px rgba(37,99,235,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+          color: #1d4ed8;
+          background: rgba(37,99,235,0.08);
+          border-color: rgba(37,99,235,0.22);
+          font-weight: 700;
         }
         .sb-link.active::before {
-          content: ''; position: absolute; left: 0; top: 20%; height: 60%;
-          width: 3px; border-radius: 0 4px 4px 0;
-          background: linear-gradient(180deg, #3b82f6, #7c3aed);
+          content: '';
+          position: absolute; left: -1px; top: 18%; height: 64%;
+          width: 3px; border-radius: 0 3px 3px 0;
+          background: linear-gradient(180deg, #60a5fa, #818cf8);
         }
+
         .sb-icon {
-          width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
+          width: 34px; height: 34px; border-radius: 9px;
+          flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+          transition: all 0.18s; color: inherit;
         }
-        .sb-link.active .sb-icon { background: rgba(37,99,235,0.25); }
+        .sb-link.active .sb-icon {
+          background: rgba(59,130,246,0.18);
+          color: #2563eb;
+        }
+        .sb-link-label { flex: 1; }
+        .sb-ai-tag {
+          font-size: 9px; font-weight: 800; letter-spacing: 0.8px;
+          padding: 2px 7px; border-radius: 5px;
+          background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(37,99,235,0.14));
+          color: #5b21b6; border: 1px solid rgba(124,58,237,0.24);
+          text-transform: uppercase;
+        }
 
-        .sb-divider { margin: 8px 12px; height: 1px; background: rgba(255,255,255,0.06); }
+        /* ── Divider ── */
+        .sb-divider {
+          margin: 6px 10px;
+          height: 1px;
+          background: var(--border-muted);
+          position: relative; z-index: 1;
+        }
 
-        .sb-footer { padding: 12px 12px 20px; }
+        /* ── Footer ── */
+        .sb-footer {
+          padding: 8px 10px 20px;
+          position: relative; z-index: 1;
+        }
 
+        /* User card */
         .sb-user {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px; border-radius: 12px; cursor: pointer;
-          border: 1px solid rgba(255,255,255,0.07);
-          background: rgba(255,255,255,0.03);
-          transition: background 0.18s ease;
-          margin-bottom: 4px;
+          display: flex; align-items: center; gap: 11px;
+          padding: 11px 12px; border-radius: 12px;
+          cursor: pointer;
+          border: 1px solid var(--border-soft);
+          background: #ffffff;
+          transition: all 0.15s; margin-bottom: 4px;
+          text-decoration: none;
         }
-        .sb-user:hover { background: rgba(255,255,255,0.06); }
+        .sb-user:hover {
+          background: var(--surface-hover);
+          border-color: var(--border-input);
+        }
         .sb-avatar {
           width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-          background: linear-gradient(135deg, #1e3a5f, #2d1b6e);
-          border: 2px solid rgba(255,255,255,0.12);
+          background: linear-gradient(135deg, #1d4ed8, #7c3aed);
           display: flex; align-items: center; justify-content: center;
-          font-size: 13px; font-weight: 700; color: #93c5fd;
+          font-size: 12.5px; font-weight: 800; color: white;
+          box-shadow: 0 2px 10px rgba(37,99,235,0.35);
         }
-        .sb-user-info { flex: 1; min-width: 0; }
-        .sb-user-name { color: #e2e8f0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sb-user-email { color: #475569; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        .sb-logout-btn {
-          display: flex; align-items: center; gap: 12px;
-          padding: 10px 12px; border-radius: 10px; width: 100%;
-          background: transparent; color: #64748b; border: none; cursor: pointer;
-          font-weight: 500; font-size: 14px; font-family: 'DM Sans', sans-serif;
-          transition: all 0.18s ease; text-align: left;
+        .sb-user-name {
+          font-size: 13.5px; font-weight: 700; color: var(--text-primary);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
-        .sb-logout-btn:hover { color: #f87171; background: rgba(248,113,113,0.08); }
-
-        .sb-status { margin: 8px 12px 0; padding: 6px 10px; border-radius: 8px;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
-          display: flex; align-items: center; justify-content: space-between; }
-        .sb-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
-          box-shadow: 0 0 6px rgba(34,197,94,0.5); animation: sbPulse 2.4s ease-in-out infinite; }
-        @keyframes sbPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .sb-status-text { color: #334155; font-size: 10.5px; font-weight: 500; }
-
-        .sb-close {
-          display: none; position: absolute; top: 16px; right: 16px;
-          width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.06);
-          border: none; align-items: center; justify-content: center; cursor: pointer; color: #64748b;
+        .sb-user-email {
+          font-size: 11px; color: var(--text-muted);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          margin-top: 2px;
         }
 
-        /* Logout confirm */
+        /* Footer buttons */
+        .sb-footer-btn {
+          display: flex; align-items: center; gap: 10px;
+          padding: 9px 12px; border-radius: 10px;
+          border: none; background: transparent;
+          font-family: inherit; font-size: 14px; font-weight: 600;
+          width: 100%; text-align: left; cursor: pointer;
+          transition: all 0.15s; text-decoration: none;
+          letter-spacing: -0.01em;
+        }
+        .sb-footer-btn.settings {
+          color: var(--text-secondary);
+        }
+        .sb-footer-btn.settings:hover {
+          color: var(--text-primary); background: var(--surface-hover);
+        }
+        .sb-footer-btn.signout {
+          color: var(--text-secondary);
+        }
+        .sb-footer-btn.signout:hover {
+          color: #fca5a5; background: rgba(239,68,68,0.08);
+        }
+
+        /* Logout modal */
         .sb-modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
-          z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px;
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+          z-index: 400; display: flex; align-items: center; justify-content: center;
+          padding: 20px; animation: fadeIn 0.15s ease;
         }
         .sb-modal {
-          background: white; border-radius: 20px; padding: 32px; width: 100%; max-width: 380px;
-          box-shadow: 0 30px 80px rgba(0,0,0,0.3); animation: sbFadeIn 0.2s ease;
+          background: var(--surface-card); border: 1px solid var(--border-soft);
+          border-radius: 20px; padding: 28px; max-width: 360px; width: 100%;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.3); animation: scaleIn 0.18s ease;
         }
-        .sb-modal-icon { width: 56px; height: 56px; border-radius: 14px; background: #fef2f2;
-          border: 2px solid #fecaca; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
-        .sb-modal-title { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 10px; }
-        .sb-modal-text { color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
-        .sb-modal-btns { display: flex; gap: 12px; }
-        .sb-modal-cancel { flex: 1; padding: 12px; border-radius: 11px; border: 1.5px solid #e2e8f0;
-          background: white; color: #64748b; font-weight: 600; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .sb-modal-confirm { flex: 1; padding: 12px; border-radius: 11px; border: none;
-          background: linear-gradient(135deg, #ef4444, #dc2626); color: white; font-weight: 700;
-          font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif;
-          box-shadow: 0 4px 14px rgba(239,68,68,0.35); }
-
-        @media (max-width: 1024px) and (min-width: 769px) {
-          .sidebar { width: 72px; }
-          .sb-logo-name, .sb-logo-tag, .sb-section-label,
-          .sb-link span, .sb-user-info, .sb-logout-btn span:last-child,
-          .sb-status-text { display: none; }
-          .sb-logo { justify-content: center; }
-          .sb-nav { align-items: center; }
-          .sb-link { padding: 12px; justify-content: center; gap: 0; border-radius: 12px; }
-          .sb-icon { width: 36px; height: 36px; }
-          .sb-user { justify-content: center; }
-          .sb-logout-btn { justify-content: center; padding: 12px 0; }
-          .sb-footer { padding: 12px 8px 20px; }
+        .sb-modal-icon {
+          width: 52px; height: 52px; border-radius: 14px;
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.18);
+          display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
         }
+        .sb-modal-title { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
+        .sb-modal-text  { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .sb-modal-btns  { display: flex; gap: 10px; }
+        .sb-modal-cancel {
+          flex: 1; padding: 12px; border-radius: 11px;
+          border: 1.5px solid var(--border-soft); background: var(--surface-card);
+          color: var(--text-secondary); font-weight: 600; font-size: 14px;
+          cursor: pointer; font-family: inherit; transition: all 0.15s;
+        }
+        .sb-modal-cancel:hover { background: var(--surface-hover); }
+        .sb-modal-confirm {
+          flex: 1; padding: 12px; border-radius: 11px; border: none;
+          background: #ef4444; color: white; font-weight: 700; font-size: 14px;
+          cursor: pointer; font-family: inherit;
+          box-shadow: 0 4px 14px rgba(239,68,68,0.3); transition: all 0.15s;
+        }
+        .sb-modal-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.4); }
 
         @media (max-width: 768px) {
           .sb-trigger { display: flex; }
-          .sidebar { transform: translateX(-100%); width: 260px; }
+          .sidebar { transform: translateX(-100%); }
           .sidebar.open { transform: translateX(0); }
           .sb-overlay { display: block; }
-          .sb-close { display: flex; }
         }
       `}</style>
 
@@ -226,93 +278,66 @@ export default function Sidebar() {
 
       {isOpen && <div className="sb-overlay" onClick={() => setIsOpen(false)} />}
 
-      <aside className={`sidebar${isOpen ? " open" : ""}`}>
-        <button className="sb-close" onClick={() => setIsOpen(false)}>
-          <X size={16} />
-        </button>
-
+      <nav className={`sidebar${isOpen ? " open" : ""}`}>
         {/* Logo */}
         <div className="sb-logo">
-          <div className="sb-logo-icon" style={{ gap: 4 }}>
-            <Brain size={18} color="white" />
-            <Sparkles size={16} color="white" />
-          </div>
-          <div>
-            <p className="sb-logo-name">Umurava AI</p>
-            <p className="sb-logo-tag">Recruiter</p>
-          </div>
+          <AnimatedLogo size="sm" dark={false} />
+          {isOpen && (
+            <button
+              onClick={() => setIsOpen(false)}
+              style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 4, borderRadius: 7 }}
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Nav */}
-        <p className="sb-section-label">Navigation</p>
-        <nav className="sb-nav">
+        <p className="sb-section-label">Main Menu</p>
+        <div className="sb-nav">
           {navItems.map((item) => {
-            const active =
-              pathname === item.href ||
-              (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
+            const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
             return (
-              <Link key={item.href} href={item.href} className={`sb-link ${active ? "active" : ""}`}>
-                <span className="sb-icon">
-                  <item.icon size={17} />
-                </span>
-                <span>{item.label}</span>
+              <Link key={item.href} href={item.href} className={`sb-link${isActive ? " active" : ""}`}>
+                <span className="sb-icon"><item.icon size={17} /></span>
+                <span className="sb-link-label">{item.label}</span>
+                {item.tag && <span className="sb-ai-tag">{item.tag}</span>}
               </Link>
             );
           })}
-        </nav>
+        </div>
+
+        <div className="sb-divider" />
 
         {/* Footer */}
         <div className="sb-footer">
-          <div className="sb-divider" />
-
-          {/* User profile → profile page */}
-          <Link href="/profile" style={{ textDecoration: "none", color: "inherit" }}>
-            <div className="sb-user" style={{ cursor: "pointer" }}>
-              <div className="sb-avatar">{initials}</div>
-              <div className="sb-user-info">
-                <p className="sb-user-name">{displayUser?.name || "Recruiter"}</p>
-                <p className="sb-user-email">{displayUser?.email || "..."}</p>
-              </div>
+          <Link href="/profile" className="sb-user">
+            <div className="sb-avatar">{initials}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="sb-user-name">{displayUser?.name || "User"}</p>
+              <p className="sb-user-email">{displayUser?.email || ""}</p>
             </div>
           </Link>
 
-          <Link
-            href="/settings"
-            className={`sb-link${pathname === "/settings" ? " active" : ""}`}
-            style={{ marginBottom: 4, textDecoration: "none" }}
-          >
-            <span className="sb-icon">
-              <Settings size={17} />
-            </span>
-            <span>Settings</span>
+          <Link href="/settings" className="sb-footer-btn settings">
+            <Settings size={16} /> Settings
           </Link>
 
-          <button className="sb-logout-btn" onClick={() => setShowLogout(true)}>
-            <span className="sb-icon"><LogOut size={17} /></span>
-            <span>Logout</span>
+          <button className="sb-footer-btn signout" onClick={() => setShowLogout(true)}>
+            <LogOut size={16} /> Sign out
           </button>
-
-          <div className="sb-status">
-            <span className="sb-status-text">System Online</span>
-            <span className="sb-status-dot" />
-          </div>
         </div>
-      </aside>
+      </nav>
 
-      {/* Logout modal */}
       {showLogout && (
         <div className="sb-modal-overlay" onClick={() => setShowLogout(false)}>
           <div className="sb-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sb-modal-icon">
-              <LogOut size={26} color="#ef4444" />
-            </div>
-            <h3 className="sb-modal-title">Confirm Logout</h3>
-            <p className="sb-modal-text">
-              Are you sure you want to logout? You will need to sign in again to access your dashboard.
-            </p>
+            <div className="sb-modal-icon"><LogOut size={22} color="#ef4444" /></div>
+            <p className="sb-modal-title">Sign out?</p>
+            <p className="sb-modal-text">You'll be redirected to the login page. Any unsaved changes will be lost.</p>
             <div className="sb-modal-btns">
               <button className="sb-modal-cancel" onClick={() => setShowLogout(false)}>Cancel</button>
-              <button className="sb-modal-confirm" onClick={confirmLogout}>Yes, Logout</button>
+              <button className="sb-modal-confirm" onClick={confirmLogout}>Sign out</button>
             </div>
           </div>
         </div>

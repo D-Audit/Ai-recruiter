@@ -2,6 +2,7 @@ import { Router } from "express";
 import { upload, resumeUpload } from "../middleware/upload.middleware";
 import {
   getApplicants,
+  getApplicantById,
   getUmuravaProfiles,
   uploadCSV,
   uploadPDF,
@@ -9,24 +10,38 @@ import {
   selectUmuravaProfiles,
   uploadResume,
   uploadFromURL,
+  submitManualApplicant,
+  removeApplicantFromJob,
 } from "../controllers/applicant.controller";
+import { protect } from "../middleware/auth.middleware";
 
 const router = Router();
 
-// Platform profiles
+router.use(protect);
+
+// ── Platform profiles ──────────────────────────────────────────────────────
 router.get("/umurava", getUmuravaProfiles);
 
-// Job-specific applicants
+// ── Single applicant by ID — MUST be before /:jobId so it is not swallowed ──
+router.get("/profile/:id", getApplicantById);
+
+// ── Job-specific applicants ────────────────────────────────────────────────
 router.get("/:jobId", getApplicants);
 
-// File & URL Uploads
-router.post("/upload/csv", upload.single("file"), uploadCSV);
-router.post("/upload/pdf", upload.single("file"), uploadPDF);
-router.post("/upload/xlsx", upload.single("file"), uploadXLSX);
+// ── File & URL uploads ─────────────────────────────────────────────────────
+router.post("/upload/csv",    upload.single("file"),       uploadCSV);
+router.post("/upload/pdf",    upload.single("file"),       uploadPDF);
+router.post("/upload/xlsx",   upload.single("file"),       uploadXLSX);
 router.post("/upload/resume", resumeUpload.single("file"), uploadResume);
-router.post("/upload/url", uploadFromURL);
+router.post("/upload/url",    uploadFromURL);
 
-// Manual Selection
+// ── Manual applicant entry ─────────────────────────────────────────────────
+router.post("/manual", submitManualApplicant);
+
+// ── Umurava profile selection ──────────────────────────────────────────────
 router.post("/select", selectUmuravaProfiles);
+
+// ── Remove applicant from a specific job ──────────────────────────────────
+router.delete("/:jobId/applicant/:applicantId", removeApplicantFromJob);
 
 export default router;

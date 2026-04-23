@@ -6,87 +6,236 @@ import { useDropzone } from "react-dropzone";
 import { useDispatch } from "react-redux";
 import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
+import LoadingSpinner from "../../components/LoadingSpinner";
 import {
-  uploadCSV,
-  uploadResumeFile,
-  uploadFromURL,
-  getUmuravaProfiles,
-  selectUmuravaProfiles,
-  submitManualApplicant,
+  uploadCSV, uploadResumeFile, uploadFromURL,
+  getUmuravaProfiles, selectUmuravaProfiles,
+  submitManualApplicant, getApplicants, removeApplicantFromJob,
 } from "../../services/applicantService";
 import { getAllJobs } from "../../services/jobService";
 import { AppDispatch } from "../../store";
 import { bumpJobApplicants } from "../../store/slices/jobSlice";
+import { triggerScreening } from "../../store/slices/screeningSlice";
 import toast from "react-hot-toast";
 import {
-  Upload, FileText, Download, CheckCircle, Plus, X, User,
-  Briefcase, GraduationCap, Award, FolderOpen, Globe, Link2,
-  Link as LinkIcon, CheckCircle2,
+  Upload, FileText, CheckCircle, Plus, X, User,
+  Briefcase, GraduationCap, Award, Globe,
+  CheckCircle2, Users, Trash2, Search,
+  ChevronRight, AlertTriangle, FileSpreadsheet, Eye,
+  Sparkles, Brain, RefreshCw, List, PenSquare,
 } from "lucide-react";
 
-// 10 MB limit for resume files
 const MAX_RESUME_SIZE_BYTES = 10 * 1024 * 1024;
-// 5 MB limit for CSV/Excel files
-const MAX_CSV_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_CSV_SIZE_BYTES    = 5  * 1024 * 1024;
 
+// ── Shared style objects ───────────────────────────────────────────────────────
 const inp: React.CSSProperties = {
   width: "100%", padding: "10px 14px", borderRadius: "10px",
-  border: "1px solid #e2e8f0", fontSize: "14px", outline: "none",
-  color: "#1e293b", background: "white",
+  border: "1.5px solid var(--border-input)", fontSize: "14px", outline: "none",
+  color: "var(--text-primary)", background: "var(--surface-input)", fontFamily: "inherit",
+  transition: "border-color 0.15s",
 };
 const lbl: React.CSSProperties = {
-  display: "block", fontSize: "13px", fontWeight: "600",
-  color: "#374151", marginBottom: "4px",
+  display: "block", fontSize: "12px", fontWeight: "700",
+  color: "var(--text-secondary)", marginBottom: "5px",
+  textTransform: "uppercase", letterSpacing: "0.05em",
 };
-const section: React.CSSProperties = {
-  marginBottom: "20px", padding: "16px",
-  background: "#f8fafc", borderRadius: "12px",
+const sectionBox: React.CSSProperties = {
+  marginBottom: "16px", padding: "16px 18px",
+  background: "var(--surface-hover)", borderRadius: "12px",
+  border: "1px solid var(--border-muted)",
 };
 const sectionTitle: React.CSSProperties = {
-  fontWeight: "600", color: "#1e293b", marginBottom: "12px",
-  fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.05em",
+  fontWeight: "700", color: "var(--text-primary)", marginBottom: "12px",
+  fontSize: "11.5px", textTransform: "uppercase", letterSpacing: "0.07em",
   display: "flex", alignItems: "center", gap: "6px",
 };
 
 const emptyForm = () => ({
   firstName: "", lastName: "", email: "", headline: "", bio: "", location: "",
-  skills: [{ name: "", level: "Intermediate", yearsOfExperience: 1 }],
-  languages: [] as { name: string; proficiency: string }[],
-  experience: [{
-    company: "", role: "", startDate: "", endDate: "",
-    description: "", technologies: [""], isCurrent: false,
-  }],
-  education: [{
-    institution: "", degree: "Bachelor's", fieldOfStudy: "", startYear: 2020, endYear: 2024,
-  }],
+  skills:         [{ name: "", level: "Intermediate", yearsOfExperience: 1 }],
+  languages:      [] as { name: string; proficiency: string }[],
+  experience:     [{ company: "", role: "", startDate: "", endDate: "", description: "", technologies: [""], isCurrent: false }],
+  education:      [{ institution: "", degree: "Bachelor's", fieldOfStudy: "", startYear: 2020, endYear: 2024 }],
   certifications: [] as { name: string; issuer: string; issueDate: string }[],
-  projects: [] as { name: string; description: string; technologies: string[]; role: string; link: string; startDate: string; endDate: string }[],
-  availability: { status: "Available", type: "Full-time", startDate: "" },
-  socialLinks: { linkedin: "", github: "", portfolio: "" },
+  projects:       [] as { name: string; description: string; technologies: string[]; role: string; link: string; startDate: string; endDate: string }[],
+  availability:   { status: "Available", type: "Full-time", startDate: "" },
+  socialLinks:    { linkedin: "", github: "", portfolio: "" },
 });
 
-type FileProgress = {
-  name: string;
-  pct: number;
-  status: "uploading" | "done" | "error";
-};
+// ── Types ─────────────────────────────────────────────────────────────────────
+type FileProgress = { name: string; pct: number; status: "idle" | "uploading" | "done" | "error"; count?: number };
+type CSVPreview   = { file: File; totalCandidates: number; columnsDetected: number; sampleRows: string[][]; headers: string[] };
+
+// ── Parsed resume result staged before confirm ────────────────────────────────
+type ResumeResult = { fileName: string; candidateName: string; email: string; skillsCount: number; hasExp: boolean };
+
+function parseCSVPreview(file: File): Promise<CSVPreview> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text  = e.target?.result as string;
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        if (lines.length < 2) { reject(new Error("File has no data rows")); return; }
+        const headers    = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));
+        const sampleRows = lines.slice(1, 4).map(l => l.split(",").map(v => v.trim().replace(/^"|"$/g, "")));
+        resolve({ file, totalCandidates: lines.length - 1, columnsDetected: headers.length, sampleRows, headers });
+      } catch { reject(new Error("Could not parse file")); }
+    };
+    reader.onerror = () => reject(new Error("File read error"));
+    reader.readAsText(file);
+  });
+}
+
+function ScoreBadge({ pts, label }: { pts: string; label: string }) {
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: "#2563eb", background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)", padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>
+      {pts} · {label}
+    </span>
+  );
+}
+
+// ── Animated progress bar ──────────────────────────────────────────────────────
+function ProgressBar({ pct, color = "#2563eb" }: { pct: number; color?: string }) {
+  return (
+    <div style={{ height: 6, background: "var(--border-muted)", borderRadius: 99, overflow: "hidden", flex: 1 }}>
+      <div style={{
+        height: "100%", width: `${pct}%`, borderRadius: 99,
+        background: color,
+        transition: "width 0.4s cubic-bezier(0.4,0,0.2,1)",
+      }} />
+    </div>
+  );
+}
+
+// ── Upload confirmation banner (green) ────────────────────────────────────────
+function UploadDoneBanner({
+  count, jobId, label, onReset, onRunScreening, running,
+}: {
+  count: number; jobId: string; label: string;
+  onReset: () => void;
+  onRunScreening: (topN: 10 | 20 | "all") => void;
+  running: boolean;
+}) {
+  const [topN, setTopN] = useState<10 | 20 | "all">(10);
+  return (
+    <div style={{
+      background: "linear-gradient(135deg,rgba(240,253,244,0.95),rgba(239,246,255,0.95))",
+      border: "1.5px solid #bbf7d0", borderRadius: 16, padding: "20px 24px",
+      animation: "slideUp 0.28s ease",
+    }}>
+      <style>{`@keyframes slideUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }`}</style>
+
+      {/* Top row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+        <div style={{ width: 44, height: 44, borderRadius: 13, background: "#dcfce7", border: "1.5px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <CheckCircle2 size={22} color="#15803d" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontWeight: 800, fontSize: 15, color: "#14532d", marginBottom: 3 }}>
+            {count} {label}
+          </p>
+          <p style={{ fontSize: 13, color: "#16a34a", lineHeight: 1.5 }}>
+            Candidates are ready. Choose how many to rank, then trigger AI screening.
+          </p>
+        </div>
+        <button onClick={onReset} style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #86efac", background: "white", color: "#15803d", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Bottom row: topN + Run button */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "6px 12px" }}>
+          <span style={{ fontSize: 12.5, color: "#15803d", fontWeight: 700, whiteSpace: "nowrap" }}>Rank top</span>
+          <select
+            value={topN}
+            onChange={(e) => setTopN(e.target.value as any)}
+            style={{ border: "none", background: "transparent", fontSize: 13, fontWeight: 700, color: "#14532d", outline: "none", cursor: "pointer", fontFamily: "inherit" }}
+          >
+            <option value={10}>10 candidates</option>
+            <option value={20}>20 candidates</option>
+            <option value="all">All candidates</option>
+          </select>
+        </div>
+
+        <button
+          onClick={() => onRunScreening(topN)}
+          disabled={running}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            padding: "10px 22px", borderRadius: 11, border: "none",
+            background: running ? "#94a3b8" : "linear-gradient(135deg,#2563eb,#7c3aed)",
+            color: "white", fontWeight: 700, fontSize: 13.5, cursor: running ? "not-allowed" : "pointer",
+            fontFamily: "inherit", boxShadow: running ? "none" : "0 4px 14px rgba(37,99,235,0.28)",
+            transition: "all 0.15s", whiteSpace: "nowrap",
+          }}
+        >
+          {running
+            ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Screening…</>
+            : <><Brain size={15} /> Run AI Screening <ChevronRight size={14} /></>
+          }
+        </button>
+
+        <span style={{ fontSize: 12, color: "#64748b" }}>
+          {topN === "all" ? "All candidates will be ranked" : `Top ${topN} returned — you can change before running`}
+        </span>
+      </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
 function ApplicantsPageContent() {
-  const dispatch = useDispatch<AppDispatch>();
-  const router = useRouter();
+  const dispatch     = useDispatch<AppDispatch>();
+  const router       = useRouter();
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<"umurava" | "external" | "manual">("umurava");
-  const [fileSubTab, setFileSubTab] = useState<"csv" | "resume" | "url">("csv");
-  const [jobs, setJobs] = useState<any[]>([]);
+
+  const [activeTab,   setActiveTab]   = useState<"list" | "umurava" | "external" | "manual">("list");
+  const [fileSubTab,  setFileSubTab]  = useState<"csv" | "resume" | "url">("csv");
+  const [jobs,        setJobs]        = useState<any[]>([]);
   const [selectedJob, setSelectedJob] = useState("");
-  const [profiles, setProfiles] = useState<any[]>([]);
+  const [profiles,    setProfiles]    = useState<any[]>([]);
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [uploading,   setUploading]   = useState(false);
   const [profileSearch, setProfileSearch] = useState("");
-  const [form, setForm] = useState(emptyForm());
-  const [fileProgresses, setFileProgresses] = useState<FileProgress[]>([]);
-  const [importUrl, setImportUrl] = useState("");
+  const [form,        setForm]        = useState(emptyForm());
+
+  // ── CSV state ────────────────────────────────────────────────────────────
+  const [csvPreview,        setCsvPreview]        = useState<CSVPreview | null>(null);
+  const [csvPreviewLoading, setCsvPreviewLoading] = useState(false);
+  const [csvUploaded,       setCsvUploaded]       = useState(false);
+  const [csvUploadedCount,  setCsvUploadedCount]  = useState(0);
+  const [csvIngestPct,      setCsvIngestPct]      = useState(0); // progress during upload
+
+  // ── Resume state ─────────────────────────────────────────────────────────
+  const [fileProgresses,    setFileProgresses]    = useState<FileProgress[]>([]);
+  const [resumeResults,     setResumeResults]     = useState<ResumeResult[]>([]); // staged results
+  const [resumeUploaded,    setResumeUploaded]    = useState(false); // show confirm banner
+  const [resumeUploadedCount, setResumeUploadedCount] = useState(0);
+
+  // ── URL state ────────────────────────────────────────────────────────────
+  const [importUrl,    setImportUrl]    = useState("");
   const [importingUrl, setImportingUrl] = useState(false);
+  const [urlProgress,  setUrlProgress]  = useState(0);  // animated progress for URL
+  const [urlUploaded,  setUrlUploaded]  = useState(false);
+  const [urlUploadedCount, setUrlUploadedCount] = useState(0);
+
+  // ── Candidate list state ─────────────────────────────────────────────────
+  const [candidates,      setCandidates]      = useState<any[]>([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [candidatesLoaded,  setCandidatesLoaded]  = useState(false);
+  const [candidateSearch,   setCandidateSearch]   = useState("");
+  const [deleteTarget,      setDeleteTarget]      = useState<{ id: string; name: string } | null>(null);
+  const [deleting,          setDeleting]          = useState(false);
+
+  // ── Profiles added (Umurava tab) ─────────────────────────────────────────
+  const [profilesAdded,     setProfilesAdded]     = useState(0);
+  const [profilesAddedShown, setProfilesAddedShown] = useState(false);
+
+  // ── Screening running flag ────────────────────────────────────────────────
+  const [screeningRunning, setScreeningRunning] = useState(false);
 
   useEffect(() => {
     getAllJobs().then((d) => setJobs(d.jobs || []));
@@ -100,815 +249,1050 @@ function ApplicantsPageContent() {
 
   const handleJobChange = (jobId: string) => {
     setSelectedJob(jobId);
-    if (jobId) {
-      router.replace(`/applicants?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
-    } else {
-      router.replace("/applicants", { scroll: false });
-    }
+    setCandidates([]); setCandidatesLoaded(false);
+    setCsvPreview(null); setCsvUploaded(false);
+    setResumeResults([]); setResumeUploaded(false);
+    setUrlUploaded(false); setProfilesAddedShown(false);
+    if (jobId) router.replace(`/applicants?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
+    else router.replace("/applicants", { scroll: false });
   };
 
-  const selectedJobTitle = jobs.find((j) => j._id === selectedJob)?.title || "";
+  const selectedJobObj = jobs.find((j) => j._id === selectedJob);
 
-  const filteredProfiles = profiles.filter((p) =>
-    `${p.firstName} ${p.lastName} ${p.headline}`.toLowerCase().includes(profileSearch.toLowerCase())
-  );
+  const handleLoadApplicants = useCallback(async () => {
+    if (!selectedJob) return;
+    setCandidatesLoading(true);
+    try {
+      const data = await getApplicants(selectedJob);
+      setCandidates(data.applicants || []);
+      setCandidatesLoaded(true);
+      setActiveTab("list");
+    } catch { setCandidates([]); setCandidatesLoaded(true); }
+    finally { setCandidatesLoading(false); }
+  }, [selectedJob]);
 
-  // ── Helper: warn if backend-returned applicant is missing key fields ──
+  const handleRemoveCandidate = async () => {
+    if (!deleteTarget || !selectedJob) return;
+    setDeleting(true);
+    try {
+      await removeApplicantFromJob(selectedJob, deleteTarget.id);
+      setCandidates(prev => prev.filter(c => c._id !== deleteTarget.id));
+      toast.success(`${deleteTarget.name} removed`);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || "Could not remove candidate");
+    } finally { setDeleting(false); }
+  };
+
+  const filteredCandidates = candidates.filter((c) => {
+    if (!candidateSearch) return true;
+    const s = candidateSearch.toLowerCase();
+    return `${c.firstName} ${c.lastName} ${c.email} ${c.headline}`.toLowerCase().includes(s) ||
+      (c.skills || []).some((sk: any) => sk.name?.toLowerCase().includes(s));
+  });
+
   const warnIfIncomplete = (applicant: any, context: string) => {
     if (!applicant) return;
     const missing: string[] = [];
     if (!applicant.firstName && !applicant.lastName) missing.push("name");
-    if (!applicant.email) missing.push("email");
-    if (!applicant.headline) missing.push("headline");
-    if (!applicant.location) missing.push("location");
-    if (!applicant.skills?.length) missing.push("skills");
+    if (!applicant.email)        missing.push("email");
+    if (!applicant.skills?.length)     missing.push("skills");
     if (!applicant.experience?.length) missing.push("experience");
-    if (missing.length > 0) {
-      toast(`⚠️ ${context} saved but missing: ${missing.join(", ")} — please review the profile.`, {
-        duration: 6000,
-        style: { background: "#fefce8", color: "#854d0e", border: "1px solid #fde68a", fontWeight: 600 },
-      });
+    if (missing.length > 0) toast(`⚠️ ${context} saved but missing: ${missing.join(", ")}`, {
+      duration: 6000,
+      style: { background: "#fefce8", color: "#854d0e", border: "1px solid #fde68a", fontWeight: 600 },
+    });
+  };
+
+  // ── Run AI screening (called from any UploadDoneBanner) ──────────────────
+  const handleRunScreening = async (topN: 10 | 20 | "all") => {
+    if (!selectedJob) { toast.error("Select a job first"); return; }
+    setScreeningRunning(true);
+    try {
+      await (dispatch as any)(triggerScreening(selectedJob)).unwrap();
+      toast.success("AI screening complete! Redirecting to results…");
+      // Pass autoload=1 so screenings page shows results without clicking Load Results
+      router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}&autoload=1`);
+    } catch (e: unknown) {
+      toast.error(typeof e === "string" ? e : "Screening failed. Make sure candidates are uploaded.");
+    } finally {
+      setScreeningRunning(false);
     }
   };
 
-  // ── CSV upload ──
+  // ── CSV: drop → preview ───────────────────────────────────────────────────
   const onDropCSV = useCallback(async (files: File[]) => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     const file = files[0];
-    if (file.size > MAX_CSV_SIZE_BYTES) {
-      toast.error(`File is too large. Max size is ${MAX_CSV_SIZE_BYTES / 1024 / 1024} MB.`);
-      return;
-    }
-    setUploading(true);
+    if (file.size > MAX_CSV_SIZE_BYTES) { toast.error("Max 5 MB for CSV files."); return; }
+    setCsvPreviewLoading(true);
+    setCsvPreview(null); setCsvUploaded(false); setCsvIngestPct(0);
     try {
-      const res = await uploadCSV(selectedJob, file);
-      const n = Number(res.count) || 0;
-      toast.success(`${n} applicants uploaded!`);
-      if (n) dispatch(bumpJobApplicants({ jobId: selectedJob, delta: n }));
-      if (res.incomplete?.length > 0) {
-        toast(`⚠️ ${res.incomplete.length} applicant(s) are missing key fields — please review their profiles.`, {
-          duration: 6000,
-          style: { background: "#fefce8", color: "#854d0e", border: "1px solid #fde68a", fontWeight: 600 },
-        });
-      }
-    } catch (err: any) {
-      console.error("CSV upload error:", err);
-      toast.error(err?.response?.data?.message || "CSV upload failed");
-    } finally {
-      setUploading(false);
-    }
-  }, [selectedJob, dispatch]);
+      const preview = await parseCSVPreview(file);
+      setCsvPreview(preview);
+    } catch (err: any) { toast.error(err.message || "Could not read file"); }
+    finally { setCsvPreviewLoading(false); }
+  }, [selectedJob]);
 
-  // ── Resume files upload ──
+  // ── CSV: confirm → upload ─────────────────────────────────────────────────
+  const handleConfirmIngest = async () => {
+    if (!csvPreview || !selectedJob) return;
+    setUploading(true);
+    setCsvIngestPct(10);
+    // Animate progress smoothly while waiting for the server
+    const ticker = setInterval(() => {
+      setCsvIngestPct(p => p < 85 ? p + 5 : p);
+    }, 300);
+    try {
+      const res = await uploadCSV(selectedJob, csvPreview.file);
+      clearInterval(ticker);
+      setCsvIngestPct(100);
+      const n = Number(res.count) || 0;
+      if (n) {
+        dispatch(bumpJobApplicants({ jobId: selectedJob, delta: n }));
+        setCandidatesLoaded(false);
+        setCsvUploadedCount(n);
+      }
+      setCsvUploaded(true);
+    } catch (err: any) {
+      clearInterval(ticker);
+      setCsvIngestPct(0);
+      toast.error(err?.response?.data?.message || "Upload failed.");
+    } finally { setUploading(false); }
+  };
+
+  // ── Resume: drop → upload each file individually with staged results ──────
   const onDropResume = useCallback(async (files: File[]) => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
-    if (!files.length) return;
+    const tooBig = files.filter(f => f.size > MAX_RESUME_SIZE_BYTES);
+    if (tooBig.length) { toast.error(`${tooBig.map(f => f.name).join(", ")} exceeded 10 MB limit`); return; }
 
-    const oversized = files.filter((f) => f.size > MAX_RESUME_SIZE_BYTES);
-    if (oversized.length > 0) {
-      toast.error(
-        `${oversized.length} file(s) exceed the ${MAX_RESUME_SIZE_BYTES / 1024 / 1024} MB limit: ${oversized.map((f) => f.name).join(", ")}`
-      );
-      return;
-    }
+    // Reset previous
+    setResumeUploaded(false);
+    setResumeResults([]);
+    const progresses: FileProgress[] = files.map(f => ({ name: f.name, pct: 0, status: "uploading" }));
+    setFileProgresses(progresses);
 
-    const initial: FileProgress[] = files.map((f) => ({
-      name: f.name, pct: 0, status: "uploading",
-    }));
-    setFileProgresses(initial);
-    setUploading(true);
+    const staged: ResumeResult[] = [];
+    let added = 0;
 
-    let ok = 0;
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      // Animate 0 → 30 → 60 smoothly while waiting
+      setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 20, status: "uploading" } : p));
+      const animTick = setInterval(() => {
+        setFileProgresses(prev => prev.map((p, pi) => {
+          if (pi !== i || p.status !== "uploading") return p;
+          return { ...p, pct: p.pct < 80 ? p.pct + 10 : p.pct };
+        }));
+      }, 400);
+
       try {
-        const res = await uploadResumeFile(selectedJob, file, (pct) => {
-          setFileProgresses((prev) =>
-            prev.map((fp, idx) => idx === i ? { ...fp, pct } : fp)
-          );
+        const res = await uploadResumeFile(selectedJob, files[i]);
+        clearInterval(animTick);
+        warnIfIncomplete(res?.applicant, files[i].name);
+        const applicant = res?.applicant;
+        staged.push({
+          fileName:      files[i].name,
+          candidateName: applicant ? `${applicant.firstName || ""} ${applicant.lastName || ""}`.trim() : files[i].name,
+          email:         applicant?.email || "—",
+          skillsCount:   applicant?.skills?.length || 0,
+          hasExp:        (applicant?.experience?.length || 0) > 0,
         });
-        setFileProgresses((prev) =>
-          prev.map((fp, idx) => idx === i ? { ...fp, pct: 100, status: "done" } : fp)
-        );
-        ok += 1;
-        warnIfIncomplete(res.applicant, file.name);
+        if (res?.count) {
+          dispatch(bumpJobApplicants({ jobId: selectedJob, delta: res.count }));
+          setCandidatesLoaded(false);
+          added += res.count;
+        }
+        setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 100, status: "done", count: res?.count || 0 } : p));
       } catch (err: any) {
-        console.error(`Resume upload error (${file.name}):`, err);
-        setFileProgresses((prev) =>
-          prev.map((fp, idx) => idx === i ? { ...fp, status: "error" } : fp)
-        );
-        toast.error(err?.response?.data?.message || `Failed: ${file.name}`);
+        clearInterval(animTick);
+        setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 0, status: "error" } : p));
+        toast.error(`${files[i].name}: ${err?.response?.data?.message || "Upload failed"}`);
       }
     }
-    if (ok) {
-      toast.success(`${ok} resume(s) uploaded & processed!`);
-      dispatch(bumpJobApplicants({ jobId: selectedJob, delta: ok }));
+
+    if (added > 0) {
+      setResumeResults(staged.filter(s => s.candidateName));
+      setResumeUploadedCount(added);
+      setResumeUploaded(true);
     }
-    setUploading(false);
   }, [selectedJob, dispatch]);
 
-  // ── URL import ──
-  const handleImportUrl = async () => {
-    if (!selectedJob) { toast.error("Select a job first"); return; }
-    const trimmed = importUrl.trim();
-    if (!trimmed) { toast.error("Enter a URL first"); return; }
-    try { new URL(trimmed); } catch { toast.error("That doesn't look like a valid URL"); return; }
+  const { getRootProps: getCSVRootProps, getInputProps: getCSVInputProps, isDragActive: isCSVDrag } = useDropzone({
+    onDrop: onDropCSV,
+    accept: { "text/csv": [".csv"], "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+    multiple: false,
+  });
+  const { getRootProps: getResumeRootProps, getInputProps: getResumeInputProps, isDragActive: isResumeDrag } = useDropzone({
+    onDrop: onDropResume,
+    accept: { "application/pdf": [".pdf"], "application/msword": [".doc"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"], "text/plain": [".txt"] },
+    multiple: true,
+  });
 
+  // ── URL import with animated progress ────────────────────────────────────
+  const handleImportUrl = async () => {
+    if (!selectedJob || !importUrl.trim()) { toast.error("Enter a URL and select a job"); return; }
     setImportingUrl(true);
+    setUrlProgress(5);
+    setUrlUploaded(false);
+    const ticker = setInterval(() => {
+      setUrlProgress(p => p < 80 ? p + 8 : p);
+    }, 500);
     try {
-      const res = await uploadFromURL(selectedJob, trimmed);
-      toast.success("Applicant imported from URL!");
-      setImportUrl("");
-      dispatch(bumpJobApplicants({ jobId: selectedJob, delta: 1 }));
-      warnIfIncomplete(res.applicant, "Applicant");
+      const res = await uploadFromURL(selectedJob, importUrl.trim());
+      clearInterval(ticker);
+      setUrlProgress(100);
+      const n = Number(res.count) || 0;
+      if (n) {
+        dispatch(bumpJobApplicants({ jobId: selectedJob, delta: n }));
+        setCandidatesLoaded(false);
+        setUrlUploadedCount(n);
+        setUrlUploaded(true);
+        setImportUrl("");
+      } else {
+        toast.error(res?.message || "No candidates found at URL.");
+        setUrlProgress(0);
+      }
     } catch (err: any) {
-      console.error("URL import error:", err);
-      toast.error(err?.response?.data?.message || "URL import failed");
+      clearInterval(ticker);
+      setUrlProgress(0);
+      toast.error(err?.response?.data?.message || "Import failed.");
     } finally { setImportingUrl(false); }
   };
 
-  const { getRootProps: csvProps, getInputProps: csvInput, isDragActive: csvDrag } =
-    useDropzone({
-      onDrop: onDropCSV,
-      accept: {
-        "text/csv": [".csv"],
-        "application/vnd.ms-excel": [".xls"],
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      },
-      maxFiles: 1,
-      maxSize: MAX_CSV_SIZE_BYTES,
-      onDropRejected: (rejections) => {
-        const reason = rejections[0]?.errors[0]?.code;
-        if (reason === "file-too-large") {
-          toast.error(`File exceeds the ${MAX_CSV_SIZE_BYTES / 1024 / 1024} MB limit.`);
-        } else if (reason === "file-invalid-type") {
-          toast.error("Only .csv, .xls, and .xlsx files are accepted.");
-        } else {
-          toast.error("File rejected. Please check the file and try again.");
-        }
-      },
-    });
-
-  const { getRootProps: resumeProps, getInputProps: resumeInput, isDragActive: resumeDrag } =
-    useDropzone({
-      onDrop: onDropResume,
-      accept: {
-        "application/pdf": [".pdf"],
-        "application/msword": [".doc"],
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
-        "text/plain": [".txt"],
-        "application/vnd.oasis.opendocument.text": [".odt"],
-      },
-      maxSize: MAX_RESUME_SIZE_BYTES,
-      onDropRejected: (rejections) => {
-        const tooLarge = rejections.filter((r) =>
-          r.errors.some((e) => e.code === "file-too-large")
-        );
-        const badType = rejections.filter((r) =>
-          r.errors.some((e) => e.code === "file-invalid-type")
-        );
-        if (tooLarge.length > 0) {
-          toast.error(`${tooLarge.length} file(s) exceed the ${MAX_RESUME_SIZE_BYTES / 1024 / 1024} MB limit.`);
-        }
-        if (badType.length > 0) {
-          toast.error("Only PDF, DOCX, DOC, TXT, and ODT files are accepted.");
-        }
-      },
-    });
-
-  const toggleProfile = (id: string) =>
-    setSelectedProfiles((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    );
-
-  const handleSelectProfiles = async () => {
-    if (!selectedJob) { toast.error("Select a job first"); return; }
-    if (!selectedProfiles.length) { toast.error("Select at least one profile"); return; }
+  const handleAddUmurava = async () => {
+    if (!selectedJob || selectedProfiles.length === 0) { toast.error("Select profiles and a job first"); return; }
     setUploading(true);
     try {
       const res = await selectUmuravaProfiles(selectedJob, selectedProfiles);
       const n = Number(res.count) || 0;
-      toast.success(`${n} profiles added!`);
-      setSelectedProfiles([]);
-      if (n) dispatch(bumpJobApplicants({ jobId: selectedJob, delta: n }));
-    } catch (err: any) {
-      console.error("Profile selection error:", err);
-      toast.error(err?.response?.data?.message || "Failed to add profiles");
-    } finally {
-      setUploading(false);
-    }
+      if (n) {
+        dispatch(bumpJobApplicants({ jobId: selectedJob, delta: n }));
+        setCandidatesLoaded(false);
+        setProfilesAdded(n);
+        setProfilesAddedShown(true);
+        setSelectedProfiles([]);
+      } else toast.success("Profiles already linked to this job.");
+    } catch (err: any) { toast.error(err?.response?.data?.message || "Could not add profiles"); }
+    finally { setUploading(false); }
   };
 
-  // ── Manual submit with full frontend validation ──
-  const handleManualSubmit = async () => {
+  const handleSubmitManual = async () => {
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) { toast.error("First name, last name, and email are required"); return; }
+    const validSkills = form.skills.filter(s => s.name.trim());
+    if (!validSkills.length) { toast.error("Add at least one skill"); return; }
+    const validExp = form.experience.filter(e => e.company.trim() && e.role.trim());
+    if (!validExp.length) { toast.error("Add at least one work experience entry"); return; }
     if (!selectedJob) { toast.error("Select a job first"); return; }
-
-    if (!form.firstName.trim() || !form.lastName.trim()) {
-      toast.error("First and last name are required"); return;
-    }
-    if (!form.email.trim()) {
-      toast.error("Email is required"); return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email.trim())) {
-      toast.error("Please enter a valid email address"); return;
-    }
-    if (!form.headline.trim()) {
-      toast.error("Professional headline is required"); return;
-    }
-    if (!form.location.trim()) {
-      toast.error("Location is required"); return;
-    }
-    if (form.skills.length === 0 || form.skills.some((s) => !s.name.trim())) {
-      toast.error("Add at least one skill with a name"); return;
-    }
-    if (
-      form.experience.length === 0 ||
-      form.experience.some((ex) => !ex.company.trim() || !ex.role.trim() || !ex.startDate.trim())
-    ) {
-      toast.error("Each work experience entry needs a company, role, and start date"); return;
-    }
-    if (
-      form.education.length === 0 ||
-      form.education.some((ed) => !ed.institution.trim() || !ed.fieldOfStudy.trim())
-    ) {
-      toast.error("Each education entry needs an institution and field of study"); return;
-    }
-
     setUploading(true);
     try {
-      await submitManualApplicant(selectedJob, { ...form, source: "external" });
-      toast.success("Profile added!");
-      setForm(emptyForm());
+      const payload = {
+        ...form, skills: validSkills,
+        experience: validExp.map(e => ({ ...e, technologies: e.technologies.filter((t: string) => t.trim()) })),
+        education:      form.education.filter(e => e.institution.trim()),
+        certifications: form.certifications.filter(c => c.name.trim()),
+        projects:       form.projects.filter(p => p.name.trim()),
+        languages:      form.languages.filter(l => l.name.trim()),
+        source: "external",
+      };
+      const res = await submitManualApplicant(selectedJob, payload);
+      warnIfIncomplete(res?.applicant, `${form.firstName} ${form.lastName}`);
       dispatch(bumpJobApplicants({ jobId: selectedJob, delta: 1 }));
-    } catch (err: any) {
-      console.error("Manual applicant submit error:", err);
-      toast.error(err?.response?.data?.message || "Failed to add profile");
-    } finally {
-      setUploading(false);
-    }
+      setCandidatesLoaded(false);
+      setForm(emptyForm());
+      toast.success(`${form.firstName} ${form.lastName} added!`);
+    } catch (err: any) { toast.error(err?.response?.data?.message || "Could not save candidate"); }
+    finally { setUploading(false); }
   };
 
-  const downloadTemplate = () => {
-    const csv = "firstName,lastName,email,headline,location,skillName,skillLevel,yearsOfExperience,educationDegree,educationField,availabilityStatus\n" +
-      "John,Doe,john@email.com,Backend Engineer,Kigali Rwanda,Node.js,Advanced,3,Bachelor's,Computer Science,Available";
-    const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })),
-      download: "umurava_candidates_template.csv",
-    });
-    a.click();
-  };
+  const filteredProfiles = profiles.filter((p) => {
+    if (!profileSearch) return true;
+    const s = profileSearch.toLowerCase();
+    return `${p.firstName} ${p.lastName} ${p.email} ${p.headline}`.toLowerCase().includes(s);
+  });
 
-  const updateSkill = (i: number, k: string, v: any) => {
-    setForm({ ...form, skills: form.skills.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
-  const updateLang = (i: number, k: string, v: any) => {
-    setForm({ ...form, languages: form.languages.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
-  const updateExp = (i: number, k: string, v: any) => {
-    setForm({ ...form, experience: form.experience.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
-  const updateEdu = (i: number, k: string, v: any) => {
-    setForm({ ...form, education: form.education.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
-  const updateCert = (i: number, k: string, v: any) => {
-    setForm({ ...form, certifications: form.certifications.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
-  const updateProj = (i: number, k: string, v: any) => {
-    setForm({ ...form, projects: form.projects.map((x, idx) => idx === i ? { ...x, [k]: v } : x) });
-  };
+  const step = !selectedJob ? 1 : !candidatesLoaded ? 2 : 3;
 
-  const levelColor: Record<string, string> = {
-    Beginner: "#e0f2fe", Intermediate: "#ede9fe", Advanced: "#dcfce7", Expert: "#fef9c3",
-  };
-  const levelText: Record<string, string> = {
-    Beginner: "#0369a1", Intermediate: "#6d28d9", Advanced: "#15803d", Expert: "#ca8a04",
-  };
+  const addSkill      = () => setForm(f => ({ ...f, skills: [...f.skills, { name: "", level: "Intermediate", yearsOfExperience: 1 }] }));
+  const removeSkill   = (i: number) => setForm(f => ({ ...f, skills: f.skills.filter((_, idx) => idx !== i) }));
+  const addExp        = () => setForm(f => ({ ...f, experience: [...f.experience, { company: "", role: "", startDate: "", endDate: "", description: "", technologies: [""], isCurrent: false }] }));
+  const removeExp     = (i: number) => setForm(f => ({ ...f, experience: f.experience.filter((_, idx) => idx !== i) }));
+  const addEdu        = () => setForm(f => ({ ...f, education: [...f.education, { institution: "", degree: "Bachelor's", fieldOfStudy: "", startYear: 2020, endYear: 2024 }] }));
+  const removeEdu     = (i: number) => setForm(f => ({ ...f, education: f.education.filter((_, idx) => idx !== i) }));
+  const addCert       = () => setForm(f => ({ ...f, certifications: [...f.certifications, { name: "", issuer: "", issueDate: "" }] }));
+  const removeCert    = (i: number) => setForm(f => ({ ...f, certifications: f.certifications.filter((_, idx) => idx !== i) }));
+  const addLang       = () => setForm(f => ({ ...f, languages: [...f.languages, { name: "", proficiency: "Fluent" }] }));
+  const removeLang    = (i: number) => setForm(f => ({ ...f, languages: f.languages.filter((_, idx) => idx !== i) }));
+  const addProject    = () => setForm(f => ({ ...f, projects: [...f.projects, { name: "", description: "", technologies: [""], role: "", link: "", startDate: "", endDate: "" }] }));
+  const removeProject = (i: number) => setForm(f => ({ ...f, projects: f.projects.filter((_, idx) => idx !== i) }));
 
+  const canSubmit = form.firstName.trim() && form.lastName.trim() && form.email.trim() &&
+    form.skills.some(s => s.name.trim()) && form.experience.some(e => e.company.trim() && e.role.trim());
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex" }}>
-      <Sidebar />
-      <div style={{ marginLeft: "260px", minHeight: "100vh", background: "#f8fafc", flex: 1, display: "flex", flexDirection: "column" }}>
-        <AppHeader title="Applicants" subtitle="Platform profiles, manual entry, or file upload" />
-        <main style={{ padding: "32px 40px 48px", flex: 1 }}>
+    <>
+      <style>{`
+        .ap-root { display:flex; font-family:var(--font-body,system-ui); }
+        .ap-main { margin-left:var(--sidebar-width,260px); min-height:100vh; background:var(--surface-base); flex:1; display:flex; flex-direction:column; }
+        .ap-body { padding:24px 36px 100px; flex:1; animation:fadeIn 0.28s ease; }
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px" }}>
-            <div>
-              <h1 style={{ fontSize: "22px", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>Candidates</h1>
-              <p style={{ color: "#64748b", fontSize: "14px" }}>Add from platform, manual profile, or upload files</p>
+        .ap-stepper { display:flex; align-items:center; gap:0; margin-bottom:24px; background:var(--surface-card); border-radius:14px; border:1.5px solid var(--border-soft); padding:18px 24px; box-shadow:var(--shadow-card); }
+        .ap-step { display:flex; align-items:center; gap:10px; flex:1; }
+        .ap-step-circle { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0; transition:all 0.2s; }
+        .ap-step-circle.done { background:linear-gradient(135deg,#16a34a,#15803d); color:white; }
+        .ap-step-circle.active { background:linear-gradient(135deg,#2563eb,#7c3aed); color:white; box-shadow:0 0 0 4px rgba(37,99,235,0.15); }
+        .ap-step-circle.inactive { background:var(--surface-hover); color:var(--text-muted); border:1.5px solid var(--border-soft); }
+        .ap-step-text { font-size:13px; font-weight:600; }
+        .ap-step-text.active { color:var(--text-primary); }
+        .ap-step-text.inactive { color:var(--text-muted); }
+        .ap-step-arrow { color:var(--border-soft); margin:0 12px; flex-shrink:0; }
+
+        .ap-selector { background:var(--surface-card); border-radius:16px; border:1.5px solid var(--border-soft); padding:22px 26px; margin-bottom:20px; box-shadow:var(--shadow-card); }
+        .ap-selector-title { font-size:15px; font-weight:700; color:var(--text-primary); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+        .ap-selector-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .ap-job-select { flex:1; min-width:200px; padding:11px 14px; border-radius:10px; border:1.5px solid var(--border-input); background:var(--surface-input); color:var(--text-primary); font-family:inherit; font-size:14px; outline:none; cursor:pointer; appearance:none; transition:border-color 0.15s; }
+        .ap-job-select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(37,99,235,0.1); }
+        .ap-load-btn { padding:11px 20px; border-radius:10px; border:none; background:linear-gradient(135deg,#2563eb,#7c3aed); color:white; font-weight:700; font-size:14px; font-family:inherit; cursor:pointer; box-shadow:var(--shadow-button); display:flex; align-items:center; gap:7px; white-space:nowrap; transition:all var(--transition-fast); }
+        .ap-load-btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(37,99,235,0.4); }
+        .ap-load-btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; box-shadow:none; }
+
+        .ap-tabs { display:flex; gap:6px; background:var(--surface-hover); border-radius:14px; padding:5px; margin-bottom:20px; flex-wrap:wrap; }
+        .ap-tab { padding:11px 20px; border-radius:10px; border:none; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; transition:all 0.18s; color:var(--text-secondary); background:transparent; display:flex; align-items:center; gap:7px; }
+        .ap-tab:hover:not(.active) { background:rgba(255,255,255,0.6); color:var(--text-primary); }
+        .ap-tab.active { background:linear-gradient(135deg,#2563eb,#4f46e5); color:white; box-shadow:0 4px 14px rgba(37,99,235,0.3); }
+
+        .ap-dropzone { border:2.5px dashed rgba(37,99,235,0.28); border-radius:18px; padding:52px 32px; text-align:center; cursor:pointer; transition:all 0.2s; background:linear-gradient(135deg,rgba(37,99,235,0.02),rgba(124,58,237,0.01)); }
+        .ap-dropzone:hover,.ap-dropzone.drag { border-color:#2563eb; background:rgba(37,99,235,0.06); transform:scale(1.005); }
+        .ap-dropzone-icon { width:64px; height:64px; border-radius:18px; background:rgba(37,99,235,0.1); border:1.5px solid rgba(37,99,235,0.15); display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
+        .ap-dropzone-title { font-size:18px; font-weight:800; color:var(--text-primary); margin-bottom:6px; letter-spacing:-0.02em; }
+        .ap-dropzone-sub { font-size:13.5px; color:var(--text-secondary); font-weight:500; line-height:1.5; }
+
+        /* File progress row */
+        .ap-fp-row { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
+        .ap-fp-top  { display:flex; align-items:center; gap:10px; }
+        .ap-fp-name { flex:1; font-size:13px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ap-fp-pct  { font-size:12px; font-weight:700; min-width:36px; text-align:right; }
+
+        /* Staged resume results */
+        .ap-staged-row { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--surface-card); border:1.5px solid #bbf7d0; border-radius:12px; }
+        .ap-staged-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#2563eb,#7c3aed); display:flex; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:800; flex-shrink:0; }
+
+        .ap-cand-card { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:10px; box-shadow:var(--shadow-card); transition:all var(--transition-fast); }
+        .ap-cand-card:hover { transform:translateY(-1px); box-shadow:var(--shadow-card-hover); border-color:rgba(37,99,235,0.2); }
+        .ap-cand-avatar { width:40px; height:40px; border-radius:50%; background:var(--brand-gradient); display:flex; align-items:center; justify-content:center; color:white; font-size:14px; font-weight:700; flex-shrink:0; }
+        .ap-cand-name { font-size:14px; font-weight:700; color:var(--text-primary); }
+        .ap-cand-meta { font-size:12px; color:var(--text-muted); margin-top:2px; }
+        .ap-cand-remove { width:30px; height:30px; border-radius:8px; border:none; background:var(--surface-hover); color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.15s; flex-shrink:0; }
+        .ap-cand-remove:hover { background:rgba(239,68,68,0.1); color:#ef4444; }
+
+        .ap-profile-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; margin-top:14px; }
+        .ap-profile-card { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:12px; padding:14px 16px; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; gap:12px; }
+        .ap-profile-card:hover { border-color:rgba(37,99,235,0.3); background:rgba(37,99,235,0.03); }
+        .ap-profile-card.selected { border-color:var(--brand-primary); background:rgba(37,99,235,0.07); }
+        .ap-profile-avatar { width:38px; height:38px; border-radius:50%; background:var(--brand-gradient); display:flex; align-items:center; justify-content:center; color:white; font-size:13px; font-weight:700; flex-shrink:0; }
+
+        .ap-del-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); z-index:400; display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn 0.15s ease; }
+        .ap-del-box { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:18px; padding:28px; max-width:360px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,0.2); animation:scaleIn 0.15s ease; }
+
+        .ap-row-remove { width:28px; height:28px; border-radius:7px; border:none; background:rgba(239,68,68,0.08); color:#ef4444; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background 0.15s; }
+        .ap-row-remove:hover { background:rgba(239,68,68,0.18); }
+        .ap-add-row { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:8px; border:1.5px dashed var(--border-soft); background:transparent; color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; transition:all 0.15s; margin-top:8px; }
+        .ap-add-row:hover { border-color:var(--brand-primary); color:var(--brand-primary); background:rgba(37,99,235,0.04); }
+        .ap-manual-select { width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border-input); background:var(--surface-input); color:var(--text-primary); font-family:inherit; font-size:14px; outline:none; transition:border-color 0.15s; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width:768px) { .ap-main { margin-left:0; } .ap-body { padding:16px 12px 80px; } .ap-selector-row { flex-direction:column; align-items:stretch; } }
+      `}</style>
+
+      <div className="ap-root">
+        <Sidebar />
+        <div className="ap-main">
+          <AppHeader title="Upload Candidates" subtitle="Add candidates to a job for AI screening" />
+          <div className="ap-body">
+
+            {/* ── Stepper ── */}
+            <div className="ap-stepper">
+              {[{ n: 1, label: "Select Job" }, { n: 2, label: "Add Candidates" }, { n: 3, label: "Run AI Screening" }].map((s, i) => {
+                const isDone   = step > s.n;
+                const isActive = step === s.n;
+                return (
+                  <div key={s.n} style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                    <div className="ap-step">
+                      <div className={`ap-step-circle ${isDone ? "done" : isActive ? "active" : "inactive"}`}>
+                        {isDone ? <CheckCircle2 size={16} /> : s.n}
+                      </div>
+                      <p className={`ap-step-text ${isActive ? "active" : "inactive"}`}>{s.label}</p>
+                    </div>
+                    {i < 2 && <ChevronRight size={16} className="ap-step-arrow" />}
+                  </div>
+                );
+              })}
+              {/* Step 3: only show link to screenings page (no run button here — that's in the banner) */}
+              {step === 3 && (
+                <Link
+                  href={selectedJob ? `/screenings?jobId=${selectedJob}` : "/screenings"}
+                  style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "1.5px solid rgba(37,99,235,0.25)", background: "rgba(37,99,235,0.06)", color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", flexShrink: 0, whiteSpace: "nowrap" }}
+                >
+                  <Sparkles size={13} /> View Screenings
+                </Link>
+              )}
             </div>
-            <button onClick={downloadTemplate} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px", borderRadius: "10px", background: "#2563eb", color: "white", border: "none", cursor: "pointer", fontWeight: "600", fontSize: "13px", boxShadow: "0 2px 8px rgba(37,99,235,0.3)" }}>
-              <Download size={15} /> Download CSV Template
-            </button>
-          </div>
 
-          <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "20px", marginBottom: "20px" }}>
-            <label style={lbl}>Job for these candidates</label>
-            <p style={{ color: "#64748b", fontSize: "13px", marginBottom: "12px", lineHeight: 1.5 }}>
-              Every upload, manual add, or platform import is stored <strong>only</strong> for the job you pick here. Switch jobs to manage another role.
-            </p>
-            <select value={selectedJob} onChange={(e) => handleJobChange(e.target.value)} style={{ ...inp, maxWidth: "420px" }}>
-              <option value="">— Choose a job —</option>
-              {jobs.map((j) => <option key={j._id} value={j._id}>{j.title}</option>)}
-            </select>
-            {selectedJob && (
-              <p style={{ marginTop: "12px", fontSize: "13px", color: "#15803d", fontWeight: 600 }}>Active: {selectedJobTitle}</p>
-            )}
-          </div>
-
-          {!selectedJob ? (
-            <div style={{ background: "white", borderRadius: "16px", border: "1px solid #e2e8f0", padding: "48px 32px", textAlign: "center" }}>
-              <p style={{ fontSize: "17px", fontWeight: 700, color: "#0f172a", marginBottom: "10px" }}>Choose a job to add candidates</p>
-              <p style={{ color: "#64748b", fontSize: "14px", maxWidth: "440px", margin: "0 auto 24px", lineHeight: 1.6 }}>
-                Select a position above. All candidates you add will appear only under that job for screening and comparison.
+            {/* ── Job selector ── */}
+            <div className="ap-selector">
+              <p className="ap-selector-title">
+                <Briefcase size={17} color="var(--brand-primary)" /> Select Job
               </p>
-              <Link href="/jobs" style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "10px 20px", borderRadius: "10px", background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "white", fontWeight: 600, fontSize: "14px", textDecoration: "none" }}>
-                Browse jobs
-              </Link>
-            </div>
-          ) : (
-            <>
-              {/* Tabs */}
-              <div style={{ display: "flex", background: "white", border: "1px solid #e2e8f0", borderRadius: "14px", padding: "4px", marginBottom: "20px", width: "fit-content", gap: "4px", flexWrap: "wrap" }}>
-                {[
-                  { key: "umurava", label: "Platform Profiles" },
-                  { key: "manual", label: "Add Manually" },
-                  { key: "external", label: "Upload File" },
-                ].map((t) => (
-                  <button key={t.key} onClick={() => setActiveTab(t.key as any)} style={{
-                    padding: "9px 20px", borderRadius: "10px", border: "none", fontWeight: "600", fontSize: "13px", cursor: "pointer",
-                    background: activeTab === t.key ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "transparent",
-                    color: activeTab === t.key ? "white" : "#64748b", transition: "all 0.2s",
-                  }}>{t.label}</button>
-                ))}
+              <div className="ap-selector-row">
+                <select className="ap-job-select" value={selectedJob} onChange={(e) => handleJobChange(e.target.value)}>
+                  <option value="">Choose a job posting…</option>
+                  {jobs.map((j) => <option key={j._id} value={j._id}>{j.title}</option>)}
+                </select>
+                <button className="ap-load-btn" onClick={handleLoadApplicants} disabled={!selectedJob || candidatesLoading}>
+                  {candidatesLoading
+                    ? <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Loading…</>
+                    : <><Users size={15} /> Load Applicants</>
+                  }
+                </button>
               </div>
+              {!selectedJob && (
+                <p style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                  <AlertTriangle size={13} /> Select a job above, then click <strong>Load Applicants</strong>.
+                </p>
+              )}
+              {selectedJob && !candidatesLoaded && !candidatesLoading && (
+                <p style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                  <CheckCircle2 size={13} color="#16a34a" />
+                  <strong>{selectedJobObj?.title || "Job"}</strong> selected — click <strong>Load Applicants</strong> to view candidates.
+                </p>
+              )}
+            </div>
 
-              {/* ── UMURAVA PROFILES ── */}
-              {activeTab === "umurava" && (
-                <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "24px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
-                    <h3 style={{ fontWeight: "700", color: "#1e293b", fontSize: "16px" }}>
-                      Umurava Platform Profiles <span style={{ color: "#94a3b8", fontWeight: "400" }}>({filteredProfiles.length})</span>
-                    </h3>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <input placeholder="Search profiles..." value={profileSearch} onChange={(e) => setProfileSearch(e.target.value)} style={{ ...inp, width: "200px" }} />
-                      <button onClick={handleSelectProfiles} disabled={uploading || !selectedProfiles.length} style={{
-                        display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px", borderRadius: "10px", whiteSpace: "nowrap",
-                        background: selectedProfiles.length ? "#2563eb" : "#94a3b8", color: "white", border: "none",
-                        cursor: selectedProfiles.length ? "pointer" : "not-allowed", fontWeight: "600", fontSize: "13px",
-                      }}>
-                        <CheckCircle size={14} /> Add Selected ({selectedProfiles.length})
+            {/* ── Upload Done Banners ── */}
+            {csvUploaded && selectedJob && (
+              <div style={{ marginBottom: 20 }}>
+                <UploadDoneBanner
+                  count={csvUploadedCount}
+                  jobId={selectedJob}
+                  label={`candidate${csvUploadedCount !== 1 ? "s" : ""} uploaded from CSV — ready for AI screening!`}
+                  onReset={() => { setCsvUploaded(false); setCsvPreview(null); setCsvUploadedCount(0); setCsvIngestPct(0); }}
+                  onRunScreening={handleRunScreening}
+                  running={screeningRunning}
+                />
+              </div>
+            )}
+
+            {resumeUploaded && selectedJob && (
+              <div style={{ marginBottom: 20 }}>
+                <UploadDoneBanner
+                  count={resumeUploadedCount}
+                  jobId={selectedJob}
+                  label={`candidate${resumeUploadedCount !== 1 ? "s" : ""} added from resume${resumeUploadedCount !== 1 ? "s" : ""} — ready for AI screening!`}
+                  onReset={() => { setResumeUploaded(false); setResumeResults([]); setFileProgresses([]); setResumeUploadedCount(0); }}
+                  onRunScreening={handleRunScreening}
+                  running={screeningRunning}
+                />
+              </div>
+            )}
+
+            {urlUploaded && selectedJob && (
+              <div style={{ marginBottom: 20 }}>
+                <UploadDoneBanner
+                  count={urlUploadedCount}
+                  jobId={selectedJob}
+                  label={`candidate${urlUploadedCount !== 1 ? "s" : ""} imported from URL — ready for AI screening!`}
+                  onReset={() => { setUrlUploaded(false); setUrlUploadedCount(0); setUrlProgress(0); }}
+                  onRunScreening={handleRunScreening}
+                  running={screeningRunning}
+                />
+              </div>
+            )}
+
+            {profilesAddedShown && selectedJob && (
+              <div style={{ marginBottom: 20 }}>
+                <UploadDoneBanner
+                  count={profilesAdded}
+                  jobId={selectedJob}
+                  label={`Umurava profile${profilesAdded !== 1 ? "s" : ""} added — ready for AI screening!`}
+                  onReset={() => setProfilesAddedShown(false)}
+                  onRunScreening={handleRunScreening}
+                  running={screeningRunning}
+                />
+              </div>
+            )}
+
+            {/* ── Tabs ── */}
+            <div className="ap-tabs">
+              {[
+                { id: "list",     label: "Candidate List",   icon: List },
+                { id: "umurava",  label: "Umurava Profiles", icon: Globe },
+                { id: "external", label: "Upload Files",     icon: Upload },
+                { id: "manual",   label: "Manual Entry",     icon: PenSquare },
+              ].map((t) => (
+                <button key={t.id} className={`ap-tab${activeTab === t.id ? " active" : ""}`} onClick={() => setActiveTab(t.id as any)}>
+                  <t.icon size={15} />
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── TAB: Candidate List ── */}
+            {activeTab === "list" && (
+              <div>
+                {!candidatesLoaded ? (
+                  <div style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: "56px 32px", textAlign: "center", boxShadow: "var(--shadow-card)" }}>
+                    <div style={{ width: 56, height: 56, borderRadius: 16, background: "rgba(37,99,235,0.08)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                      <Users size={24} color="#2563eb" />
+                    </div>
+                    <p style={{ fontWeight: 700, fontSize: 16, color: "var(--text-primary)", marginBottom: 6 }}>
+                      {!selectedJob ? "Select a job to view candidates" : "Ready to load candidates"}
+                    </p>
+                    <p style={{ color: "var(--text-muted)", fontSize: 13, maxWidth: 320, margin: "0 auto 20px", lineHeight: 1.6 }}>
+                      {!selectedJob ? "Choose a job from the dropdown above, then click Load Applicants." : `Click "Load Applicants" to view candidates for ${selectedJobObj?.title || "this job"}.`}
+                    </p>
+                    {selectedJob && (
+                      <button className="ap-load-btn" onClick={handleLoadApplicants} disabled={candidatesLoading} style={{ display: "inline-flex", margin: "0 auto" }}>
+                        <Users size={15} /> Load Applicants
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+                      <div style={{ position: "relative", flex: 1, minWidth: 180 }}>
+                        <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                        <input type="text" placeholder="Search candidates…" value={candidateSearch} onChange={(e) => setCandidateSearch(e.target.value)} style={{ ...inp, paddingLeft: 36 }} />
+                      </div>
+                      <span style={{ fontSize: 13, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{filteredCandidates.length} candidate{filteredCandidates.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    {filteredCandidates.length === 0 ? (
+                      <div style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>
+                        <p style={{ fontWeight: 700, color: "var(--text-primary)", fontSize: 16, marginBottom: 8 }}>No candidates found</p>
+                        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>{candidateSearch ? "Try a different search term." : "Upload candidates using the tabs above."}</p>
+                      </div>
+                    ) : (
+                      filteredCandidates.map((c) => {
+                        const name     = `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Unknown";
+                        const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+                        const score    = c.aiScore;
+                        const scoreColor = score >= 80 ? "#15803d" : score >= 65 ? "#2563eb" : score >= 50 ? "#d97706" : "#dc2626";
+                        const scoreBg   = score >= 80 ? "#f0fdf4" : score >= 65 ? "#eff6ff" : score >= 50 ? "#fffbeb" : "#fef2f2";
+                        return (
+                          <div key={c._id} className="ap-cand-card">
+                            <div className="ap-cand-avatar">{initials || <User size={16} />}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p className="ap-cand-name">{name}</p>
+                              <p className="ap-cand-meta">{c.email}{c.location ? ` · ${c.location}` : ""}{c.headline ? ` · ${c.headline}` : ""}</p>
+                            </div>
+                            {score != null && (
+                              <span style={{ padding: "4px 10px", borderRadius: 8, background: scoreBg, color: scoreColor, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                                {score >= 80 ? "Strong Fit" : score >= 65 ? "Good Fit" : score >= 50 ? "Moderate Fit" : "Weak Fit"} · {score}
+                              </span>
+                            )}
+                            <Link href={`/candidates/${c._id}`} style={{ width: 30, height: 30, borderRadius: 8, background: "var(--surface-hover)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              <Eye size={14} color="var(--text-muted)" />
+                            </Link>
+                            <button className="ap-cand-remove" onClick={() => setDeleteTarget({ id: c._id, name })}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB: Umurava Profiles ── */}
+            {activeTab === "umurava" && (
+              <div>
+                {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Select a job first to add Umurava profiles.</p>}
+                {selectedJob && (
+                  <>
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ position: "relative" }}>
+                        <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
+                        <input type="text" placeholder="Search Umurava talent pool…" value={profileSearch} onChange={(e) => setProfileSearch(e.target.value)} style={{ ...inp, paddingLeft: 36 }} />
+                      </div>
+                    </div>
+                    {selectedProfiles.length > 0 && (
+                      <div style={{ background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.2)", borderRadius: 12, padding: "12px 16px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: "#2563eb" }}>{selectedProfiles.length} profile{selectedProfiles.length !== 1 ? "s" : ""} selected</span>
+                        <button onClick={handleAddUmurava} disabled={uploading} style={{ padding: "8px 18px", borderRadius: 9, background: "var(--brand-gradient)", color: "white", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                          {uploading ? "Adding…" : `Add to ${selectedJobObj?.title || "Job"}`}
+                        </button>
+                      </div>
+                    )}
+                    <div className="ap-profile-grid">
+                      {filteredProfiles.map((p) => {
+                        const name     = `${p.firstName || ""} ${p.lastName || ""}`.trim();
+                        const initials = name.split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2);
+                        const sel      = selectedProfiles.includes(p._id);
+                        return (
+                          <div key={p._id} className={`ap-profile-card${sel ? " selected" : ""}`} onClick={() => setSelectedProfiles(prev => sel ? prev.filter(x => x !== p._id) : [...prev, p._id])}>
+                            <div className="ap-profile-avatar">{initials || <User size={14} />}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</p>
+                              <p style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.headline || p.email}</p>
+                            </div>
+                            {sel && <CheckCircle2 size={16} color="#2563eb" style={{ flexShrink: 0 }} />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB: Upload File ── */}
+            {activeTab === "external" && (
+              <div>
+                {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16 }}>Select a job first to upload files.</p>}
+
+                {/* Sub-tab buttons */}
+                <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
+                  {([
+                    { id: "csv",    label: "CSV / Excel",  emoji: "📊", color: "#2563eb", activeBg: "linear-gradient(135deg,#2563eb,#1d4ed8)", activeShadow: "0 4px 14px rgba(37,99,235,0.35)" },
+                    { id: "resume", label: "PDF / DOCX",   emoji: "📄", color: "#7c3aed", activeBg: "linear-gradient(135deg,#7c3aed,#4f46e5)", activeShadow: "0 4px 14px rgba(124,58,237,0.35)" },
+                    { id: "url",    label: "Import URL",   emoji: "🔗", color: "#0891b2", activeBg: "linear-gradient(135deg,#0891b2,#0e7490)", activeShadow: "0 4px 14px rgba(8,145,178,0.3)" },
+                  ] as const).map((t) => (
+                    <button key={t.id} onClick={() => setFileSubTab(t.id)} style={{
+                      padding: "12px 22px", borderRadius: 12,
+                      border: fileSubTab === t.id ? "none" : `1.5px solid ${t.color}30`,
+                      background: fileSubTab === t.id ? t.activeBg : `${t.color}0d`,
+                      color: fileSubTab === t.id ? "white" : t.color,
+                      fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", gap: 8,
+                      boxShadow: fileSubTab === t.id ? t.activeShadow : "none",
+                      transition: "all 0.15s",
+                    }}>
+                      <span style={{ fontSize: 15 }}>{t.emoji}</span> {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ── CSV sub-tab ── */}
+                {fileSubTab === "csv" && (
+                  <div>
+                    <div {...getCSVRootProps()} className={`ap-dropzone${isCSVDrag ? " drag" : ""}`}>
+                      <input {...getCSVInputProps()} />
+                      <div className="ap-dropzone-icon"><FileSpreadsheet size={22} color="#2563eb" /></div>
+                      <p className="ap-dropzone-title">Drop a CSV or Excel file here</p>
+                      <p className="ap-dropzone-sub">or click to browse · Max 5 MB</p>
+                    </div>
+
+                    {csvPreviewLoading && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, color: "var(--text-muted)", fontSize: 13 }}>
+                        <span style={{ width: 14, height: 14, border: "2px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                        Parsing file…
+                      </div>
+                    )}
+
+                    {/* CSV preview + confirm stage */}
+                    {csvPreview && !csvUploaded && (
+                      <div style={{ marginTop: 16, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: 22, boxShadow: "var(--shadow-card)" }}>
+                        {/* Detection summary */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 11, background: "rgba(37,99,235,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <FileSpreadsheet size={20} color="#2563eb" />
+                          </div>
+                          <div>
+                            <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{csvPreview.file.name}</p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{(csvPreview.file.size / 1024).toFixed(0)} KB</p>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 10, background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
+                            <CheckCircle2 size={15} color="#15803d" />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}>{csvPreview.totalCandidates} candidates detected</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 10, background: "#eff6ff", border: "1.5px solid #bfdbfe" }}>
+                            <FileSpreadsheet size={15} color="#2563eb" />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#2563eb" }}>{csvPreview.columnsDetected} columns found</span>
+                          </div>
+                        </div>
+
+                        {/* Column names preview */}
+                        <p style={{ fontSize: 11.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Columns detected</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+                          {csvPreview.headers.map((h) => (
+                            <span key={h} style={{ padding: "3px 10px", borderRadius: 6, background: "var(--surface-hover)", border: "1px solid var(--border-muted)", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{h}</span>
+                          ))}
+                        </div>
+
+                        {/* Upload progress bar */}
+                        {uploading && (
+                          <div style={{ marginBottom: 14 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                              <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontWeight: 600 }}>Uploading to server…</span>
+                              <span style={{ fontSize: 12.5, color: "#2563eb", fontWeight: 700 }}>{csvIngestPct}%</span>
+                            </div>
+                            <ProgressBar pct={csvIngestPct} color="linear-gradient(90deg,#2563eb,#7c3aed)" />
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleConfirmIngest}
+                          disabled={uploading}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 9,
+                            padding: "14px 28px", borderRadius: 13,
+                            background: uploading ? "var(--surface-hover)" : "linear-gradient(135deg,#2563eb,#4f46e5,#7c3aed)",
+                            color: uploading ? "var(--text-muted)" : "white",
+                            border: "none", fontWeight: 800, fontSize: 15.5,
+                            cursor: uploading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                            boxShadow: uploading ? "none" : "0 5px 20px rgba(37,99,235,0.38)",
+                            transition: "all 0.15s", letterSpacing: "-0.01em",
+                          }}
+                        >
+                          {uploading
+                            ? <><RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} /> Uploading candidates…</>
+                            : <><Upload size={17} /> Upload {csvPreview.totalCandidates} Candidate{csvPreview.totalCandidates !== 1 ? "s" : ""} to Job</>
+                          }
+                        </button>
+                        {!uploading && (
+                          <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 8, fontWeight: 500 }}>
+                            Adds to <strong>{selectedJobObj?.title || "selected job"}</strong> and shows in Candidate List tab
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Resume sub-tab ── */}
+                {fileSubTab === "resume" && (
+                  <div>
+                    {/* Info banner explaining PDF parsing */}
+                    <div style={{ background: "rgba(124,58,237,0.06)", border: "1.5px solid rgba(124,58,237,0.15)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 9 }}>
+                      <span style={{ fontSize: 17, flexShrink: 0 }}>ℹ️</span>
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)", marginBottom: 3 }}>How PDF / DOCX upload works</p>
+                        <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+                          Drop one or more files — AI extracts <strong>name, email, skills, and experience</strong> automatically.
+                          A preview will appear so you can review before the candidates are saved.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div {...getResumeRootProps()} className={`ap-dropzone${isResumeDrag ? " drag" : ""}`}
+                      style={{ borderColor: "rgba(124,58,237,0.3)", background: "linear-gradient(135deg,rgba(124,58,237,0.03),rgba(79,70,229,0.02))" }}>
+                      <input {...getResumeInputProps()} />
+                      <div className="ap-dropzone-icon" style={{ background: "linear-gradient(135deg,rgba(124,58,237,0.14),rgba(79,70,229,0.1))", border: "1.5px solid rgba(124,58,237,0.2)", width: 64, height: 64, borderRadius: 18 }}>
+                        <FileText size={28} color="#7c3aed" />
+                      </div>
+                      <p className="ap-dropzone-title">Drop candidate resumes here</p>
+                      <p className="ap-dropzone-sub">AI will extract name, email, skills and experience from each file</p>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                        {[".pdf", ".docx", ".doc", ".txt"].map(fmt => (
+                          <span key={fmt} style={{ padding: "3px 10px", borderRadius: 99, fontSize: 12, fontWeight: 700, background: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "1px solid rgba(124,58,237,0.2)" }}>{fmt}</span>
+                        ))}
+                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>· 10 MB each · Multiple OK</span>
+                      </div>
+                    </div>
+
+                    {/* Per-file progress rows */}
+                    {fileProgresses.length > 0 && (
+                      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {fileProgresses.map((fp, i) => {
+                          const pctColor = fp.status === "done" ? "#16a34a" : fp.status === "error" ? "#dc2626" : "#2563eb";
+                          return (
+                            <div key={i} className="ap-fp-row">
+                              <div className="ap-fp-top">
+                                <FileText size={15} color={pctColor} style={{ flexShrink: 0 }} />
+                                <span className="ap-fp-name">{fp.name}</span>
+                                <span className="ap-fp-pct" style={{ color: pctColor }}>
+                                  {fp.status === "done" ? "Done ✓" : fp.status === "error" ? "Error" : `${fp.pct}%`}
+                                </span>
+                              </div>
+                              {fp.status !== "error" && (
+                                <ProgressBar pct={fp.pct} color={pctColor} />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Staged PDF results — review then confirm */}
+                    {resumeResults.length > 0 && (
+                      <div style={{ marginTop: 18, background: "var(--surface-card)", border: "1.5px solid rgba(124,58,237,0.2)", borderRadius: 16, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
+                        {/* Header */}
+                        <div style={{ padding: "16px 20px", borderBottom: "1px solid rgba(124,58,237,0.12)", background: "rgba(124,58,237,0.04)", display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 11, background: resumeUploaded ? "#dcfce7" : "rgba(124,58,237,0.1)", border: `1px solid ${resumeUploaded ? "#bbf7d0" : "rgba(124,58,237,0.2)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {resumeUploaded ? <CheckCircle2 size={20} color="#15803d" /> : <FileText size={20} color="#7c3aed" />}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontWeight: 800, fontSize: 14.5, color: "var(--text-primary)" }}>
+                              {resumeUploaded ? `✅ ${resumeUploadedCount} candidate${resumeUploadedCount !== 1 ? "s" : ""} uploaded successfully!` : `${resumeResults.length} resume${resumeResults.length !== 1 ? "s" : ""} parsed — review before saving`}
+                            </p>
+                            <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 2 }}>
+                              {resumeUploaded ? "Candidates are ready. You can now run AI screening." : "Check the parsed data below, then click Upload to save."}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Candidate rows */}
+                        <div style={{ padding: "10px 8px", display: "flex", flexDirection: "column", gap: 6 }}>
+                          {resumeResults.map((r, i) => {
+                            const initials = r.candidateName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+                            return (
+                              <div key={i} className="ap-staged-row" style={{ margin: "0 4px" }}>
+                                <div className="ap-staged-avatar">{initials}</div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{r.candidateName}</p>
+                                  <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 1 }}>{r.email} · {r.fileName}</p>
+                                </div>
+                                <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+                                  {r.skillsCount > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>{r.skillsCount} skills</span>}
+                                  {r.hasExp && <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}>Has exp</span>}
+                                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>✓ Parsed</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Action row */}
+                        {!resumeUploaded && (
+                          <div style={{ padding: "14px 20px", borderTop: "1px solid rgba(124,58,237,0.1)", background: "var(--surface-card)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                            <p style={{ fontSize: 13, color: "var(--text-secondary)", flex: 1, fontWeight: 500 }}>
+                              {resumeResults.length} candidate{resumeResults.length !== 1 ? "s" : ""} ready to add to <strong>{selectedJobObj?.title || "the job"}</strong>
+                            </p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                              Already uploaded automatically ✓
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── URL sub-tab ── */}
+                {fileSubTab === "url" && (
+                  <div>
+                    <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
+                      Import a LinkedIn profile, resume URL, or a direct link to a CSV / XLSX file.
+                    </p>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <input
+                        type="url"
+                        placeholder="https://example.com/resume.pdf"
+                        value={importUrl}
+                        onChange={(e) => setImportUrl(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleImportUrl()}
+                        style={{ ...inp, flex: 1 }}
+                      />
+                      <button
+                        onClick={handleImportUrl}
+                        disabled={importingUrl || !importUrl.trim() || !selectedJob}
+                        style={{ padding: "0 22px", height: 44, borderRadius: 10, background: importingUrl ? "var(--surface-hover)" : "var(--brand-primary)", color: importingUrl ? "var(--text-muted)" : "white", border: "none", fontWeight: 700, fontSize: 13.5, cursor: importingUrl ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 7, transition: "all 0.15s" }}
+                      >
+                        {importingUrl
+                          ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Importing…</>
+                          : <><Upload size={14} /> Import</>
+                        }
                       </button>
                     </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "480px", overflowY: "auto" }}>
-                    {filteredProfiles.length === 0 ? (
-                      <p style={{ textAlign: "center", color: "#94a3b8", padding: "32px" }}>No profiles found. Run <code>npm run seed</code> or add manually.</p>
-                    ) : filteredProfiles.map((p) => {
-                      const sel = selectedProfiles.includes(p._id);
-                      return (
-                        <div key={p._id} onClick={() => toggleProfile(p._id)} style={{
-                          display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px", borderRadius: "12px",
-                          border: `2px solid ${sel ? "#2563eb" : "#e2e8f0"}`, background: sel ? "#eff6ff" : "white", cursor: "pointer", transition: "all 0.15s",
-                        }}>
-                          <input type="checkbox" checked={sel} readOnly style={{ width: "16px", height: "16px", accentColor: "#2563eb" }} />
-                          <div style={{ width: "40px", height: "40px", borderRadius: "10px", flexShrink: 0, background: "linear-gradient(135deg,#2563eb,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "700", fontSize: "15px" }}>
-                            {p.firstName?.charAt(0) || "?"}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontWeight: "600", color: "#1e293b", marginBottom: "2px" }}>{p.firstName} {p.lastName}</p>
-                            <p style={{ color: "#64748b", fontSize: "12px", marginBottom: "6px" }}>{p.headline}</p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-                              {p.skills?.slice(0, 5).map((s: any) => (
-                                <span key={s.name} style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: "500", background: levelColor[s.level] || "#f1f5f9", color: levelText[s.level] || "#475569" }}>
-                                  {s.name} · {s.level}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                            <p style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>{p.location}</p>
-                            <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "20px", fontWeight: "600", background: p.availability?.status === "Available" ? "#dcfce7" : "#fef9c3", color: p.availability?.status === "Available" ? "#15803d" : "#ca8a04" }}>
-                              {p.availability?.status || "Available"}
-                            </span>
-                          </div>
+
+                    {/* URL animated progress */}
+                    {importingUrl && urlProgress > 0 && (
+                      <div style={{ marginTop: 14, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 12, padding: "14px 16px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>Fetching and parsing URL…</span>
+                          <span style={{ fontSize: 13, color: "#2563eb", fontWeight: 700 }}>{urlProgress}%</span>
                         </div>
-                      );
-                    })}
+                        <ProgressBar pct={urlProgress} color="linear-gradient(90deg,#2563eb,#7c3aed)" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB: Manual Entry ── */}
+            {activeTab === "manual" && (
+              <div style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 18, padding: 28, boxShadow: "var(--shadow-card)" }}>
+                {!selectedJob && (
+                  <div style={{ background: "rgba(37,99,235,0.06)", border: "1.5px solid rgba(37,99,235,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 20, fontSize: 13, color: "#2563eb", fontWeight: 600 }}>
+                    Select a job above before submitting.
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+                  <p style={{ fontWeight: 800, fontSize: 16, color: "var(--text-primary)" }}>Add Candidate Manually</p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <ScoreBadge pts="40 pts" label="Skills" />
+                    <ScoreBadge pts="25 pts" label="Experience" />
+                    <ScoreBadge pts="20 pts" label="Education" />
+                    <ScoreBadge pts="15 pts" label="Extras" />
                   </div>
                 </div>
-              )}
-
-              {/* ── MANUAL ── */}
-              {activeTab === "manual" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
-                  <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "24px" }}>
-                    <h3 style={{ fontWeight: "700", color: "#1e293b", fontSize: "16px", marginBottom: "20px", display: "flex", alignItems: "center", gap: "8px" }}>
-                      <User size={18} /> Add Candidate Profile
-                    </h3>
-
-                    {/* Basic Info */}
-                    <div style={section}>
-                      <p style={sectionTitle}><User size={14} />Basic Information</p>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                        <div><label style={lbl}>First Name *</label><input type="text" placeholder="John" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} style={inp} /></div>
-                        <div><label style={lbl}>Last Name *</label><input type="text" placeholder="Doe" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} style={inp} /></div>
-                        <div><label style={lbl}>Email *</label><input type="email" placeholder="john@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={inp} /></div>
-                        <div><label style={lbl}>Location *</label><input type="text" placeholder="Kigali, Rwanda" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} style={inp} /></div>
-                        <div style={{ gridColumn: "1/-1" }}>
-                          <label style={lbl}>Professional Headline *</label>
-                          <input type="text" placeholder='e.g. "Backend Engineer – Node.js & AI Systems"' value={form.headline} onChange={(e) => setForm({ ...form, headline: e.target.value })} style={inp} />
-                        </div>
-                        <div style={{ gridColumn: "1/-1" }}>
-                          <label style={lbl}>Bio <span style={{ color: "#94a3b8", fontWeight: "400" }}>(optional)</span></label>
-                          <textarea rows={2} placeholder="Short professional biography..." value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} style={{ ...inp, resize: "none" }} />
-                        </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><User size={13} /> Basic Info <span style={{ color: "#dc2626", fontWeight: 700 }}>* Required</span></p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                    {[["firstName","First Name *"],["lastName","Last Name *"],["email","Email *"],["location","Location"]].map(([f,l]) => (
+                      <div key={f}>
+                        <label style={lbl}>{l}</label>
+                        <input style={inp} type={f === "email" ? "email" : "text"} placeholder={f === "firstName" ? "e.g. Alice" : f === "lastName" ? "e.g. Uwimana" : f === "email" ? "alice@example.com" : "e.g. Kigali, Rwanda"} value={(form as any)[f]} onChange={(e) => setForm({...form,[f]:e.target.value})} />
                       </div>
-                    </div>
-
-                    {/* Skills */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><Award size={14} />Skills *</p>
-                        <button type="button" onClick={() => setForm({ ...form, skills: [...form.skills, { name: "", level: "Intermediate", yearsOfExperience: 1 }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Skill
-                        </button>
-                      </div>
-                      {form.skills.map((s, i) => (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 150px 80px 32px", gap: "8px", marginBottom: "8px" }}>
-                          <input type="text" placeholder="Skill name (e.g. React)" value={s.name} onChange={(e) => updateSkill(i, "name", e.target.value)} style={inp} />
-                          <select value={s.level} onChange={(e) => updateSkill(i, "level", e.target.value)} style={inp}>
-                            {["Beginner", "Intermediate", "Advanced", "Expert"].map((l) => <option key={l}>{l}</option>)}
-                          </select>
-                          <input type="number" min={0} max={20} placeholder="Yrs" value={s.yearsOfExperience} onChange={(e) => updateSkill(i, "yearsOfExperience", +e.target.value)} style={inp} />
-                          {form.skills.length > 1 && (
-                            <button type="button" onClick={() => setForm({ ...form, skills: form.skills.filter((_, idx) => idx !== i) })}
-                              style={{ background: "#fee2e2", border: "none", borderRadius: "8px", cursor: "pointer", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <X size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Experience */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><Briefcase size={14} />Work Experience *</p>
-                        <button type="button" onClick={() => setForm({ ...form, experience: [...form.experience, { company: "", role: "", startDate: "", endDate: "", description: "", technologies: [""], isCurrent: false }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Role
-                        </button>
-                      </div>
-                      {form.experience.map((ex, i) => (
-                        <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px", marginBottom: "10px", background: "white" }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-                            <div><label style={lbl}>Company *</label><input type="text" placeholder="Company Name" value={ex.company} onChange={(e) => updateExp(i, "company", e.target.value)} style={inp} /></div>
-                            <div><label style={lbl}>Role / Title *</label><input type="text" placeholder="Backend Engineer" value={ex.role} onChange={(e) => updateExp(i, "role", e.target.value)} style={inp} /></div>
-                            <div><label style={lbl}>Start Date (YYYY-MM) *</label><input type="text" placeholder="2022-01" value={ex.startDate} onChange={(e) => updateExp(i, "startDate", e.target.value)} style={inp} /></div>
-                            <div>
-                              <label style={lbl}>End Date</label>
-                              <input type="text" placeholder={ex.isCurrent ? "Present" : "2024-06"} value={ex.isCurrent ? "Present" : ex.endDate} disabled={ex.isCurrent}
-                                onChange={(e) => updateExp(i, "endDate", e.target.value)} style={{ ...inp, opacity: ex.isCurrent ? 0.5 : 1 }} />
-                            </div>
-                          </div>
-                          <div style={{ marginBottom: "8px" }}>
-                            <label style={lbl}>Description</label>
-                            <textarea rows={2} placeholder="Key responsibilities and achievements..." value={ex.description} onChange={(e) => updateExp(i, "description", e.target.value)} style={{ ...inp, resize: "none" }} />
-                          </div>
-                          <div style={{ marginBottom: "8px" }}>
-                            <label style={lbl}>Technologies (comma separated)</label>
-                            <input type="text" placeholder="Node.js, PostgreSQL, Docker" value={ex.technologies.join(", ")} onChange={(e) => updateExp(i, "technologies", e.target.value.split(",").map((s) => s.trim()))} style={inp} />
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "#374151", cursor: "pointer" }}>
-                              <input type="checkbox" checked={ex.isCurrent} onChange={(e) => updateExp(i, "isCurrent", e.target.checked)} /> Currently working here
-                            </label>
-                            {form.experience.length > 1 && (
-                              <button type="button" onClick={() => setForm({ ...form, experience: form.experience.filter((_, idx) => idx !== i) })}
-                                style={{ padding: "4px 10px", borderRadius: "6px", background: "#fee2e2", color: "#dc2626", border: "none", cursor: "pointer", fontSize: "12px" }}>
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Education */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><GraduationCap size={14} />Education *</p>
-                        <button type="button" onClick={() => setForm({ ...form, education: [...form.education, { institution: "", degree: "Bachelor's", fieldOfStudy: "", startYear: 2020, endYear: 2024 }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Education
-                        </button>
-                      </div>
-                      {form.education.map((ed, i) => (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 140px 1fr 80px 80px 32px", gap: "8px", marginBottom: "8px" }}>
-                          <input type="text" placeholder="Institution *" value={ed.institution} onChange={(e) => updateEdu(i, "institution", e.target.value)} style={inp} />
-                          <select value={ed.degree} onChange={(e) => updateEdu(i, "degree", e.target.value)} style={inp}>
-                            {["High School", "Bachelor's", "Master's", "PhD"].map((d) => <option key={d}>{d}</option>)}
-                          </select>
-                          <input type="text" placeholder="Field of Study *" value={ed.fieldOfStudy} onChange={(e) => updateEdu(i, "fieldOfStudy", e.target.value)} style={inp} />
-                          <input type="number" placeholder="Start" value={ed.startYear} onChange={(e) => updateEdu(i, "startYear", +e.target.value)} style={inp} />
-                          <input type="number" placeholder="End" value={ed.endYear} onChange={(e) => updateEdu(i, "endYear", +e.target.value)} style={inp} />
-                          {form.education.length > 1 && (
-                            <button type="button" onClick={() => setForm({ ...form, education: form.education.filter((_, idx) => idx !== i) })}
-                              style={{ background: "#fee2e2", border: "none", borderRadius: "8px", cursor: "pointer", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <X size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Languages */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><Globe size={14} />Languages <span style={{ color: "#94a3b8", fontWeight: "400", textTransform: "none", letterSpacing: "normal" }}>(optional)</span></p>
-                        <button type="button" onClick={() => setForm({ ...form, languages: [...form.languages, { name: "", proficiency: "Fluent" }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Language
-                        </button>
-                      </div>
-                      {form.languages.length === 0 && (
-                        <p style={{ color: "#94a3b8", fontSize: "13px" }}>Click &apos;Add Language&apos; to include this — optional fields improve AI scoring.</p>
-                      )}
-                      {form.languages.map((l, i) => (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 180px 32px", gap: "8px", marginBottom: "8px" }}>
-                          <input type="text" placeholder="Language (e.g. English)" value={l.name} onChange={(e) => updateLang(i, "name", e.target.value)} style={inp} />
-                          <select value={l.proficiency} onChange={(e) => updateLang(i, "proficiency", e.target.value)} style={inp}>
-                            {["Basic", "Conversational", "Fluent", "Native"].map((p) => <option key={p}>{p}</option>)}
-                          </select>
-                          <button type="button" onClick={() => setForm({ ...form, languages: form.languages.filter((_, idx) => idx !== i) })}
-                            style={{ background: "#fee2e2", border: "none", borderRadius: "8px", cursor: "pointer", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Certifications */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><Award size={14} />Certifications <span style={{ color: "#94a3b8", fontWeight: "400", textTransform: "none", letterSpacing: "normal" }}>(optional)</span></p>
-                        <button type="button" onClick={() => setForm({ ...form, certifications: [...form.certifications, { name: "", issuer: "", issueDate: "" }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Cert
-                        </button>
-                      </div>
-                      {form.certifications.length === 0 && (
-                        <p style={{ color: "#94a3b8", fontSize: "13px" }}>Click &apos;Add Cert&apos; to include this — optional fields improve AI scoring.</p>
-                      )}
-                      {form.certifications.map((c, i) => (
-                        <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 32px", gap: "8px", marginBottom: "8px" }}>
-                          <input type="text" placeholder="Certification name" value={c.name} onChange={(e) => updateCert(i, "name", e.target.value)} style={inp} />
-                          <input type="text" placeholder="Issuer (e.g. Amazon)" value={c.issuer} onChange={(e) => updateCert(i, "issuer", e.target.value)} style={inp} />
-                          <input type="text" placeholder="YYYY-MM" value={c.issueDate} onChange={(e) => updateCert(i, "issueDate", e.target.value)} style={inp} />
-                          <button type="button" onClick={() => setForm({ ...form, certifications: form.certifications.filter((_, idx) => idx !== i) })}
-                            style={{ background: "#fee2e2", border: "none", borderRadius: "8px", cursor: "pointer", color: "#dc2626", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Projects */}
-                    <div style={section}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-                        <p style={{ ...sectionTitle, marginBottom: 0 }}><FolderOpen size={14} />Projects <span style={{ color: "#94a3b8", fontWeight: "400", textTransform: "none", letterSpacing: "normal" }}>(optional)</span></p>
-                        <button type="button" onClick={() => setForm({ ...form, projects: [...form.projects, { name: "", description: "", technologies: [], role: "", link: "", startDate: "", endDate: "" }] })}
-                          style={{ display: "flex", alignItems: "center", gap: "4px", padding: "5px 10px", borderRadius: "8px", background: "#eff6ff", color: "#2563eb", border: "none", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>
-                          <Plus size={12} /> Add Project
-                        </button>
-                      </div>
-                      {form.projects.length === 0 && (
-                        <p style={{ color: "#94a3b8", fontSize: "13px" }}>Click &apos;Add Project&apos; to include this — optional fields improve AI scoring.</p>
-                      )}
-                      {form.projects.map((pr, i) => (
-                        <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px", marginBottom: "10px", background: "white" }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-                            <div><label style={lbl}>Project Name</label><input type="text" placeholder="AI Recruitment System" value={pr.name} onChange={(e) => updateProj(i, "name", e.target.value)} style={inp} /></div>
-                            <div><label style={lbl}>Your Role</label><input type="text" placeholder="Backend Engineer" value={pr.role} onChange={(e) => updateProj(i, "role", e.target.value)} style={inp} /></div>
-                          </div>
-                          <div style={{ marginBottom: "8px" }}>
-                            <label style={lbl}>Description</label>
-                            <input type="text" placeholder="Brief project description" value={pr.description} onChange={(e) => updateProj(i, "description", e.target.value)} style={inp} />
-                          </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-                            <div><label style={lbl}>Technologies</label><input type="text" placeholder="Next.js, Node.js" value={pr.technologies.join(", ")} onChange={(e) => updateProj(i, "technologies", e.target.value.split(",").map((s) => s.trim()))} style={inp} /></div>
-                            <div><label style={lbl}>Start (YYYY-MM)</label><input type="text" placeholder="2023-01" value={pr.startDate} onChange={(e) => updateProj(i, "startDate", e.target.value)} style={inp} /></div>
-                            <div><label style={lbl}>End (YYYY-MM)</label><input type="text" placeholder="2023-06" value={pr.endDate} onChange={(e) => updateProj(i, "endDate", e.target.value)} style={inp} /></div>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px", flex: 1 }}>
-                              <Link2 size={13} color="#64748b" />
-                              <input type="text" placeholder="https://github.com/..." value={pr.link} onChange={(e) => updateProj(i, "link", e.target.value)} style={{ ...inp, flex: 1 }} />
-                            </div>
-                            <button type="button" onClick={() => setForm({ ...form, projects: form.projects.filter((_, idx) => idx !== i) })}
-                              style={{ marginLeft: "8px", padding: "4px 10px", borderRadius: "6px", background: "#fee2e2", color: "#dc2626", border: "none", cursor: "pointer", fontSize: "12px" }}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Availability */}
-                    <div style={section}>
-                      <p style={sectionTitle}>Availability *</p>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-                        <div>
-                          <label style={lbl}>Status</label>
-                          <select value={form.availability.status} onChange={(e) => setForm({ ...form, availability: { ...form.availability, status: e.target.value } })} style={inp}>
-                            {["Available", "Open to Opportunities", "Not Available"].map((s) => <option key={s}>{s}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={lbl}>Type</label>
-                          <select value={form.availability.type} onChange={(e) => setForm({ ...form, availability: { ...form.availability, type: e.target.value } })} style={inp}>
-                            {["Full-time", "Part-time", "Contract"].map((t) => <option key={t}>{t}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label style={lbl}>Start Date <span style={{ color: "#94a3b8", fontWeight: "400" }}>(optional)</span></label>
-                          <input type="date" value={form.availability.startDate} onChange={(e) => setForm({ ...form, availability: { ...form.availability, startDate: e.target.value } })} style={inp} />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Social Links */}
-                    <div style={section}>
-                      <p style={sectionTitle}><Link2 size={14} />Social Links <span style={{ color: "#94a3b8", fontWeight: "400", textTransform: "none", letterSpacing: "normal" }}>(optional)</span></p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                        <input type="url" placeholder="LinkedIn URL (https://linkedin.com/in/...)" value={form.socialLinks.linkedin} onChange={(e) => setForm({ ...form, socialLinks: { ...form.socialLinks, linkedin: e.target.value } })} style={inp} />
-                        <input type="url" placeholder="GitHub URL (https://github.com/...)" value={form.socialLinks.github} onChange={(e) => setForm({ ...form, socialLinks: { ...form.socialLinks, github: e.target.value } })} style={inp} />
-                        <input type="url" placeholder="Portfolio URL (https://...)" value={form.socialLinks.portfolio} onChange={(e) => setForm({ ...form, socialLinks: { ...form.socialLinks, portfolio: e.target.value } })} style={inp} />
-                      </div>
-                    </div>
-
-                    <button type="button" onClick={handleManualSubmit} disabled={uploading} style={{
-                      width: "100%", padding: "14px", borderRadius: "12px", border: "none",
-                      background: uploading ? "#94a3b8" : "linear-gradient(135deg,#2563eb,#7c3aed)",
-                      color: "white", fontWeight: "700", fontSize: "15px",
-                      cursor: uploading ? "not-allowed" : "pointer",
-                    }}>{uploading ? "Adding..." : "Add Candidate Profile"}</button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── UPLOAD EXTERNAL ── */}
-              {activeTab === "external" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <div style={{ display: "flex", gap: "8px", marginBottom: "4px" }}>
-                    {[
-                      { k: "csv" as const, label: "CSV / Excel" },
-                      { k: "resume" as const, label: "Resume Files" },
-                      { k: "url" as const, label: "Import from URL" },
-                    ].map((t) => (
-                      <button key={t.k} type="button" onClick={() => setFileSubTab(t.k)} style={{
-                        padding: "9px 18px", borderRadius: "10px", border: "none", fontWeight: "600", fontSize: "13px", cursor: "pointer",
-                        background: fileSubTab === t.k ? "linear-gradient(135deg,#2563eb,#7c3aed)" : "white",
-                        color: fileSubTab === t.k ? "white" : "#64748b",
-                        borderWidth: 1, borderStyle: "solid", borderColor: fileSubTab === t.k ? "transparent" : "#e2e8f0",
-                      }}>{t.label}</button>
                     ))}
                   </div>
-
-                  {/* CSV */}
-                  {fileSubTab === "csv" && (
-                    <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "24px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                        <div>
-                          <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>Upload CSV / Excel Spreadsheet</h3>
-                          <p style={{ color: "#64748b", fontSize: "13px" }}>
-                            Upload a spreadsheet with multiple candidates at once. Backend parses it directly — no AI needed.{" "}
-                            <span style={{ color: "#94a3b8" }}>Max {MAX_CSV_SIZE_BYTES / 1024 / 1024} MB.</span>
-                          </p>
-                        </div>
-                        <button onClick={downloadTemplate} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", borderRadius: "9px", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", cursor: "pointer", fontSize: "13px", fontWeight: "600" }}>
-                          <Download size={14} /> Download Template
-                        </button>
-                      </div>
-                      <div {...csvProps()} style={{ border: `2px dashed ${csvDrag ? "#2563eb" : "#cbd5e1"}`, borderRadius: "14px", padding: "40px", textAlign: "center", cursor: "pointer", background: csvDrag ? "#eff6ff" : "#f8fafc", transition: "all 0.2s" }}>
-                        <input {...csvInput()} />
-                        <Upload size={28} color="#94a3b8" style={{ margin: "0 auto 10px" }} />
-                        <p style={{ fontWeight: "600", color: "#475569", marginBottom: "4px" }}>{csvDrag ? "Drop your file here" : "Drag & drop CSV or Excel file here"}</p>
-                        <p style={{ color: "#94a3b8", fontSize: "13px" }}>or click to browse · .csv, .xls, .xlsx · max {MAX_CSV_SIZE_BYTES / 1024 / 1024} MB</p>
-                      </div>
-                      {uploading && <p style={{ marginTop: "12px", color: "#2563eb", fontSize: "13px", fontWeight: 600 }}>Uploading…</p>}
-                    </div>
-                  )}
-
-                  {/* Resume */}
-                  {fileSubTab === "resume" && (
-                    <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "24px" }}>
-                      <div style={{ marginBottom: "16px" }}>
-                        <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>Upload Resume Files</h3>
-                        <p style={{ color: "#64748b", fontSize: "13px" }}>
-                          AI will extract skills, contact info, and experience automatically.{" "}
-                          <span style={{ color: "#94a3b8" }}>Max {MAX_RESUME_SIZE_BYTES / 1024 / 1024} MB per file. Files with incomplete data will be saved with a warning.</span>
-                        </p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
-                          {["PDF", "DOCX", "DOC", "TXT", "ODT"].map((fmt) => (
-                            <span key={fmt} style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "700", background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" }}>{fmt}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div {...resumeProps()} style={{ border: `2px dashed ${resumeDrag ? "#7c3aed" : "#cbd5e1"}`, borderRadius: "14px", padding: "40px", textAlign: "center", cursor: uploading ? "not-allowed" : "pointer", background: resumeDrag ? "#f5f3ff" : "#f8fafc", transition: "all 0.2s", opacity: uploading ? 0.7 : 1 }}>
-                        <input {...resumeInput()} disabled={uploading} />
-                        <FileText size={28} color="#94a3b8" style={{ margin: "0 auto 10px" }} />
-                        <p style={{ fontWeight: "600", color: "#475569", marginBottom: "4px" }}>{resumeDrag ? "Drop resumes here" : "Drag & drop resume files here"}</p>
-                        <p style={{ color: "#94a3b8", fontSize: "13px" }}>or click to browse · multiple files allowed · max {MAX_RESUME_SIZE_BYTES / 1024 / 1024} MB each</p>
-                      </div>
-                      {fileProgresses.length > 0 && (
-                        <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "8px" }}>
-                          {fileProgresses.map((fp, idx) => (
-                            <div key={idx} style={{ background: "#f8fafc", borderRadius: "10px", padding: "10px 14px", border: "1px solid #e2e8f0" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                                <p style={{ fontSize: "13px", fontWeight: 600, color: "#334155", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{fp.name}</p>
-                                <span style={{ fontSize: "12px", fontWeight: 700, color: fp.status === "error" ? "#dc2626" : fp.status === "done" ? "#15803d" : "#2563eb" }}>
-                                  {fp.status === "error" ? "Failed" : fp.status === "done" ? "Done ✓" : `${fp.pct}%`}
-                                </span>
-                              </div>
-                              <div style={{ height: "6px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden" }}>
-                                <div style={{ height: "100%", borderRadius: "99px", width: `${fp.pct}%`, background: fp.status === "error" ? "#dc2626" : fp.status === "done" ? "#16a34a" : "linear-gradient(90deg,#2563eb,#7c3aed)", transition: "width 0.3s ease" }} />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* URL */}
-                  {fileSubTab === "url" && (
-                    <div style={{ background: "white", borderRadius: "14px", border: "1px solid #e2e8f0", padding: "24px" }}>
-                      <div style={{ marginBottom: "20px" }}>
-                        <h3 style={{ fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>Import from URL</h3>
-                        <p style={{ color: "#64748b", fontSize: "13px" }}>Paste a URL that contains an applicant&apos;s information. The backend will fetch it, extract the text, and use AI to parse the profile.</p>
-                      </div>
-                      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "10px", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "0 14px", background: "#fafafa" }}>
-                          <LinkIcon size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
-                          <input
-                            type="url" value={importUrl} onChange={(e) => setImportUrl(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleImportUrl()}
-                            placeholder="https://example.com/resume.pdf  or  https://linkedin.com/in/..."
-                            style={{ flex: 1, border: "none", outline: "none", fontSize: "14px", background: "transparent", padding: "12px 0", color: "#1e293b" }}
-                          />
-                        </div>
-                        <button type="button" onClick={handleImportUrl} disabled={importingUrl || !importUrl.trim()} style={{
-                          display: "flex", alignItems: "center", gap: "6px", padding: "0 20px", height: "46px", borderRadius: "10px", border: "none",
-                          background: importingUrl || !importUrl.trim() ? "#94a3b8" : "linear-gradient(135deg,#2563eb,#7c3aed)",
-                          color: "white", fontWeight: "700", fontSize: "14px",
-                          cursor: importingUrl || !importUrl.trim() ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-                        }}>
-                          {importingUrl ? (
-                            <>
-                              <span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.35)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "um-spin 0.75s linear infinite" }} />
-                              Importing…
-                            </>
-                          ) : (
-                            <><CheckCircle2 size={15} /> Import</>
-                          )}
-                        </button>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                        {[
-                          { icon: "📄", title: "PDF links", desc: "Direct links to PDF resumes (.pdf URLs) — backend fetches and extracts text" },
-                          { icon: "🔗", title: "Profile pages", desc: "LinkedIn profiles, personal sites, or portfolio pages — backend scrapes visible text" },
-                          { icon: "☁️", title: "Cloud docs", desc: "Google Drive or Dropbox direct-download links to DOCX or PDF files" },
-                          { icon: "🌐", title: "Job boards", desc: "Candidate profile pages from job boards or talent platforms" },
-                        ].map((h) => (
-                          <div key={h.title} style={{ padding: "14px 16px", borderRadius: "10px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                            <p style={{ fontSize: "20px", marginBottom: "6px" }}>{h.icon}</p>
-                            <p style={{ fontWeight: "700", color: "#1e293b", fontSize: "13px", marginBottom: "4px" }}>{h.title}</p>
-                            <p style={{ color: "#64748b", fontSize: "12px", lineHeight: 1.5 }}>{h.desc}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={lbl}>Professional Headline</label>
+                    <input style={inp} type="text" placeholder="e.g. Senior Full Stack Engineer" value={form.headline} onChange={(e) => setForm({...form,headline:e.target.value})} />
+                  </div>
+                  <div>
+                    <label style={lbl}>Bio / Summary</label>
+                    <textarea style={{...inp,minHeight:80,resize:"vertical"}} placeholder="Short professional summary…" value={form.bio} onChange={(e) => setForm({...form,bio:e.target.value})} />
+                  </div>
                 </div>
-              )}
-            </>
-          )}
-        </main>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><Award size={13} /> Skills <span style={{color:"#dc2626"}}>* Required (at least 1)</span><span style={{marginLeft:"auto"}}><ScoreBadge pts="40 pts" label="Skills Match" /></span></p>
+                  {form.skills.map((sk, i) => (
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 140px 90px 28px",gap:8,marginBottom:8,alignItems:"end"}}>
+                      <div>{i===0&&<label style={lbl}>Skill Name</label>}<input style={inp} type="text" placeholder="e.g. React" value={sk.name} onChange={(e)=>setForm(f=>({...f,skills:f.skills.map((s,si)=>si===i?{...s,name:e.target.value}:s)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Level</label>}<select className="ap-manual-select" value={sk.level} onChange={(e)=>setForm(f=>({...f,skills:f.skills.map((s,si)=>si===i?{...s,level:e.target.value}:s)}))}>{["Beginner","Intermediate","Advanced","Expert"].map(l=><option key={l}>{l}</option>)}</select></div>
+                      <div>{i===0&&<label style={lbl}>Yrs Exp.</label>}<input style={inp} type="number" min={0} max={30} value={sk.yearsOfExperience} onChange={(e)=>setForm(f=>({...f,skills:f.skills.map((s,si)=>si===i?{...s,yearsOfExperience:Number(e.target.value)}:s)}))} /></div>
+                      <button className="ap-row-remove" onClick={()=>removeSkill(i)} style={{marginTop:i===0?20:0}}><X size={13}/></button>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addSkill}><Plus size={13}/> Add Skill</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><Briefcase size={13}/> Work Experience <span style={{color:"#dc2626"}}>* Required (at least 1)</span><span style={{marginLeft:"auto"}}><ScoreBadge pts="25 pts" label="Experience"/></span></p>
+                  {form.experience.map((ex,i)=>(
+                    <div key={i} style={{background:"var(--surface-card)",border:"1px solid var(--border-soft)",borderRadius:10,padding:"14px 16px",marginBottom:12,position:"relative"}}>
+                      <button className="ap-row-remove" onClick={()=>removeExp(i)} style={{position:"absolute",top:12,right:12}}><X size={13}/></button>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                        <div><label style={lbl}>Company *</label><input style={inp} type="text" placeholder="e.g. Andela" value={ex.company} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,company:e.target.value}:x)}))} /></div>
+                        <div><label style={lbl}>Role / Title *</label><input style={inp} type="text" placeholder="e.g. Backend Engineer" value={ex.role} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,role:e.target.value}:x)}))} /></div>
+                        <div><label style={lbl}>Start Date</label><input style={inp} type="text" placeholder="2021-03" value={ex.startDate} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,startDate:e.target.value}:x)}))} /></div>
+                        <div><label style={lbl}>End Date</label><input style={inp} type="text" placeholder="2023-08" disabled={ex.isCurrent} value={ex.endDate} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,endDate:e.target.value}:x)}))} /></div>
+                      </div>
+                      <div style={{marginBottom:10}}><label style={lbl}>Description</label><textarea style={{...inp,minHeight:68,resize:"vertical"}} value={ex.description} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,description:e.target.value}:x)}))} /></div>
+                      <div style={{marginBottom:10}}><label style={lbl}>Technologies (comma separated)</label><input style={inp} type="text" placeholder="React, Node.js, MongoDB" value={ex.technologies.join(", ")} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,technologies:e.target.value.split(",").map(t=>t.trim())}:x)}))} /></div>
+                      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"var(--text-secondary)",cursor:"pointer",userSelect:"none"}}>
+                        <input type="checkbox" checked={ex.isCurrent} onChange={(e)=>setForm(f=>({...f,experience:f.experience.map((x,xi)=>xi===i?{...x,isCurrent:e.target.checked,endDate:e.target.checked?"":x.endDate}:x)}))} />
+                        Currently working here
+                      </label>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addExp}><Plus size={13}/> Add Experience</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><GraduationCap size={13}/> Education<span style={{marginLeft:"auto"}}><ScoreBadge pts="20 pts" label="Education"/></span></p>
+                  {form.education.map((ed,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 80px 80px 28px",gap:8,marginBottom:8,alignItems:"end"}}>
+                      <div>{i===0&&<label style={lbl}>Institution</label>}<input style={inp} type="text" placeholder="University of Rwanda" value={ed.institution} onChange={(e)=>setForm(f=>({...f,education:f.education.map((x,xi)=>xi===i?{...x,institution:e.target.value}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Degree</label>}<select className="ap-manual-select" value={ed.degree} onChange={(e)=>setForm(f=>({...f,education:f.education.map((x,xi)=>xi===i?{...x,degree:e.target.value}:x)}))}>{["Bachelor's","Master's","PhD","Associate's","Diploma","Certificate","High School"].map(d=><option key={d}>{d}</option>)}</select></div>
+                      <div>{i===0&&<label style={lbl}>Field of Study</label>}<input style={inp} type="text" placeholder="Computer Science" value={ed.fieldOfStudy} onChange={(e)=>setForm(f=>({...f,education:f.education.map((x,xi)=>xi===i?{...x,fieldOfStudy:e.target.value}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Start Yr</label>}<input style={inp} type="number" min={1990} max={2030} value={ed.startYear} onChange={(e)=>setForm(f=>({...f,education:f.education.map((x,xi)=>xi===i?{...x,startYear:Number(e.target.value)}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>End Yr</label>}<input style={inp} type="number" min={1990} max={2035} value={ed.endYear} onChange={(e)=>setForm(f=>({...f,education:f.education.map((x,xi)=>xi===i?{...x,endYear:Number(e.target.value)}:x)}))} /></div>
+                      <button className="ap-row-remove" onClick={()=>removeEdu(i)} style={{marginTop:i===0?20:0}}><X size={13}/></button>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addEdu}><Plus size={13}/> Add Education</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><Award size={13}/> Certifications<span style={{marginLeft:"auto"}}><ScoreBadge pts="15 pts" label="Extras"/></span></p>
+                  {form.certifications.map((cert,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 130px 28px",gap:8,marginBottom:8,alignItems:"end"}}>
+                      <div>{i===0&&<label style={lbl}>Certification Name</label>}<input style={inp} type="text" placeholder="AWS Certified Developer" value={cert.name} onChange={(e)=>setForm(f=>({...f,certifications:f.certifications.map((x,xi)=>xi===i?{...x,name:e.target.value}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Issuer</label>}<input style={inp} type="text" placeholder="Amazon" value={cert.issuer} onChange={(e)=>setForm(f=>({...f,certifications:f.certifications.map((x,xi)=>xi===i?{...x,issuer:e.target.value}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Issue Date</label>}<input style={inp} type="text" placeholder="2023-06" value={cert.issueDate} onChange={(e)=>setForm(f=>({...f,certifications:f.certifications.map((x,xi)=>xi===i?{...x,issueDate:e.target.value}:x)}))} /></div>
+                      <button className="ap-row-remove" onClick={()=>removeCert(i)} style={{marginTop:i===0?20:0}}><X size={13}/></button>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addCert}><Plus size={13}/> Add Certification</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><Globe size={13}/> Languages</p>
+                  {form.languages.map((lang,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 160px 28px",gap:8,marginBottom:8,alignItems:"end"}}>
+                      <div>{i===0&&<label style={lbl}>Language</label>}<input style={inp} type="text" placeholder="English, Kinyarwanda" value={lang.name} onChange={(e)=>setForm(f=>({...f,languages:f.languages.map((x,xi)=>xi===i?{...x,name:e.target.value}:x)}))} /></div>
+                      <div>{i===0&&<label style={lbl}>Proficiency</label>}<select className="ap-manual-select" value={lang.proficiency} onChange={(e)=>setForm(f=>({...f,languages:f.languages.map((x,xi)=>xi===i?{...x,proficiency:e.target.value}:x)}))}>{["Basic","Conversational","Fluent","Native"].map(p=><option key={p}>{p}</option>)}</select></div>
+                      <button className="ap-row-remove" onClick={()=>removeLang(i)} style={{marginTop:i===0?20:0}}><X size={13}/></button>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addLang}><Plus size={13}/> Add Language</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><Sparkles size={13}/> Projects</p>
+                  {form.projects.map((proj,i)=>(
+                    <div key={i} style={{background:"var(--surface-card)",border:"1px solid var(--border-soft)",borderRadius:10,padding:"14px 16px",marginBottom:12,position:"relative"}}>
+                      <button className="ap-row-remove" onClick={()=>removeProject(i)} style={{position:"absolute",top:12,right:12}}><X size={13}/></button>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                        <div><label style={lbl}>Project Name</label><input style={inp} type="text" placeholder="E-commerce Platform" value={proj.name} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,name:e.target.value}:x)}))} /></div>
+                        <div><label style={lbl}>Your Role</label><input style={inp} type="text" placeholder="Full Stack Developer" value={proj.role} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,role:e.target.value}:x)}))} /></div>
+                      </div>
+                      <div style={{marginBottom:10}}><label style={lbl}>Description</label><textarea style={{...inp,minHeight:56,resize:"vertical"}} value={proj.description} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,description:e.target.value}:x)}))} /></div>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                        <div><label style={lbl}>Technologies</label><input style={inp} type="text" placeholder="React, Node.js…" value={proj.technologies.join(", ")} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,technologies:e.target.value.split(",").map(t=>t.trim())}:x)}))} /></div>
+                        <div><label style={lbl}>Link (optional)</label><input style={inp} type="url" placeholder="https://github.com/…" value={proj.link} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,link:e.target.value}:x)}))} /></div>
+                        <div><label style={lbl}>Year / Dates</label><input style={inp} type="text" placeholder="2022" value={proj.startDate} onChange={(e)=>setForm(f=>({...f,projects:f.projects.map((x,xi)=>xi===i?{...x,startDate:e.target.value}:x)}))} /></div>
+                      </div>
+                    </div>
+                  ))}
+                  <button className="ap-add-row" onClick={addProject}><Plus size={13}/> Add Project</button>
+                </div>
+                <div style={sectionBox}>
+                  <p style={sectionTitle}><CheckCircle size={13}/> Availability &amp; Links</p>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+                    <div><label style={lbl}>Status</label><select className="ap-manual-select" value={form.availability.status} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,status:e.target.value}}))}>{["Available","Open to Opportunities","Not Available"].map(s=><option key={s}>{s}</option>)}</select></div>
+                    <div><label style={lbl}>Type</label><select className="ap-manual-select" value={form.availability.type} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,type:e.target.value}}))}>{["Full-time","Part-time","Contract"].map(t=><option key={t}>{t}</option>)}</select></div>
+                    <div><label style={lbl}>Available From</label><input style={inp} type="text" placeholder="Immediately" value={form.availability.startDate} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,startDate:e.target.value}}))} /></div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+                    <div><label style={lbl}>LinkedIn</label><input style={inp} type="url" placeholder="https://linkedin.com/in/…" value={form.socialLinks.linkedin} onChange={(e)=>setForm(f=>({...f,socialLinks:{...f.socialLinks,linkedin:e.target.value}}))} /></div>
+                    <div><label style={lbl}>GitHub</label><input style={inp} type="url" placeholder="https://github.com/…" value={form.socialLinks.github} onChange={(e)=>setForm(f=>({...f,socialLinks:{...f.socialLinks,github:e.target.value}}))} /></div>
+                    <div><label style={lbl}>Portfolio</label><input style={inp} type="url" placeholder="https://yoursite.com" value={form.socialLinks.portfolio} onChange={(e)=>setForm(f=>({...f,socialLinks:{...f.socialLinks,portfolio:e.target.value}}))} /></div>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                  <button onClick={handleSubmitManual} disabled={uploading||!selectedJob||!canSubmit} style={{padding:"12px 28px",borderRadius:11,background:canSubmit&&selectedJob?"var(--brand-gradient)":"var(--surface-hover)",color:canSubmit&&selectedJob?"white":"var(--text-muted)",border:"none",fontWeight:700,fontSize:14,cursor:canSubmit&&selectedJob?"pointer":"not-allowed",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:7,boxShadow:canSubmit&&selectedJob?"var(--shadow-button)":"none",transition:"all 0.15s"}}>
+                    <Plus size={15}/> {uploading?"Saving…":"Add Candidate"}
+                  </button>
+                  {!canSubmit&&<p style={{fontSize:12.5,color:"var(--text-muted)"}}>Required: First name, Last name, Email, at least 1 Skill, at least 1 Experience</p>}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Delete confirm modal */}
+      {deleteTarget && (
+        <div className="ap-del-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="ap-del-box" onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 13, background: "rgba(239,68,68,0.1)", border: "1.5px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <Trash2 size={20} color="#ef4444" />
+            </div>
+            <p style={{ fontWeight: 800, fontSize: 17, color: "var(--text-primary)", marginBottom: 6 }}>Remove candidate?</p>
+            <p style={{ fontSize: 13.5, color: "var(--text-muted)", marginBottom: 22, lineHeight: 1.55 }}>
+              <strong>{deleteTarget.name}</strong> will be removed from this job. This does not delete their profile.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, padding: 11, borderRadius: 10, border: "1.5px solid var(--border-soft)", background: "var(--surface-card)", color: "var(--text-secondary)", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+              <button onClick={handleRemoveCandidate} disabled={deleting} style={{ flex: 1, padding: 11, borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                {deleting ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
 export default function ApplicantsPage() {
   return (
-    <Suspense fallback={
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", color: "#94a3b8" }}>
-        Loading…
-      </div>
-    }>
+    <Suspense fallback={<LoadingSpinner fullPage label="Loading…" />}>
       <ApplicantsPageContent />
     </Suspense>
   );

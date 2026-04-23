@@ -1,385 +1,322 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { fetchJobs } from "../../store/slices/jobSlice";
-import { AppDispatch, RootState } from "../../store";
+import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
-import { getMe } from "../../services/authService";
-import { getResults } from "../../services/screeningService";
+import { getAllJobs } from "../../services/jobService";
 import {
-  Briefcase,
-  Users,
-  Brain,
-  Plus,
-  ArrowRight,
-  ListChecks,
-  Upload,
+  Briefcase, Users, Sparkles, CheckCircle2, ArrowRight, GitCompare,
 } from "lucide-react";
 
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+type PeriodKey = "1W" | "1M" | "3M" | "6M" | "1Y";
+
+function smoothPath(points: { x: number; y: number }[]) {
+  return points.reduce((acc, p, i) => {
+    if (i === 0) return `M ${p.x} ${p.y}`;
+    const prev = points[i - 1];
+    const cpx = (prev.x + p.x) / 2;
+    return `${acc} C ${cpx} ${prev.y} ${cpx} ${p.y} ${p.x} ${p.y}`;
+  }, "");
 }
 
-function formatDate() {
-  return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
+function PipelineChart({
+  labels,
+  candidates,
+  shortlisted,
+}: {
+  labels: string[];
+  candidates: number[];
+  shortlisted: number[];
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const W = 500;
+  const H = 200;
+  const P = { l: 48, r: 20, t: 14, b: 34 };
+  const maxVal = Math.max(...candidates, ...shortlisted, 1);
+  const yMax = Math.ceil(maxVal / 10) * 10;
+  const ticks = [0, yMax / 4, yMax / 2, (yMax * 3) / 4, yMax];
 
-export default function Dashboard() {
-  const dispatch = useDispatch<AppDispatch>();
-  const router = useRouter();
-  const { jobs, loading } = useSelector((state: RootState) => state.jobs);
-  const { user } = useSelector((state: RootState) => state.auth);
-  const [me, setMe] = useState<{ name?: string; email?: string } | null>(null);
-  const [avgAi, setAvgAi] = useState<number | null>(null);
+  const toY = (v: number) => P.t + (1 - v / yMax) * (H - P.t - P.b);
+  const toX = (i: number, len: number) => P.l + (i / Math.max(1, len - 1)) * (W - P.l - P.r);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      router.push("/");
-      return;
-    }
-    dispatch(fetchJobs());
-    getMe().then((d) => setMe(d.user)).catch(() => {});
-  }, [dispatch, router]);
+  const p1 = candidates.map((v, i) => ({ x: toX(i, candidates.length), y: toY(v), v }));
+  const p2 = shortlisted.map((v, i) => ({ x: toX(i, shortlisted.length), y: toY(v), v }));
+  const p1Path = smoothPath(p1);
+  const p2Path = smoothPath(p2);
+  const areaPath = `${p1Path} L ${p1[p1.length - 1]?.x ?? 0} ${H - P.b} L ${p1[0]?.x ?? 0} ${H - P.b} Z`;
+  const latest = p1[p1.length - 1];
 
-  useEffect(() => {
-    const screened = jobs.filter((j) => j.status === "screening");
-    if (screened.length === 0) {
-      setAvgAi(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      const scores: number[] = [];
-      await Promise.all(
-        screened.map(async (j) => {
-          try {
-            const res = await getResults(j._id);
-            const ranked = res.data?.rankedCandidates || [];
-            ranked.forEach((r: { score?: number }) => {
-              if (typeof r.score === "number") scores.push(r.score);
-            });
-          } catch {
-            /* no results */
-          }
-        })
-      );
-      if (!cancelled && scores.length) {
-        setAvgAi(
-          Math.round(
-            scores.reduce((a, b) => a + b, 0) / scores.length
-          )
-        );
-      } else if (!cancelled) setAvgAi(null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [jobs]);
+  return (
+    <div style={{ position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        style={{ width: "100%", height: 200, display: "block" }}
+        onMouseLeave={() => setHover(null)}
+      >
+        <defs>
+          <linearGradient id="pipeArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#111827" stopOpacity="0.12" />
+            <stop offset="100%" stopColor="#111827" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
 
-  const displayUser = me || user;
-  const firstName = displayUser?.name?.split(" ")[0] || "Recruiter";
+        {ticks.map((t) => (
+          <g key={t}>
+            <line
+              x1={P.l}
+              y1={toY(t)}
+              x2={W - P.r}
+              y2={toY(t)}
+              stroke="currentColor"
+              strokeOpacity="0.08"
+              strokeDasharray="4 4"
+            />
+            <text x={8} y={toY(t) + 4} fontSize="10" fill="currentColor" opacity="0.6">
+              {Math.round(t)}
+            </text>
+          </g>
+        ))}
 
-  const totalApplicants = jobs.reduce(
-    (sum, j) => sum + (j.applicantsCount || 0),
-    0
+        <path d={areaPath} fill="url(#pipeArea)" />
+        <path d={p1Path} fill="none" stroke="#111827" strokeWidth="1.25" strokeLinecap="round" />
+        <path d={p2Path} fill="none" stroke="#9ca3af" strokeWidth="1.05" strokeLinecap="round" />
+
+        {p1.map((pt, i) => (
+          <rect
+            key={i}
+            x={pt.x - 10}
+            y={P.t}
+            width={20}
+            height={H - P.t - P.b}
+            fill="transparent"
+            onMouseEnter={() => setHover(i)}
+          />
+        ))}
+
+        {latest && <circle cx={latest.x} cy={latest.y} r="3" fill="#111827" />}
+
+        {labels.map((label, i) => {
+          const show = labels.length <= 6 || i % Math.ceil(labels.length / 6) === 0 || i === labels.length - 1;
+          if (!show) return null;
+          return (
+            <text key={`${label}-${i}`} x={toX(i, labels.length)} y={H - 10} textAnchor="middle" fontSize="10.5" fill="currentColor" opacity="0.55">
+              {label}
+            </text>
+          );
+        })}
+      </svg>
+
+      {hover !== null && p1[hover] && (
+        <div
+          style={{
+            position: "absolute",
+            left: `${((p1[hover].x - P.l) / (W - P.l - P.r)) * 100}%`,
+            top: `${((p1[hover].y - 12) / H) * 100}%`,
+            transform: "translate(-50%, -100%)",
+            background: "#111827",
+            color: "#fff",
+            borderRadius: 8,
+            padding: "6px 10px",
+            fontSize: 11,
+            lineHeight: 1.35,
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <div>{candidates[hover]} Candidates</div>
+          <div style={{ opacity: 0.75 }}>{shortlisted[hover]} Shortlisted</div>
+        </div>
+      )}
+    </div>
   );
-  const activeJobs = jobs.filter((j) => j.status === "open").length;
-  const screeningsRun = jobs.filter((j) => j.status === "screening").length;
+}
 
-  const statusConfig: Record<
-    string,
-    { bg: string; color: string; label: string }
-  > = {
-    open: { bg: "#dcfce7", color: "#16a34a", label: "Active" },
-    screening: { bg: "#dbeafe", color: "#2563eb", label: "Screening" },
-    closed: { bg: "#f1f5f9", color: "#64748b", label: "Closed" },
-  };
+function JobsStatusChart({
+  open,
+  screening,
+  closed,
+}: { open: number; screening: number; closed: number }) {
+  const data = [
+    { label: "Open", value: open },
+    { label: "Screen", value: screening },
+    { label: "Closed", value: closed },
+  ];
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      {data.map((d) => (
+        <div key={d.label}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "var(--text-secondary)", marginBottom: 4 }}>
+            <span>{d.label}</span><span>{d.value}</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 999, background: "var(--border-muted)" }}>
+            <div style={{ height: "100%", width: `${(d.value / max) * 100}%`, borderRadius: 999, background: "#111827" }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const getFilteredMonths = (months: number) => {
+  return Array.from({ length: months }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - (months - 1 - i));
+    return { year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleString("default", { month: "short" }) };
+  });
+};
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<PeriodKey>("1M");
+
+  useEffect(() => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) { router.push("/"); return; }
+    getAllJobs().then((d) => setJobs(d.jobs || [])).catch(() => {}).finally(() => setLoading(false));
+  }, [router]);
+
+  const totalCandidates = jobs.reduce((s, j) => s + (j.applicantsCount || 0), 0);
+  const aiScreenings = jobs.filter((j) => j.status === "screening" || j.screeningResult).length;
+  const shortlisted = jobs.reduce((s, j) => s + (j.shortlistedCount || 0), 0);
+  const openJobs = jobs.filter((j) => j.status === "open").length;
+  const screeningJobs = jobs.filter((j) => j.status === "screening").length;
+  const closedJobs = jobs.filter((j) => j.status === "closed").length;
+
+  const series = useMemo(() => {
+    if (period === "1W") {
+      const dayBuckets = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i));
+        return { key: d.toDateString(), label: d.toLocaleDateString("en-US", { weekday: "short" }) };
+      });
+      const candidates = dayBuckets.map((b) =>
+        jobs.filter((j) => new Date(j.createdAt || 0).toDateString() === b.key).reduce((s, j) => s + (j.applicantsCount || 0), 0)
+      );
+      const short = dayBuckets.map((b) =>
+        jobs.filter((j) => new Date(j.createdAt || 0).toDateString() === b.key).reduce((s, j) => s + (j.shortlistedCount || 0), 0)
+      );
+      return { labels: dayBuckets.map((d) => d.label), candidates, shortlisted: short };
+    }
+
+    const count = period === "1M" ? 4 : period === "3M" ? 12 : period === "6M" ? 6 : 12;
+    const months = getFilteredMonths(count);
+    const candidates = months.map((m) =>
+      jobs
+        .filter((j) => {
+          const d = new Date(j.createdAt || 0);
+          return d.getFullYear() === m.year && d.getMonth() === m.month;
+        })
+        .reduce((s, j) => s + (j.applicantsCount || 0), 0)
+    );
+    const short = months.map((m) =>
+      jobs
+        .filter((j) => {
+          const d = new Date(j.createdAt || 0);
+          return d.getFullYear() === m.year && d.getMonth() === m.month;
+        })
+        .reduce((s, j) => s + (j.shortlistedCount || 0), 0)
+    );
+    return { labels: months.map((m) => m.label), candidates, shortlisted: short };
+  }, [jobs, period]);
+
+  const quickActions = [
+    { href: "/jobs/create", icon: Briefcase, title: "Post a Job", subtitle: "Create a new job listing" },
+    { href: "/applicants/upload", icon: Users, title: "Upload Candidates", subtitle: "Add CVs or import from CSV" },
+    { href: "/screenings", icon: Sparkles, title: "Run AI Screening", subtitle: "Screen candidates with Gemini AI" },
+    { href: "/candidates/compare", icon: GitCompare, title: "Compare Candidates", subtitle: "Side-by-side comparison" },
+  ];
 
   return (
     <>
       <style>{`
-        .dash-root { display: flex; font-family: system-ui, -apple-system, sans-serif; }
-        .dash-main { margin-left: 260px; min-height: 100vh; background: #f8fafc; flex: 1; display: flex; flex-direction: column; }
-        .dash-content { padding: 36px 40px; flex: 1; }
-        .dash-welcome {
-          background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 55%, #1e293b 100%);
-          border-radius: 16px; padding: 28px 32px; margin-bottom: 28px;
-          display: flex; align-items: center; justify-content: space-between;
-          position: relative; overflow: hidden;
-          box-shadow: 0 8px 32px rgba(15, 23, 42, 0.35);
-        }
-        .dash-welcome::before {
-          content: ''; position: absolute; inset: 0;
-          background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
-          background-size: 22px 22px;
-        }
-        .dash-welcome-inner { position: relative; z-index: 1; }
-        .dash-welcome-date { color: rgba(255,255,255,0.55); font-size: 13px; font-weight: 500; margin-bottom: 8px; }
-        .dash-welcome-heading { font-size: 28px; font-weight: 700; color: white; margin-bottom: 8px; letter-spacing: -0.02em; }
-        .dash-welcome-sub { color: rgba(255,255,255,0.65); font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
-        .dash-welcome-btns { display: flex; gap: 12px; flex-wrap: wrap; }
-        .wb-p {
-          display: inline-flex; align-items: center; gap: 7px; padding: 10px 20px; border-radius: 10px;
-          border: none; cursor: pointer; font-weight: 700; font-size: 14px;
-        }
-        .wb-pri { background: #2563eb; color: white; box-shadow: 0 4px 14px rgba(37,99,235,0.4); }
-        .wb-sec { background: rgba(255,255,255,0.12); color: white; border: 1px solid rgba(255,255,255,0.2); }
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
-        .stat-card {
-          background: white; border-radius: 16px; padding: 22px;
-          border: 1px solid #e2e8f0; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-        }
-        .stat-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-        .stat-icon-wrap { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-        .stat-value { font-size: 30px; font-weight: 800; color: #0f172a; letter-spacing: -0.03em; line-height: 1; }
-        .stat-label { color: #64748b; font-weight: 600; font-size: 13px; }
-        .quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
-        .quick-action-card {
-          background: white; border-radius: 16px; padding: 20px;
-          border: 1px solid #e2e8f0; cursor: pointer; text-decoration: none;
-          display: flex; align-items: center; gap: 14px;
-          transition: box-shadow 0.18s, border-color 0.18s;
-        }
-        .quick-action-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.06); border-color: #bfdbfe; }
-        .quick-action-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .quick-action-title { font-weight: 700; color: #0f172a; font-size: 14px; }
-        .quick-action-sub { color: #64748b; font-size: 12px; margin-top: 2px; }
-        .jobs-card { background: white; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; }
-        .jobs-card-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #f1f5f9; }
-        .jobs-card-title { font-size: 16px; font-weight: 700; color: #0f172a; }
-        .view-all-link { color: #2563eb; font-weight: 600; font-size: 13px; text-decoration: none; }
-        .job-row { display: grid; grid-template-columns: 1fr 120px 110px 100px; align-items: center; padding: 14px 24px; border-bottom: 1px solid #f8fafc; }
-        .job-row:last-child { border-bottom: none; }
-        .job-row:hover { background: #fafbff; }
-        .status-badge { display: inline-flex; padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; }
-        .screen-btn {
-          padding: 7px 14px; border-radius: 10px; border: none; background: #2563eb; color: white;
-          font-size: 13px; font-weight: 700; cursor: pointer;
-        }
-        .empty-state { padding: 56px; text-align: center; color: #64748b; }
-        @media (max-width: 1200px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 900px) { .quick-actions { grid-template-columns: 1fr; } }
-        @media (max-width: 768px) {
-          .dash-main { margin-left: 0; }
-          .dash-content { padding: 20px; }
-          .job-row { grid-template-columns: 1fr; gap: 8px; }
-        }
+        .db-root{display:flex;font-family:var(--font-body)}
+        .db-main{margin-left:var(--sidebar-width);min-height:100vh;flex:1;background:var(--surface-base)}
+        .db-body{padding:22px 28px 90px}
+        .db-row4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+        .db-stat{background:var(--surface-card);border:1px solid #e8edf3;border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-card)}
+        .db-stat-top{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary);font-weight:700}
+        .db-stat-val{font-size:34px;line-height:1;font-weight:800;color:var(--text-primary);margin-top:8px}
+        .db-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+        .db-action{display:flex;align-items:center;gap:10px;background:var(--surface-card);border:1px solid #e8edf3;border-radius:14px;padding:14px 14px;text-decoration:none;color:inherit;transition:all .15s;box-shadow:var(--shadow-card)}
+        .db-action:hover{transform:translateY(-2px);box-shadow:var(--shadow-card-hover)}
+        .db-action-title{font-size:13.5px;font-weight:700;color:var(--text-primary)}
+        .db-action-sub{font-size:11.5px;color:var(--text-muted);margin-top:2px}
+        .db-grid{display:grid;grid-template-columns:1fr 340px;gap:20px}
+        .db-card{background:var(--surface-card);border:1px solid #e8edf3;border-radius:16px;padding:24px;box-shadow:var(--shadow-card)}
+        .db-right{display:grid;grid-template-rows:auto auto;gap:20px}
+        .db-title{font-size:17px;font-weight:700;color:var(--text-primary)}
+        .db-sub{font-size:13px;color:var(--text-muted);margin-top:2px}
+        .db-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:14px}
+        .db-pills{display:flex;gap:6px;flex-wrap:wrap}
+        .db-pill{padding:5px 9px;border-radius:999px;border:1px solid var(--border-soft);background:transparent;color:var(--text-muted);font-size:11px;font-weight:700;cursor:pointer}
+        .db-pill.active{background:#0d1525;color:#fff;border-color:#0d1525}
+        .dark .db-pill.active{background:#f1f5f9;color:#0d1525;border-color:#f1f5f9}
+        .db-summary-line{display:flex;justify-content:space-between;font-size:13px;color:var(--text-secondary);padding:7px 0;border-bottom:1px solid var(--border-muted)}
+        .db-summary-line:last-child{border-bottom:none}
+        @media(max-width:1180px){.db-actions{grid-template-columns:repeat(2,1fr)}.db-row4{grid-template-columns:repeat(2,1fr)}.db-grid{grid-template-columns:1fr}}
+        @media(max-width:768px){.db-main{margin-left:0}.db-body{padding:14px 12px 80px}.db-actions,.db-row4{grid-template-columns:1fr}}
       `}</style>
 
-      <div className="dash-root">
+      <div className="db-root">
         <Sidebar />
-        <div className="dash-main">
-          <AppHeader title="Dashboard" />
-          <div className="dash-content">
-            <div className="dash-welcome">
-              <div className="dash-welcome-inner">
-                <p className="dash-welcome-date">{formatDate()}</p>
-                <h1 className="dash-welcome-heading">
-                  {getGreeting()}, {firstName}! 👋
-                </h1>
-                <p className="dash-welcome-sub">
-                  You have{" "}
-                  <strong style={{ color: "white" }}>
-                    {activeJobs} active job{activeJobs !== 1 ? "s" : ""}
-                  </strong>
-                  .
-                </p>
-                <div className="dash-welcome-btns">
-                  <Link href="/jobs/create">
-                    <button type="button" className="wb-p wb-pri">
-                      <Plus size={16} /> Post a Job
-                    </button>
-                  </Link>
-                  <Link href="/jobs">
-                    <button type="button" className="wb-p wb-sec">
-                      View Jobs <ArrowRight size={14} />
-                    </button>
-                  </Link>
-                </div>
-              </div>
-              <Brain
-                size={72}
-                color="rgba(255,255,255,0.12)"
-                style={{ position: "relative", zIndex: 1 }}
-              />
+        <div className="db-main">
+          <AppHeader title="Dashboard" subtitle="Overview of recruiting performance" />
+          <div className="db-body">
+            <div className="db-row4">
+              <div className="db-stat"><div className="db-stat-top"><Briefcase size={14} />Total Jobs</div><div className="db-stat-val">{loading ? "—" : jobs.length}</div></div>
+              <div className="db-stat"><div className="db-stat-top"><Users size={14} />Total Candidates</div><div className="db-stat-val">{loading ? "—" : totalCandidates}</div></div>
+              <div className="db-stat"><div className="db-stat-top"><Sparkles size={14} />AI Screenings</div><div className="db-stat-val">{loading ? "—" : aiScreenings}</div></div>
+              <div className="db-stat"><div className="db-stat-top"><CheckCircle2 size={14} />Shortlisted</div><div className="db-stat-val">{loading ? "—" : shortlisted}</div></div>
             </div>
 
-            <div className="stats-grid">
-              {[
-                {
-                  label: "Total Jobs",
-                  value: jobs.length,
-                  icon: Briefcase,
-                  c: "#2563eb",
-                  bg: "rgba(37,99,235,0.1)",
-                },
-                {
-                  label: "Total Applicants",
-                  value: totalApplicants,
-                  icon: Users,
-                  c: "#7c3aed",
-                  bg: "rgba(124,58,237,0.1)",
-                },
-                {
-                  label: "Screenings Run",
-                  value: screeningsRun,
-                  icon: ListChecks,
-                  c: "#2563eb",
-                  bg: "rgba(37,99,235,0.1)",
-                },
-                {
-                  label: "Avg AI Score",
-                  value: avgAi === null ? "—" : String(avgAi),
-                  icon: Brain,
-                  c: "#d97706",
-                  bg: "rgba(217,119,6,0.12)",
-                },
-              ].map((s) => (
-                <div key={s.label} className="stat-card">
-                  <div className="stat-top">
-                    <div
-                      className="stat-icon-wrap"
-                      style={{ background: s.bg }}
-                    >
-                      <s.icon size={20} color={s.c} strokeWidth={2} />
-                    </div>
-                    <span className="stat-value">{s.value}</span>
+            <div className="db-actions">
+              {quickActions.map((a) => (
+                <Link href={a.href} key={a.title} className="db-action">
+                  <a.icon size={18} color="#0d1525" />
+                  <div style={{ flex: 1 }}>
+                    <div className="db-action-title">{a.title}</div>
+                    <div className="db-action-sub">{a.subtitle}</div>
                   </div>
-                  <p className="stat-label">{s.label}</p>
-                </div>
+                  <ArrowRight size={14} color="#64748b" />
+                </Link>
               ))}
             </div>
 
-            <div className="quick-actions">
-              <Link href="/applicants" className="quick-action-card">
-                <div
-                  className="quick-action-icon"
-                  style={{ background: "rgba(124,58,237,0.1)" }}
-                >
-                  <Upload size={20} color="#7c3aed" />
+            <div className="db-grid">
+              <div className="db-card">
+                <div className="db-card-head">
+                  <div>
+                    <div className="db-title">Candidate Pipeline</div>
+                    <div className="db-sub">Applicant intake over time</div>
+                  </div>
+                  <div className="db-pills">
+                    {(["1W", "1M", "3M", "6M", "1Y"] as PeriodKey[]).map((p) => (
+                      <button key={p} className={`db-pill${period === p ? " active" : ""}`} onClick={() => setPeriod(p)}>{p}</button>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <p className="quick-action-title">Upload Candidates</p>
-                  <p className="quick-action-sub">Platform, manual, or files</p>
-                </div>
-                <ArrowRight
-                  size={16}
-                  color="#cbd5e1"
-                  style={{ marginLeft: "auto" }}
-                />
-              </Link>
-              <Link href="/jobs" className="quick-action-card">
-                <div
-                  className="quick-action-icon"
-                  style={{ background: "rgba(37,99,235,0.1)" }}
-                >
-                  <Brain size={20} color="#2563eb" />
-                </div>
-                <div>
-                  <p className="quick-action-title">Run AI Screening</p>
-                  <p className="quick-action-sub">From any job page</p>
-                </div>
-                <ArrowRight
-                  size={16}
-                  color="#cbd5e1"
-                  style={{ marginLeft: "auto" }}
-                />
-              </Link>
-              <Link href="/screenings" className="quick-action-card">
-                <div
-                  className="quick-action-icon"
-                  style={{ background: "rgba(22,163,74,0.1)" }}
-                >
-                  <ListChecks size={20} color="#16a34a" />
-                </div>
-                <div>
-                  <p className="quick-action-title">View Results</p>
-                  <p className="quick-action-sub">Screenings by job</p>
-                </div>
-                <ArrowRight
-                  size={16}
-                  color="#cbd5e1"
-                  style={{ marginLeft: "auto" }}
-                />
-              </Link>
-            </div>
-
-            <div className="jobs-card">
-              <div className="jobs-card-header">
-                <h2 className="jobs-card-title">Recent Jobs</h2>
-                <Link href="/jobs" className="view-all-link">
-                  View all →
-                </Link>
+                <PipelineChart labels={series.labels} candidates={series.candidates} shortlisted={series.shortlisted} />
               </div>
 
-              {loading ? (
-                <div className="empty-state">Loading your jobs…</div>
-              ) : jobs.length === 0 ? (
-                <div className="empty-state">
-                  <p style={{ fontWeight: 700, color: "#1e293b", marginBottom: 8 }}>
-                    No jobs posted yet
-                  </p>
-                  <Link href="/jobs/create">
-                    <button
-                      type="button"
-                      className="screen-btn"
-                      style={{ marginTop: 8 }}
-                    >
-                      Post Your First Job
-                    </button>
-                  </Link>
+              <div className="db-right">
+                <div className="db-card">
+                  <div className="db-title" style={{ marginBottom: 12 }}>Jobs by Status</div>
+                  <JobsStatusChart open={openJobs} screening={screeningJobs} closed={closedJobs} />
                 </div>
-              ) : (
-                jobs.slice(0, 5).map((job) => {
-                  const s =
-                    statusConfig[job.status] ?? statusConfig.closed;
-                  return (
-                    <div key={job._id} className="job-row">
-                      <div>
-                        <p
-                          style={{
-                            fontWeight: 700,
-                            color: "#0f172a",
-                            fontSize: 14,
-                          }}
-                        >
-                          {job.title}
-                        </p>
-                        <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>
-                          {job.applicantsCount || 0} applicants
-                        </p>
-                      </div>
-                      <span style={{ color: "#475569", fontSize: 13 }}>
-                        {job.location}
-                      </span>
-                      <span
-                        className="status-badge"
-                        style={{ background: s.bg, color: s.color }}
-                      >
-                        {s.label}
-                      </span>
-                      <Link href={`/jobs/${job._id}`}>
-                        <button type="button" className="screen-btn">
-                          Screen →
-                        </button>
-                      </Link>
-                    </div>
-                  );
-                })
-              )}
+                <div className="db-card">
+                  <div className="db-title" style={{ marginBottom: 10 }}>Screening Summary</div>
+                  <div className="db-summary-line"><span>Total Jobs</span><strong>{jobs.length}</strong></div>
+                  <div className="db-summary-line"><span>Total Candidates</span><strong>{totalCandidates}</strong></div>
+                  <div className="db-summary-line"><span>In Screening</span><strong>{screeningJobs}</strong></div>
+                  <div className="db-summary-line"><span>Shortlisted</span><strong>{shortlisted}</strong></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

@@ -1,141 +1,74 @@
+
 import fs from "fs";
-import { callGeminiWithRetry } from "./ai.service";
+import { parseResumeFile } from "./resume.service";
 
-// ── Send extracted text to Gemini for smart parsing
-async function extractWithGemini(resumeText: string): Promise<any> {
-  const prompt = `
-Extract the following information from this resume text and return ONLY a valid JSON object with no explanation, no markdown, no backticks.
-
-{
-  "firstName": "",
-  "lastName": "",
-  "email": "",
-  "headline": "",
-  "bio": "",
-  "location": "",
-  "skills": [{ "name": "", "level": "Intermediate", "yearsOfExperience": 0 }],
-  "languages": [{ "name": "", "proficiency": "Fluent" }],
-  "experience": [{
-    "company": "",
-    "role": "",
-    "startDate": "",
-    "endDate": "",
-    "description": "",
-    "technologies": [],
-    "isCurrent": false
-  }],
-  "education": [{
-    "institution": "",
-    "degree": "",
-    "fieldOfStudy": "",
-    "startYear": 0,
-    "endYear": 0
-  }],
-  "certifications": [{ "name": "", "issuer": "", "issueDate": "" }],
-  "projects": [{ "name": "", "description": "", "technologies": [], "role": "" }],
-  "availability": { "status": "Available", "type": "Full-time", "startDate": "" },
-  "socialLinks": { "linkedin": "", "github": "", "portfolio": "" }
+export async function parsePDFResume(filePath: string): Promise<any> {
+  return parseResumeFile(filePath);
 }
 
-Rules:
-- Return ONLY the JSON object, nothing else
-- If a field is not found leave it as empty string or empty array
-- Extract ALL skills mentioned anywhere in the resume
-- For skills level use only: Beginner, Intermediate, Advanced, Expert
-- For languages proficiency use only: Basic, Conversational, Fluent, Native
-- For availability status use only: Available, Open to Opportunities, Not Available
-- For availability type use only: Full-time, Part-time, Contract
-- For isCurrent set true if the person is still working there
-- yearsOfExperience for each skill should be a number, default 0 if unknown
-
-Resume text:
-${resumeText}
-`;
-
-  const raw = await callGeminiWithRetry(prompt);
-
-  // Strip any accidental markdown backticks Gemini might add
-  const cleaned = raw.replace(/```json|```/g, "").trim();
-
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    throw new Error("Gemini returned invalid JSON for PDF parsing");
-  }
-}
-
-// ── Split full PDF text into per-candidate blocks using email as boundary
-function splitIntoBlocks(fullText: string): string[] {
-  const emailRegex = /[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g;
-  const matches: { index: number }[] = [];
-  let match;
-
-  while ((match = emailRegex.exec(fullText)) !== null) {
-    matches.push({ index: match.index });
-  }
-
-  if (matches.length === 0) return [];
-  if (matches.length === 1) return [fullText];
-
-  const blocks: string[] = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = Math.max(0, matches[i].index - 300);
-    const end   = i + 1 < matches.length
-      ? Math.max(0, matches[i + 1].index - 300)
-      : fullText.length;
-    blocks.push(fullText.slice(start, end));
-  }
-
-  return blocks;
-}
-
-// ── Parse single or multi-candidate PDF using Gemini
 export async function parseMultiPDFResume(filePath: string): Promise<any[]> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pdfParse = require("pdf-parse");
-    const buffer   = fs.readFileSync(filePath);
-    const data     = await pdfParse(buffer);
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
     const text: string = data.text || "";
 
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+   
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* non-fatal */ }
 
     if (!text.trim()) {
-      throw new Error("PDF appears to be empty or scanned image — no text could be extracted");
+      console.warn("⚠️ PDF appears to be empty or scanned — no text could be extracted");
+      return [];
     }
 
-    const blocks = splitIntoBlocks(text);
+    const emailMatches: RegExpExecArray[] = [];
+    const emailRe = /[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g;
+    let m: RegExpExecArray | null;
+    while ((m = emailRe.exec(text)) !== null) emailMatches.push(m);
 
-    if (blocks.length === 0) {
-      // No emails found at all — send full text to Gemini and let it try
-      const result = await extractWithGemini(text);
-      if (!result.email) return [];
-      return [{ ...result, source: "external" }];
+    if (emailMatches.length <= 1) {
+      const { buildProfileFromText } = await import("./resume.service") as any;
+      if (typeof buildProfileFromText === "function") {
+        return [buildProfileFromText(text, filePath)];
+      }
+      const { parseResumeFile: prf } = await import("./resume.service");
+      const tmp = filePath + ".tmp.txt";
+      fs.writeFileSync(tmp, text, "utf-8");
+      const result = await prf(tmp);
+      return [result];
     }
 
-    // Parse each block with Gemini in sequence
+    const blocks: string[] = [];
+    for (let i = 0; i < emailMatches.length; i++) {
+      const start = Math.max(0, emailMatches[i].index - 400);
+      const end   = i + 1 < emailMatches.length
+        ? Math.max(0, emailMatches[i + 1].index - 400)
+        : text.length;
+      blocks.push(text.slice(start, end));
+    }
+
     const results: any[] = [];
     for (const block of blocks) {
+      if (block.trim().length < 40) continue;
+      const tmp = `${filePath}.block${results.length}.txt`;
       try {
-        const parsed = await extractWithGemini(block);
-        if (parsed.email) {
-          results.push({ ...parsed, source: "external" });
+        fs.writeFileSync(tmp, block, "utf-8");
+        const { parseResumeFile: prf } = await import("./resume.service");
+        const parsed = await prf(tmp);
+        if (parsed.email && !parsed.email.includes("resume.uploaded")) {
+          results.push(parsed);
         }
       } catch (err) {
-        console.warn("Skipping block — Gemini parse failed:", err);
+        console.warn(`⚠️ Block ${results.length} parse failed:`, err);
+      
+        try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* noop */ }
       }
     }
 
     return results;
   } catch (error) {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    throw new Error(`PDF parsing failed: ${error}`);
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* noop */ }
+    console.error("❌ PDF multi-parse error:", error);
+    return [];
   }
-}
-
-// ── Keep parsePDFResume for backward compatibility (single candidate)
-export async function parsePDFResume(filePath: string): Promise<any> {
-  const results = await parseMultiPDFResume(filePath);
-  if (results.length === 0) return { email: "" };
-  return results[0];
 }

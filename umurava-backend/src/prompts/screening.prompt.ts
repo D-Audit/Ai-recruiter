@@ -5,118 +5,140 @@ export function buildScreeningPrompt(
   applicants: ApplicantInput[]
 ): string {
 
-  // Format each candidate as clean readable text for AI
   const candidateList = applicants
     .map((a) => {
       const skills = (a.skills ?? [])
-        .map((s: any) => `${s.name} (${s.level})`)
+        .map((s: any) => `${s.name} (${s.level}, ${s.yearsOfExperience ?? 0}yrs)`)
         .join(", ");
 
       const experience = (a.experience ?? [])
-        .map((e: any) => `${e.role} at ${e.company} (${e.startDate} - ${e.endDate})`)
-        .join(" | ");
+        .map((e: any) => {
+          const end = e.isCurrent ? "Present" : (e.endDate || "?");
+          const tech = e.technologies?.length ? ` | Tech: ${e.technologies.join(", ")}` : "";
+          return `${e.role} at ${e.company} (${e.startDate ?? "?"} → ${end})${tech}`;
+        })
+        .join(" || ");
 
       const education = (a.education ?? [])
-        .map((e: any) => `${e.degree} in ${e.fieldOfStudy} from ${e.institution}`)
+        .map((e: any) => `${e.degree} in ${e.fieldOfStudy} at ${e.institution} (${e.startYear ?? "?"}–${e.endYear ?? "?"})`)
         .join(" | ");
 
-      const projects = (a.projects ?? [])
-        .map((p: any) => p.name)
+      const certs = (a.certifications ?? [])
+        .map((c: any) => `${c.name} by ${c.issuer} (${c.issueDate ?? "?"})`)
         .join(", ");
 
-      const certs = (a.certifications ?? [])
-        .map((c: any) => c.name)
+      const projects = (a.projects ?? [])
+        .map((p: any) => {
+          const tech = p.technologies?.length ? ` [${p.technologies.join(", ")}]` : "";
+          return `${p.name}${tech}`;
+        })
+        .join(", ");
+
+      const langs = (a.languages ?? [])
+        .map((l: any) => `${l.name} (${l.proficiency})`)
         .join(", ");
 
       return `
-CANDIDATE ID: ${a.id}
+CANDIDATE_ID: ${a.id}
 Name: ${a.firstName} ${a.lastName}
-Headline: ${a.headline ?? "N/A"}
-Location: ${a.location ?? "N/A"}
+Headline: ${a.headline || "N/A"}
+Location: ${a.location || "N/A"}
 Skills: ${skills || "N/A"}
 Experience: ${experience || "N/A"}
 Education: ${education || "N/A"}
-Projects: ${projects || "N/A"}
-Certifications: ${certs || "N/A"}
-Availability: ${a.availability?.status ?? "N/A"} | ${a.availability?.type ?? "N/A"}
+Certifications: ${certs || "None"}
+Projects: ${projects || "None"}
+Languages: ${langs || "None"}
+Availability: ${a.availability?.status ?? "N/A"} · ${a.availability?.type ?? "N/A"}
 `.trim();
     })
     .join("\n\n---\n\n");
 
+  const requiredSkillsList = (job.requiredSkills ?? []).join(", ") || "Not specified";
+
   return `
-You are an expert AI recruitment assistant for Umurava, an African talent platform.
-Screen and rank all applicants for the job below. Be fair and skills-first in evaluation.
+You are a senior AI recruiter for Umurava, an African talent screening platform.
+Your task: score and rank ALL ${applicants.length} candidates for the job below.
+Be rigorous, fair, and skills-first. Base every score on REAL data in each profile.
 
-═══════════════════════════════════════
-JOB DETAILS:
-═══════════════════════════════════════
+════════════════════════════════════════
+JOB REQUIREMENTS
+════════════════════════════════════════
 Title: ${job.title}
-Description: ${job.description ?? "N/A"}
-Required Skills: ${(job.requiredSkills ?? []).join(", ")}
-Minimum Experience: ${job.yearsOfExperience ?? "Not specified"} years
-Education Required: ${job.educationLevel ?? "Not specified"}
-Location: ${job.location ?? "Not specified"}
+Description: ${job.description || "N/A"}
+Required Skills: ${requiredSkillsList}
+Minimum Experience: ${job.yearsOfExperience ?? 0} years
+Education Required: ${job.educationLevel || "Any"}
+Location: ${job.location || "Not specified"}
+Job Type: ${(job as any).jobType || "Not specified"}
 
-═══════════════════════════════════════
-SCORING WEIGHTS (total = 100):
-═══════════════════════════════════════
-1. Skills Match (40 pts)
-   - Match skills[].name against required skills
-   - Bonus for Advanced/Expert level on matched skills
-   - Bonus for skills used in experience[].technologies
+════════════════════════════════════════
+SCORING RUBRIC (total = 100 points)
+════════════════════════════════════════
 
-2. Work Experience (25 pts)
-   - Sum years from experience[] (startDate to endDate or Present)
-   - Relevance of roles to this job
-   - Technologies used in experience
+SKILLS MATCH — 40 pts
+• For each required skill the candidate has: award (40 / totalRequiredSkills) pts
+• +3 bonus if skill level is Advanced or Expert
+• +2 bonus if that skill appears in experience[].technologies
+• Candidate with ALL required skills should score 35–40 in this category
+• Candidate missing ALL required skills scores 0
 
-3. Education (20 pts)
-   - Degree level vs required (PhD > Master > Bachelor > High School)
-   - Field of study relevance
+WORK EXPERIENCE — 25 pts
+• Calculate total years: sum each experience entry's duration
+  - Use startDate to endDate or "Present"; treat "Present" as today
+  - Example: 2021-01 to Present (2026-04) = ~5 years
+• Award: min(actualYears, requiredYears + 2) / (requiredYears + 2) * 20 pts
+• +5 pts if recent roles (last 3 years) match this job's domain
+• +3 bonus for leadership or senior titles if role requires it
 
-4. Extras (15 pts)
-   - Location match bonus (up to 5 pts)
-   - Languages Fluent/Native = 2 pts each (up to 5 pts)
-   - Certifications relevant to job (up to 5 pts)
+EDUCATION — 20 pts
+• PhD = 20 pts, Master's = 16 pts, Bachelor's = 12 pts, High School = 6 pts
+• If candidate's degree level meets or exceeds required: full credit
+• If field of study directly matches: no deduction
+• If field is unrelated: -3 pts
 
-IMPORTANT — optional field handling:
-- If bio, certifications, socialLinks are missing/empty, do NOT penalize
-- Treat absent optional fields as neutral
-- Score purely on available data
+EXTRAS — 15 pts
+• Location match (job location vs candidate location): 0–5 pts
+  - Same city = 5 pts, Same country = 3 pts, Different = 0 pts
+• Languages Fluent/Native relevant to job location: 2 pts each (max 5 pts)
+• Relevant certifications (matching job domain): 2–5 pts
 
-═══════════════════════════════════════
-CANDIDATES (${applicants.length} total):
-═══════════════════════════════════════
+IMPORTANT RULES:
+- Do NOT penalize missing optional fields (bio, portfolio, socialLinks)
+- A strong skills+experience match MUST produce a score of 70+
+- Score 85+ only if ALL required skills match AND experience exceeds minimum
+- Never give the same score to two different candidates
+- Scores must reflect real relative ranking — spread them out
+
+════════════════════════════════════════
+CANDIDATES (${applicants.length} total)
+════════════════════════════════════════
 ${candidateList}
 
-═══════════════════════════════════════
-INSTRUCTIONS:
-═══════════════════════════════════════
-1. Score every candidate 0-100 using weights above
-2. Rank highest score to lowest
-3. Return ALL candidates (or TOP 10 if more than 10)
-4. skillsMatched = skill names from their skills[] matching required skills
-5. skillsMissing = required skills they do NOT have
-6. confidence = "High" if score >= 70, "Medium" if 50-69, "Low" if below 50
-7. upskillingPaths = suggest free resources for each missing required skill
-8. adjacentRoles = other roles this candidate could fit based on their profile
+════════════════════════════════════════
+OUTPUT INSTRUCTIONS
+════════════════════════════════════════
+- Return ALL ${applicants.length} candidates
+- Sort by score descending (rank 1 = highest score)
+- strengths: 2–3 specific sentences referencing ACTUAL skills/experience from profile
+- gaps: 1–2 sentences on what they're missing vs job requirements
+- recommendation: EXACTLY "Shortlist" (score ≥ 70), "Consider" (50–69), "Not Selected" (< 50)
+- confidence: "High" (score ≥ 70), "Medium" (50–69), "Low" (< 50)
+- skillsMatched: array of skill names from their profile that appear in requiredSkills
+- skillsMissing: required skills NOT found in their profile at all
+- upskillingPaths: for each missing required skill, suggest a specific free resource
+- adjacentRoles: 2–4 roles this candidate is also well-suited for based on their full profile
 
-STRICT OUTPUT RULES:
-1. Return ONLY a raw JSON array — no markdown, no backticks, no explanation
-2. strengths must be a SHORT string (2-3 sentences max)
-3. gaps must be a SHORT string (1-2 sentences max)
-4. recommendation must be exactly one of: "Shortlist", "Consider", "Not Selected"
-5. score must be a number between 0 and 100
-6. Use the exact candidateId strings provided — do not change them
+STRICT OUTPUT FORMAT:
+Return ONLY a raw JSON array. No markdown, no backticks, no explanation.
 
-RETURN THIS EXACT FORMAT:
 [
   {
     "candidateId": "exact_id_from_input",
     "rank": 1,
-    "score": 87,
-    "strengths": "2-3 sentences about why good fit",
-    "gaps": "1-2 sentences about weaknesses",
+    "score": 88,
+    "strengths": "Specific 2-3 sentences referencing actual data from the profile.",
+    "gaps": "Specific 1-2 sentences on what is missing.",
     "recommendation": "Shortlist",
     "skillsMatched": ["React", "Node.js"],
     "skillsMissing": ["MongoDB"],
@@ -124,16 +146,13 @@ RETURN THIS EXACT FORMAT:
     "upskillingPaths": [
       {
         "skill": "MongoDB",
-        "reason": "Required for this role",
+        "reason": "Required for this role — not found in candidate profile",
         "suggestedResource": "MongoDB University free course at university.mongodb.com"
       }
     ],
-    "adjacentRoles": ["Frontend Developer", "React Native Developer"]
+    "adjacentRoles": ["Full Stack Developer", "React Native Developer"]
   }
 ]
-
-Rank candidates from highest to lowest score.
-Include all ${applicants.length} candidates.
 `.trim();
 }
 
@@ -146,57 +165,65 @@ export function buildComparisonPrompt(
 ): string {
   const candidateList = candidates
     .map((c) => {
-      const skills = (c.skills ?? [])
-        .map((s: any) => s.name)
-        .join(", ");
+      const skills = (c.skills ?? []).map((s: any) => `${s.name} (${s.level})`).join(", ");
       const experience = (c.experience ?? [])
-        .map((e: any) => `${e.role} at ${e.company}`)
+        .map((e: any) => `${e.role} at ${e.company} (${e.startDate ?? "?"} → ${e.isCurrent ? "Present" : e.endDate ?? "?"})`)
         .join(" | ");
+      const education = (c.education ?? [])
+        .map((e: any) => `${e.degree} in ${e.fieldOfStudy}`)
+        .join(", ");
+      const certs = (c.certifications ?? []).map((cert: any) => cert.name).join(", ");
       return `
 ID: ${c.id}
 Name: ${c.firstName} ${c.lastName}
+Headline: ${c.headline || "N/A"}
+Location: ${c.location || "N/A"}
 Skills: ${skills || "N/A"}
 Experience: ${experience || "N/A"}
-Location: ${c.location ?? "N/A"}
+Education: ${education || "N/A"}
+Certifications: ${certs || "None"}
+Availability: ${c.availability?.status ?? "N/A"}
 `.trim();
     })
     .join("\n\n---\n\n");
 
   return `
-  
-You are an expert AI recruiter. Compare these candidates for the job below.
-Return ONLY a raw JSON object.
+You are an expert AI recruiter. Compare these ${candidates.length} candidates for the job below.
+Be direct, specific, and reference actual profile data. Return ONLY a raw JSON object.
 
 JOB:
 Title: ${job.title}
-Required Skills: ${(job.requiredSkills ?? []).join(", ")}
-Years of Experience: ${job.yearsOfExperience ?? "Not specified"}
-Location: ${job.location ?? "Not specified"}
+Required Skills: ${(job.requiredSkills ?? []).join(", ") || "Not specified"}
+Minimum Experience: ${job.yearsOfExperience ?? 0} years
+Education Required: ${job.educationLevel || "Any"}
+Location: ${job.location || "Not specified"}
 
 CANDIDATES:
 ${candidateList}
 
-STRICT OUTPUT RULES:
+RULES:
 1. Return ONLY a raw JSON object — no markdown, no backticks, no explanation
-2. All string values must be plain text with NO quotation marks inside them
-3. Arrays of strings should use short phrases (max 10 words each)
+2. winner must be the candidateId of the objectively best fit
+3. winnerReason must reference specific skills or experience
+4. score each candidate 0-100 based on job fit (use same rubric as full screening)
+5. topStrength and biggestGap must be specific, not generic
 
 RETURN THIS EXACT FORMAT:
 {
-  "winner": "candidateId of best fit",
-  "winnerReason": "One plain sentence explaining why this candidate wins.",
+  "winner": "candidateId",
+  "winnerReason": "One specific sentence citing skills/experience why they win.",
   "comparison": [
     {
-      "candidateId": "exact id from input",
+      "candidateId": "exact id",
       "fullName": "First Last",
       "score": 85,
-      "topStrength": "Best quality in one short phrase",
-      "biggestGap": "Main weakness in one short phrase",
+      "topStrength": "Specific strength in short phrase",
+      "biggestGap": "Specific gap in short phrase",
       "verdict": "Strong Fit"
     }
   ]
 }
 
-Verdict options: "Strong Fit", "Good Fit", "Moderate Fit", "Weak Fit"
+Verdict options (based on score): "Strong Fit" (≥80), "Good Fit" (65-79), "Moderate Fit" (50-64), "Weak Fit" (<50)
 `.trim();
 }

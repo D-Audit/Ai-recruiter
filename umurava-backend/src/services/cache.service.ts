@@ -79,9 +79,9 @@ export async function setCachedResult(
   jobId: string,
   response: any
 ): Promise<void> {
-  try {
+  try {       
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // 24 hour cache
+    expiresAt.setHours(expiresAt.getHours() + 24); 
 
     await Cache.findOneAndUpdate(
       { queryHash },

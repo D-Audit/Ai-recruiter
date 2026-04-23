@@ -5,6 +5,15 @@ export const getApplicants = async (jobId: string) => {
   return res.data;
 };
 
+/**
+ * Fetch a single applicant by their MongoDB _id.
+ * Backend route: GET /api/applicants/profile/:id
+ */
+export const getApplicantById = async (id: string) => {
+  const res = await api.get(`/applicants/profile/${id}`);
+  return res.data;
+};
+
 export const getUmuravaProfiles = async () => {
   const res = await api.get("/applicants/umurava");
   return res.data;
@@ -20,11 +29,6 @@ export const uploadCSV = async (jobId: string, file: File) => {
   return res.data;
 };
 
-/**
- * Upload a single resume file (PDF, DOCX, DOC, TXT, ODT).
- * Backend endpoint: POST /applicants/upload/resume
- * The backend extracts text, sends to AI, and saves the applicant.
- */
 export const uploadResumeFile = async (
   jobId: string,
   file: File,
@@ -44,19 +48,12 @@ export const uploadResumeFile = async (
   return res.data;
 };
 
-/**
- * Import an applicant from a URL (PDF link, LinkedIn profile page, Google Drive, etc).
- * Backend endpoint: POST /applicants/upload/url
- */
 export const uploadFromURL = async (jobId: string, url: string) => {
   const res = await api.post("/applicants/upload/url", { jobId, url });
   return res.data;
 };
 
-export const selectUmuravaProfiles = async (
-  jobId: string,
-  profileIds: string[]
-) => {
+export const selectUmuravaProfiles = async (jobId: string, profileIds: string[]) => {
   const res = await api.post("/applicants/select", { jobId, profileIds });
   return res.data;
 };
@@ -66,5 +63,10 @@ export const submitManualApplicant = async (
   payload: Record<string, unknown>
 ) => {
   const res = await api.post("/applicants/manual", { ...payload, jobId });
+  return res.data;
+};
+
+export const removeApplicantFromJob = async (jobId: string, applicantId: string) => {
+  const res = await api.delete(`/applicants/${jobId}/applicant/${applicantId}`);
   return res.data;
 };

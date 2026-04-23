@@ -1,123 +1,173 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* ── Fonts handled by next/font/google in layout.tsx ── */
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+:root {
+  --font-display: 'Sora', sans-serif;
+  --font-body: 'Manrope', system-ui, -apple-system, sans-serif;
+
+  /* Brand */
+  --brand-primary: #2563eb;
+  --brand-violet: #7c3aed;
+  --brand-gradient: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #4f46e5 100%);
+
+  /* Surfaces — richer, not pure white */
+  --surface-base: #f5f7fb;
+  --surface-card: #ffffff;
+  --surface-hover: #f7f9fd;
+  --surface-input: #f9fbff;
+  --surface-subtle: #eef2f8;
+
+  /* Text — bolder, more confident */
+  --text-primary: #101828;
+  --text-secondary: #344054;
+  --text-muted: #667085;
+
+  /* Borders */
+  --border-soft: #d7deea;
+  --border-muted: #e8edf5;
+  --border-input: #c7d3e5;
+  --border-brand: rgba(37, 99, 235, 0.26);
+
+  /* Shadows — more depth */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.03), 0 1px 4px rgba(16, 24, 40, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(16, 24, 40, 0.07), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-button: 0 4px 10px rgba(37, 99, 235, 0.18);
+  --shadow-lg: 0 12px 28px rgba(16, 24, 40, 0.1);
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-slow: 0.3s ease;
+
+  /* Layout */
+  --sidebar-width: 260px;
 }
 
-html,
-body {
+/* ── Dark Mode ── */
+html.dark {
+  --surface-base:    #080e1a;
+  --surface-card:    #0e1628;
+  --surface-hover:   #141e32;
+  --surface-input:   #141e32;
+  --surface-subtle:  #111827;
+
+  --text-primary:    #e8edf8;
+  --text-secondary:  #8fa3bc;
+  --text-muted:      #3d5570;
+
+  --border-soft:     rgba(255,255,255,0.07);
+  --border-muted:    rgba(255,255,255,0.04);
+  --border-input:    rgba(255,255,255,0.1);
+  --border-brand:    rgba(37,99,235,0.3);
+
+  --shadow-card:       0 1px 4px rgba(0,0,0,0.4);
+  --shadow-card-hover: 0 8px 28px rgba(0,0,0,0.5);
+  --shadow-button:     0 4px 16px rgba(37,99,235,0.45);
+  --shadow-lg:         0 16px 48px rgba(0,0,0,0.5);
+}
+
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
   height: 100%;
-  background: #f8fafc;
-  color: #1e293b;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Oxygen, Ubuntu, sans-serif;
+  font-family: var(--font-body);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
 }
 
-/* Spinner animation used in screening page */
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
 
-/* Smooth fade in for pages */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+p, span, button, input, select, textarea, a {
+  letter-spacing: -0.005em;
 }
 
-/* Score bar animation */
-@keyframes growBar {
-  from {
-    width: 0%;
-  }
-  to {
-    width: var(--target-width);
-  }
+body:has(> #__next > main.lp-page) { background: #ffffff; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c8d0de; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9aacbe; }
+html.dark ::-webkit-scrollbar-thumb { background: #253449; }
+
+/* ── Focus ── */
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
-/* Page wrapper animation */
-main {
-  animation: fadeIn 0.25s ease forwards;
+/* ── Animations ── */
+@keyframes spin      { to { transform: rotate(360deg); } }
+@keyframes fadeIn    { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeInUp  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes scaleIn   { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes growBar   { from { width: 0%; } to { width: var(--target-width, 80%); } }
+@keyframes pulse     { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes shimmer   { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, #eaeef6 25%, #dde3ef 50%, #eaeef6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+html.dark .skeleton {
+  background: linear-gradient(90deg, #141e32 25%, #1a2640 50%, #141e32 75%);
+  background-size: 200% 100%;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
+/* ── Toast override ── */
+.go2072408551 {
+  font-family: var(--font-body) !important;
+  border-radius: 12px !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
 }
 
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
+/* ── App layout utils ── */
+.app-layout { display: flex; min-height: 100vh; }
+.app-main   { margin-left: var(--sidebar-width); flex: 1; display: flex; flex-direction: column; min-height: 100vh; background: var(--surface-base); }
+
+/* ── Empty state ── */
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 64px 40px; text-align: center; gap: 12px; }
+.empty-icon  { width: 64px; height: 64px; border-radius: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+
+/* ── Shared buttons ── */
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 20px; border-radius: 12px; border: none;
+  background: var(--brand-gradient); color: white;
+  font-weight: 700; font-size: 13.5px; font-family: var(--font-body);
+  cursor: pointer; text-decoration: none;
+  box-shadow: var(--shadow-button);
+  transition: all 0.15s;
+  white-space: nowrap;
 }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(37,99,235,0.34); }
 
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 99px;
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 20px; border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-card); color: var(--text-secondary);
+  font-weight: 700; font-size: 13.5px; font-family: var(--font-body);
+  cursor: pointer; text-decoration: none;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
+.btn-secondary:hover { border-color: var(--brand-primary); color: var(--brand-primary); background: rgba(37,99,235,0.04); }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Input focus glow */
-input:focus,
-select:focus,
-textarea:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
-  border-color: #2563eb !important;
-}
-
-/* Button hover lift effect */
-button:not(:disabled):active {
-  transform: scale(0.98);
-}
-
-/* Card hover effect */
-.hover-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s ease;
-}
-
-/* Sidebar link hover */
-.nav-link:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: white !important;
-}
-
-/* Responsive — tablet */
-@media (max-width: 1024px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-  }
-}
-
-/* Responsive — mobile */
-@media (max-width: 768px) {
-  main {
-    margin-left: 0 !important;
-    padding: 16px !important;
-  }
-
-  .sidebar-desktop {
-    display: none;
-  }
-
-  .stats-grid {
-    grid-template-columns: 1fr !important;
-  }
+/* ── Page section title ── */
+.page-section-title {
+  font-size: 13px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin-bottom: 14px;
 }

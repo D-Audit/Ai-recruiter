@@ -23,9 +23,6 @@ with formal education degrees over self-taught developers. \
 Skills and project experience should be weighted equally to \
 formal credentials. Final decisions must be made by human recruiters.`;
 
-// ─────────────────────────────────────────────────────────────────
-// Gemini call with retry + exponential back-off
-// ─────────────────────────────────────────────────────────────────
 export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -82,10 +79,9 @@ export async function screenCandidates(
       try {
         parsed = parseScreeningResponse(rawResponse);
       } catch (parseErr) {
-        // Log the full raw response so you can inspect what Gemini returned
         console.error(`❌ Batch ${i + 1} parse error:`, parseErr);
         console.error(`📄 Raw Gemini response (batch ${i + 1}):\n`, rawResponse);
-        throw parseErr; // re-throw so the batch-level catch handles it
+        throw parseErr; 
       }
 
       const batchIds = batch.map((a) => a.id);
@@ -95,13 +91,13 @@ export async function screenCandidates(
       allResults = [...allResults, ...parsed];
       console.log(`✅ Batch ${i + 1} complete — ${parsed.length} candidates scored`);
 
-      // Polite delay between batches to avoid rate limits
+     
       if (i < batches.length - 1) {
         await new Promise((r) => setTimeout(r, 1000));
       }
     } catch (error) {
       console.error(`❌ Batch ${i + 1} failed:`, error);
-      // Continue processing remaining batches even if one fails
+      
     }
   }
 
