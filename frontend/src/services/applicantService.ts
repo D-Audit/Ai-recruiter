@@ -5,6 +5,15 @@ export const getApplicants = async (jobId: string) => {
   return res.data;
 };
 
+/**
+ * Fetch a single applicant by their MongoDB _id.
+ * Backend route: GET /api/applicants/profile/:id
+ */
+export const getApplicantById = async (id: string) => {
+  const res = await api.get(`/applicants/profile/${id}`);
+  return res.data;
+};
+
 export const getUmuravaProfiles = async () => {
   const res = await api.get("/applicants/umurava");
   return res.data;
@@ -57,7 +66,6 @@ export const submitManualApplicant = async (
   return res.data;
 };
 
-/** Remove a single applicant from a job (and delete them if they have no other jobs) */
 export const removeApplicantFromJob = async (jobId: string, applicantId: string) => {
   const res = await api.delete(`/applicants/${jobId}/applicant/${applicantId}`);
   return res.data;
