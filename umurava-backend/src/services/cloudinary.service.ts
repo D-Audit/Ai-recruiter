@@ -1,5 +1,5 @@
 
-import { v2 as cloudinary } from "cloudinary";
+const { v2: cloudinary } = require("cloudinary");
 import fs from "fs";
 
 // Configure once on import
@@ -16,7 +16,7 @@ export async function uploadResumeToCloud(
  
   if (!process.env.CLOUDINARY_CLOUD_NAME) {
     console.warn("⚠️  Cloudinary not configured — skipping cloud upload");
-    return ""; // Graceful fallback — app still works, just no View Resume link
+    return "";
   }
 
   try {
@@ -36,7 +36,6 @@ export async function uploadResumeToCloud(
     return result.secure_url;
 
   } catch (error: any) {
-   
     console.error("❌ Cloudinary upload failed:", error.message);
     return ""; 
   }
