@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
-const { v2: cloudinary } = require("cloudinary");
+
+const { v2:  cloudinary } = require( "cloudinary");
 import fs from "fs";
 
 // Configure once on import
