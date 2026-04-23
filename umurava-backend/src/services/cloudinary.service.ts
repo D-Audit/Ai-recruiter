@@ -16,7 +16,7 @@ export async function uploadResumeToCloud(
  
   if (!process.env.CLOUDINARY_CLOUD_NAME) {
     console.warn("⚠️  Cloudinary not configured — skipping cloud upload");
-    return ""; 
+    return ""; // Graceful fallback — app still works, just no View Resume link
   }
 
   try {
