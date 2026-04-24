@@ -34,3 +34,23 @@ export const updateProfile = async (data: { name?: string; company?: string }) =
   const res = await api.put("/auth/profile", data);
   return res.data;
 };
+
+/**
+ * Alias for updateProfile — used by profile/page.tsx.
+ * Both names call the same endpoint.
+ */
+export const updateMe = async (data: { name?: string; company?: string }) => {
+  return updateProfile(data);
+};
+
+/**
+ * Change password — used by settings/page.tsx.
+ * Calls PUT /auth/password on the backend.
+ */
+export const changePassword = async (data: {
+  currentPassword: string;
+  newPassword: string;
+}) => {
+  const res = await api.put("/auth/password", data);
+  return res.data;
+};

@@ -67,6 +67,14 @@ export const compareApplicants = async (jobId: string, candidateIds: string[]) =
   }
 };
 
+/**
+ * Alias for compareApplicants — used by candidates/compare/page.tsx.
+ * Both names call the same endpoint.
+ */
+export const compareCandidates = async (jobId: string, candidateIds: string[]) => {
+  return compareApplicants(jobId, candidateIds);
+};
+
 export const getAllScreenings = async () => {
   try {
     const res = await api.get("/screening/all");
