@@ -81,12 +81,12 @@ function AnimatedBrandLogo() {
         }
         .brand-name {
           font-family: var(--font-display, 'Sora', sans-serif);
-          font-size: 28px; font-weight: 700; color: #ffffff;
-          letter-spacing: -0.5px; line-height: 1;
+          font-size: 29px; font-weight: 800; color: #ffffff;
+          letter-spacing: -0.04em; line-height: 0.98;
         }
         .brand-tag {
           font-family: var(--font-body, 'Manrope', sans-serif);
-          font-size: 11px; font-weight: 600; letter-spacing: 2px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.22em;
           text-transform: uppercase; color: rgba(255,255,255,0.42);
           margin-top: 4px; text-align: center;
         }
@@ -123,7 +123,7 @@ function GoogleSignInButton({ onCredential, loading }: {
   loading: boolean;
 }) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  const hiddenButtonRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLDivElement | null>(null);
   const googleCallbackRef = useRef<(response: any) => void>(() => {});
 
   useEffect(() => {
@@ -157,14 +157,15 @@ function GoogleSignInButton({ onCredential, loading }: {
   }, [clientId, onCredential]);
 
   function initGoogle() {
-    if (!window.google || !clientId) return;
+    if (!window.google || !clientId || !buttonRef.current) return;
+    buttonRef.current.innerHTML = "";
     window.google.accounts.id.initialize({
       client_id: clientId,
       callback:  googleCallbackRef.current,
       ux_mode:   "popup",
     });
     window.google.accounts.id.renderButton(
-      hiddenButtonRef.current,
+      buttonRef.current,
       {
         theme:     "outline",
         size:      "large",
@@ -173,17 +174,6 @@ function GoogleSignInButton({ onCredential, loading }: {
         logo_alignment: "left",
       }
     );
-  }
-
-  function triggerGoogleButton() {
-    if (loading) return;
-    const host = hiddenButtonRef.current;
-    const clickable = host?.querySelector('[role="button"]') as HTMLElement | null;
-    if (clickable) {
-      clickable.click();
-      return;
-    }
-    window.google?.accounts?.id?.prompt?.();
   }
 
   if (!clientId) {
@@ -215,71 +205,20 @@ function GoogleSignInButton({ onCredential, loading }: {
     <div
       style={{
         width: "100%",
-        minHeight: 58,
         opacity: loading ? 0.6 : 1,
         pointerEvents: loading ? "none" : "auto"
       }}
     >
       <div
-        role="button"
-        tabIndex={loading ? -1 : 0}
-        onClick={triggerGoogleButton}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            triggerGoogleButton();
-          }
-        }}
+        ref={buttonRef}
         style={{
           width: "100%",
-          minHeight: 56,
-          borderRadius: 999,
-          background: "#ffffff",
-          border: "1.5px solid #8b9098",
-          boxShadow: "0 2px 8px rgba(15,23,42,0.06)",
+          minHeight: 44,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          cursor: loading ? "not-allowed" : "pointer"
+          justifyContent: "center"
         }}
-      >
-        <div
-          aria-hidden="true"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 14,
-              color: "#2d3138",
-              fontSize: 15,
-              fontWeight: 600,
-              letterSpacing: "-0.01em",
-              pointerEvents: "none"
-            }}
-          >
-            <svg width="26" height="26" viewBox="0 0 18 18">
-              <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
-              <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
-              <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
-              <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
-          </svg>
-          <span>Sign in with Google</span>
-        </div>
-      </div>
-      <div
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          left: "-9999px",
-          top: "0",
-          width: "320px",
-          height: "60px",
-          overflow: "hidden",
-        }}
-      >
-        <div id="google-btn-container" ref={hiddenButtonRef} />
-      </div>
+      />
     </div>
   );
 }
@@ -371,9 +310,10 @@ export default function LoginPage() {
         .hero-content { position: relative; z-index: 1; width: 100%; }
         .hero-tagline {
           font-family: var(--font-body, 'Manrope', sans-serif);
-          font-size: 18px; line-height: 1.45;
-          font-weight: 500;
-          color: rgba(255,255,255,0.9);
+          font-size: 18px; line-height: 1.42;
+          font-weight: 600;
+          letter-spacing: -0.02em;
+          color: rgba(255,255,255,0.92);
           margin-top: 28px; text-align: left;
         }
         .hero-features {
@@ -393,8 +333,8 @@ export default function LoginPage() {
           font-size: 18px;
           margin-top: 2px;
         }
-        .hero-feature-text { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 14px; color: rgba(255,255,255,0.68); line-height: 1.45; }
-        .hero-feature-title { font-family: var(--font-body, 'Manrope', sans-serif); font-weight: 600; color: white; font-size: 18px; letter-spacing: -0.02em; margin-bottom: 3px; }
+        .hero-feature-text { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.7); line-height: 1.5; letter-spacing: -0.01em; }
+        .hero-feature-title { font-family: var(--font-display, 'Sora', sans-serif); font-weight: 700; color: white; font-size: 18px; letter-spacing: -0.03em; margin-bottom: 4px; line-height: 1.12; }
 
         /* ── Right panel — form ── */
         .login-form-panel {
