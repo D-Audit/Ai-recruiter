@@ -86,7 +86,7 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
       if (!window.google || !clientId || !buttonRef.current) return;
       buttonRef.current.innerHTML = "";
       window.google.accounts.id.initialize({ client_id: clientId, callback: googleCallbackRef.current, ux_mode: "popup" });
-      window.google.accounts.id.renderButton(buttonRef.current, { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left" });
+      window.google.accounts.id.renderButton(buttonRef.current, { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left", shape: "pill" });
     };
     if (existing) { init(); return; }
     const script = document.createElement("script");
@@ -106,6 +106,11 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
     <div
       style={{
         width: "100%",
+        padding: "6px",
+        borderRadius: 999,
+        background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+        border: "1px solid #e2e8f0",
+        boxShadow: "0 10px 28px rgba(15,23,42,0.06)",
         opacity: loading ? 0.6 : 1,
         pointerEvents: loading ? "none" : "auto"
       }}
@@ -114,10 +119,12 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
         ref={buttonRef}
         style={{
           width: "100%",
-          minHeight: 44,
+          minHeight: 46,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center"
+          justifyContent: "center",
+          overflow: "hidden",
+          borderRadius: 999,
         }}
       />
     </div>
