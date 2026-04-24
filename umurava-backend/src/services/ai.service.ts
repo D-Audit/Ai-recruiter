@@ -1,3 +1,7 @@
+// umurava-backend/src/services/ai.service.ts
+// Fixed: retry logic now handles 429 (rate limit), timeout, network errors,
+//        not just 503. Exponential backoff with jitter.
+
 import { geminiModel } from "../config/gemini";
 import {
   buildScreeningPrompt,
@@ -23,27 +27,57 @@ with formal education degrees over self-taught developers. \
 Skills and project experience should be weighted equally to \
 formal credentials. Final decisions must be made by human recruiters.`;
 
+/**
+ * Call Gemini with exponential backoff retry.
+ * Fixed to handle:
+ *   - 503 Service Unavailable (model overloaded)
+ *   - 429 Rate Limited (too many requests)
+ *   - ETIMEDOUT / ECONNRESET (network blips)
+ *   - Generic server-side errors
+ */
 export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
+  let lastError: any;
+
   for (let i = 0; i < retries; i++) {
     try {
       const result = await geminiModel.generateContent(prompt);
-      return result.response.text();
+      const text = result.response.text();
+      if (!text || text.trim().length === 0) {
+        throw new Error("Gemini returned an empty response");
+      }
+      return text;
     } catch (error: any) {
-      const is503 =
-        error.message?.includes("503") ||
-        error.message?.includes("Service Unavailable") ||
-        error.message?.includes("overloaded");
+      lastError = error;
 
-      if (is503 && i < retries - 1) {
-        const delay = (i + 1) * 2000;
-        console.log(`⚠️ Gemini busy — retrying in ${delay / 1000}s (attempt ${i + 1}/${retries})`);
+      const msg = (error.message || "").toLowerCase();
+      const status = error.status || error.code || 0;
+
+      const isRetryable =
+        msg.includes("503") || msg.includes("service unavailable") || msg.includes("overloaded") ||
+        msg.includes("429") || msg.includes("rate limit") || msg.includes("quota") ||
+        msg.includes("etimedout") || msg.includes("econnreset") || msg.includes("econnrefused") ||
+        msg.includes("socket hang up") || msg.includes("network") ||
+        status === 503 || status === 429 || status === 502;
+
+      if (isRetryable && i < retries - 1) {
+        // Exponential backoff with jitter: 2s, 4s, 8s (± 500ms jitter)
+        const baseDelay = Math.pow(2, i + 1) * 1000;
+        const jitter    = Math.floor(Math.random() * 500);
+        const delay     = baseDelay + jitter;
+
+        console.log(
+          `⚠️  Gemini error (${error.message?.slice(0, 60)}) — retrying in ${Math.round(delay / 1000)}s (attempt ${i + 1}/${retries})`
+        );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
-      throw error;
+
+      // Not retryable or out of retries — throw immediately
+      break;
     }
   }
-  throw new Error("Gemini failed after all retries");
+
+  throw lastError || new Error("Gemini failed after all retries");
 }
 
 const BATCH_SIZE = 20;
@@ -73,15 +107,15 @@ export async function screenCandidates(
 
     try {
       const prompt      = buildScreeningPrompt(job, batch);
-      const rawResponse = await callGeminiWithRetry(prompt);
+      const rawResponse = await callGeminiWithRetry(prompt, 4); // 4 retries for screening
 
       let parsed: CandidateResult[];
       try {
         parsed = parseScreeningResponse(rawResponse);
       } catch (parseErr) {
         console.error(`❌ Batch ${i + 1} parse error:`, parseErr);
-        console.error(`📄 Raw Gemini response (batch ${i + 1}):\n`, rawResponse);
-        throw parseErr; 
+        console.error(`📄 Raw Gemini response (batch ${i + 1}):\n`, rawResponse?.slice(0, 500));
+        throw parseErr;
       }
 
       const batchIds = batch.map((a) => a.id);
@@ -91,13 +125,13 @@ export async function screenCandidates(
       allResults = [...allResults, ...parsed];
       console.log(`✅ Batch ${i + 1} complete — ${parsed.length} candidates scored`);
 
-     
+      // 1 second gap between batches to respect rate limits
       if (i < batches.length - 1) {
         await new Promise((r) => setTimeout(r, 1000));
       }
     } catch (error) {
       console.error(`❌ Batch ${i + 1} failed:`, error);
-      
+      // Continue with other batches — don't fail the whole screening
     }
   }
 
@@ -136,14 +170,14 @@ export async function compareCandidates(
   if (candidates.length > 3) throw new Error("Maximum 3 candidates per comparison");
 
   const prompt = buildComparisonPrompt(job, candidates);
-  const text   = await callGeminiWithRetry(prompt);
+  const text   = await callGeminiWithRetry(prompt, 3);
 
   let parsed: any;
   try {
     parsed = parseComparisonResponse(text);
   } catch (parseErr) {
     console.error("❌ Comparison parse error:", parseErr);
-    console.error("📄 Raw Gemini response:\n", text);
+    console.error("📄 Raw Gemini response:\n", text?.slice(0, 500));
     throw parseErr;
   }
 
@@ -170,7 +204,7 @@ Do not include any JSON in your response.
 Reply in plain conversational English only.
 `.trim();
 
-  return callGeminiWithRetry(prompt);
+  return callGeminiWithRetry(prompt, 2);
 }
 
 // ─────────────────────────────────────────────────────────────────

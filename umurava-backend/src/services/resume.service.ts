@@ -3,24 +3,30 @@
 // Parses PDF, DOCX, DOC, TXT, ODT resume files into structured Umurava
 // applicant profiles using Gemini AI for high accuracy.
 //
+// ✅ FIXED: pdf-parse v2.x — import correctly using .default
 // ✅ Uses Gemini per file — gets projects, technologies, all fields
 // ✅ Sequential processing with 500ms delay — never hits rate limits
-// ✅ Retry with exponential backoff — handles temporary Gemini errors
+// ✅ Retry with exponential backoff — handles all Gemini errors (503, 429, network)
 // ✅ Falls back to regex parser if Gemini fails — zero data loss
 // ✅ Handles scanned PDFs gracefully with a placeholder profile
+// ✅ Fixed: file is kept alive until AFTER Cloudinary upload, then cleaned up
 
 import fs from "fs";
 import path from "path";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 1 — Extract raw text from file (no AI, same as before)
+// STEP 1 — Extract raw text from file (no AI)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function extractRawText(filePath: string): Promise<string> {
   const ext = path.extname(filePath).toLowerCase();
 
   if (ext === ".pdf") {
-    const pdfParse = require("pdf-parse");
+    // ✅ FIX: pdf-parse v2.x changed its export.
+    //    The module's default export is an object, not the function itself.
+    //    We must access .default (or .default.default in some bundlers).
+    const pdfParseModule = require("pdf-parse");
+    const pdfParse = pdfParseModule.default ?? pdfParseModule;
     const buffer = fs.readFileSync(filePath);
     const data = await pdfParse(buffer);
     return data.text || "";
@@ -166,7 +172,7 @@ async function parseWithGemini(text: string, filename: string): Promise<any | nu
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STEP 3 — Regex fallback (same reliable parser as before)
+// STEP 3 — Regex fallback (reliable, no AI required)
 // Only used when Gemini fails or returns bad JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -190,16 +196,10 @@ function cap(s: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
 }
 
-function extractContextAround(keyword: string, text: string, chars: number): string {
-  const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
-  if (idx === -1) return "";
-  return text.substring(Math.max(0, idx - chars), Math.min(text.length, idx + chars));
-}
-
 function regexFallback(text: string, filename: string): any {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  // Name
+  // Name — look in first 10 lines for a 2-5 word name-like line
   let firstName = "Unknown", lastName = "Candidate";
   for (const line of lines.slice(0, 10)) {
     if (line.includes("@") || line.includes("http") || line.length > 70 || line.length < 3) continue;
@@ -212,13 +212,15 @@ function regexFallback(text: string, filename: string): any {
   const emailMatch = text.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/);
   const email = emailMatch ? emailMatch[0].toLowerCase() : `${firstName.toLowerCase()}.${Date.now()}@resume.uploaded`;
 
-  // Skills — 3 layers
+  // Skills — match known skills list
   const found = new Map<string, any>();
   for (const skill of KNOWN_SKILLS) {
     if (new RegExp(`\\b${skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text)) {
       found.set(skill.toLowerCase(), { name: skill, level: "Intermediate", yearsOfExperience: 1 });
     }
   }
+
+  // Also parse explicit "Skills:" sections
   const sectionMatch = text.match(/(?:skills?|technical skills?|core competencies|technologies|expertise)[:\s]*\n([\s\S]{10,800}?)(?:\n{2,}|$)/i);
   if (sectionMatch) {
     sectionMatch[1].split(/[,|\n•·▪▸▶\-–—;\/]/).map(t => t.trim()).filter(t => t.length >= 2 && t.length <= 50 && !/^\d+$/.test(t)).forEach(token => {
@@ -255,13 +257,22 @@ const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 let lastGeminiCallAt = 0;
 
 async function throttledGeminiParse(text: string, filename: string): Promise<any | null> {
-  const now = Date.now();
+  const now           = Date.now();
   const timeSinceLast = now - lastGeminiCallAt;
   if (timeSinceLast < 500) {
     await delay(500 - timeSinceLast);
   }
   lastGeminiCallAt = Date.now();
   return parseWithGemini(text, filename);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: safely delete a temp file (non-fatal)
+// ─────────────────────────────────────────────────────────────────────────────
+function cleanupFile(filePath: string): void {
+  if (filePath && fs.existsSync(filePath)) {
+    try { fs.unlinkSync(filePath); } catch { /* non-fatal */ }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,13 +284,18 @@ async function throttledGeminiParse(text: string, filename: string): Promise<any
  *
  * Flow:
  *   1. Extract raw text (pdf-parse / mammoth)
- *   2. Send text to Gemini AI → get full structured profile
- *   3. If Gemini fails → fall back to regex parser
- *   4. Delete the temp file
+ *   2. Upload raw file to Cloudinary (while local copy still exists)
+ *   3. Send text to Gemini AI → get full structured profile
+ *   4. If Gemini fails → fall back to regex parser
+ *   5. Delete the temp file (AFTER Cloudinary upload is done)
  */
-export async function parseResumeFile(filePath: string): Promise<any> {
+export async function parseResumeFile(
+  filePath: string,
+  skipCloudinary = false
+): Promise<any> {
   const filename = path.basename(filePath);
 
+  // ── 1. Extract text ──────────────────────────────────────────────────────
   let rawText = "";
   try {
     rawText = await extractRawText(filePath);
@@ -287,12 +303,22 @@ export async function parseResumeFile(filePath: string): Promise<any> {
     console.error(`❌ Text extraction failed for ${filename}:`, err);
   }
 
-  // Clean up temp file regardless of outcome
-  try {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } catch { /* non-fatal */ }
+  // ── 2. Upload to Cloudinary while file still exists ──────────────────────
+  let resumeUrl = "";
+  if (!skipCloudinary) {
+    try {
+      const { uploadResumeToCloud } = await import("./cloudinary.service");
+      resumeUrl = await uploadResumeToCloud(filePath, filename);
+      // cloudinary.service deletes the local file itself
+    } catch (cloudErr: any) {
+      console.warn(`⚠️  Cloudinary upload skipped for ${filename}:`, cloudErr.message);
+      cleanupFile(filePath);
+    }
+  } else {
+    cleanupFile(filePath);
+  }
 
-  // Scanned / image PDF — no text extractable
+  // ── 3. Handle scanned / empty PDFs ───────────────────────────────────────
   if (!rawText || rawText.trim().length < 40) {
     console.warn(`⚠️  No text in ${filename} — likely scanned image PDF`);
     const parts = filename.replace(/\.(pdf|docx?|txt|odt)$/i, "").replace(/[_-]/g, " ").split(" ");
@@ -307,24 +333,24 @@ export async function parseResumeFile(filePath: string): Promise<any> {
       availability: { status: "Available", type: "Full-time", startDate: "" },
       socialLinks: { linkedin: "", github: "", portfolio: "" },
       source: "external",
+      resumeUrl,
     };
   }
 
-  // Try Gemini first (with throttling to stay under rate limits)
+  // ── 4. Try Gemini first (with throttling) ────────────────────────────────
   const geminiResult = await throttledGeminiParse(rawText, filename);
   if (geminiResult) {
     console.log(`✅ Gemini parsed: ${filename}`);
-    return geminiResult;
+    return { ...geminiResult, resumeUrl };
   }
 
-  // Fall back to regex parser
+  // ── 5. Fall back to regex parser ─────────────────────────────────────────
   console.warn(`⚠️  Using regex fallback for: ${filename}`);
-  return regexFallback(rawText, filename);
+  return { ...regexFallback(rawText, filename), resumeUrl };
 }
 
 /**
  * Parse a URL-fetched resume using Gemini AI.
- * Already used Gemini — no change needed here.
  */
 export async function parseResumeUrl(url: string, rawText: string): Promise<any> {
   const { callGeminiWithRetry } = await import("./ai.service");
@@ -350,11 +376,11 @@ Rules: Return ONLY JSON. skills level: Beginner|Intermediate|Advanced|Expert. la
 Text:
 ${rawText.slice(0, 12000)}`;
 
-  const raw = await callGeminiWithRetry(prompt);
   try {
+    const raw    = await callGeminiWithRetry(prompt, 3);
     const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
     return { ...parsed, source: "external", resumeUrl: url };
   } catch {
-    return regexFallback(rawText.slice(0, 15000), url.split("/").pop() || "url-resume");
+    return { ...regexFallback(rawText.slice(0, 15000), url.split("/").pop() || "url-resume"), resumeUrl: url };
   }
 }

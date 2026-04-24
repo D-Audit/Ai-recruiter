@@ -11,7 +11,9 @@ import {
 import { clearAssistantContext } from "../store/slices/screeningSlice";
 import { useEffect, useState } from "react";
 import { getMe } from "../services/authService";
-import AnimatedLogo from "./AnimatedLogo";
+
+const NAV_BG       = "#0f1c3a";  // deep navy — matches reference image exactly
+const NAV_BG_DARK  = "#0b1528";
 
 const navItems = [
   { href: "/dashboard",  icon: LayoutDashboard, label: "Dashboard",  tag: null },
@@ -19,6 +21,16 @@ const navItems = [
   { href: "/candidates", icon: Users,             label: "Candidates",  tag: null },
   { href: "/screenings", icon: ListChecks,        label: "Screenings",  tag: "AI" },
 ];
+
+function DiamondLogo() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <path d="M11 1L21 8.5L17 21H5L1 8.5L11 1Z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M11 5L18 9.5L15 19H7L4 9.5L11 5Z" fill="white" fillOpacity="0.25" stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+      <path d="M11 9L14.5 11.5L13 17H9L7.5 11.5L11 9Z" fill="white" />
+    </svg>
+  );
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -50,219 +62,205 @@ export default function Sidebar() {
   return (
     <>
       <style>{`
+        /* ── Mobile trigger ── */
         .sb-trigger {
           display: none; position: fixed; top: 16px; left: 16px; z-index: 200;
           width: 40px; height: 40px; border-radius: 10px;
-          background: #f7f7f8; border: 1px solid var(--border-soft);
-          box-shadow: 0 8px 20px rgba(16,24,40,0.12);
+          background: ${NAV_BG}; border: 1px solid rgba(255,255,255,0.1);
           align-items: center; justify-content: center;
-          cursor: pointer; color: #94a3b8; transition: all 0.15s;
+          cursor: pointer; color: #ffffff; transition: all 0.15s;
         }
-        .sb-trigger:hover { background: var(--surface-hover); color: var(--text-primary); }
+        .sb-trigger:hover { background: #1a2d50; }
 
         .sb-overlay {
           display: none; position: fixed; inset: 0;
-          background: rgba(0,0,0,0.7); backdrop-filter: blur(6px);
-          z-index: 149; animation: fadeIn 0.2s ease;
+          background: rgba(0,0,0,0.65);
+          z-index: 149; animation: sbFadeIn 0.2s ease;
         }
+        @keyframes sbFadeIn  { from{opacity:0} to{opacity:1} }
+        @keyframes sbScaleIn { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
 
-        /* ── Shell ── */
+        /* ── Shell ──
+           Clean flat navy — no heavy box-shadow, no gradient blur,
+           matches the reference image: solid colour, crisp border only */
         .sidebar {
-          font-family: var(--font-body, system-ui);
+          font-family: var(--font-body, 'Inter', system-ui);
           width: var(--sidebar-width, 260px);
           min-height: 100vh; position: fixed; left: 0; top: 0;
           display: flex; flex-direction: column; z-index: 150;
-          background: #f7f7f8;
-          border-right: 1px solid var(--border-soft);
+          background: ${NAV_BG};
+          border-right: 1px solid rgba(255,255,255,0.07);
+          /* NO heavy box-shadow — clean flat look like reference */
           box-shadow: none;
           transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
           overflow: hidden;
         }
-        .sidebar::before {
-          content: '';
-          position: absolute; top: -80px; left: -80px;
-          width: 300px; height: 300px; border-radius: 50%;
-          background: none;
-          pointer-events: none;
-        }
-        .sidebar::after {
-          content: '';
-          position: absolute; bottom: -80px; right: -80px;
-          width: 240px; height: 240px; border-radius: 50%;
-          background: none;
-          pointer-events: none;
-        }
 
         /* ── Logo ── */
         .sb-logo {
-          padding: 18px 14px 14px;
-          border-bottom: 1px solid var(--border-muted);
+          padding: 22px 20px 20px;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
           display: flex; align-items: center; gap: 12px;
-          position: relative; z-index: 1;
+        }
+        .sb-logo-icon {
+          width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 60%, #7c3aed 100%);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .sb-logo-name {
+          font-size: 18px; font-weight: 700; color: #ffffff;
+          letter-spacing: -0.3px; line-height: 1;
+          font-family: var(--font-display, 'Inter', sans-serif);
+        }
+        .sb-logo-tag {
+          font-size: 9.5px; font-weight: 600; letter-spacing: 1.6px;
+          text-transform: uppercase; margin-top: 4px;
+          color: rgba(255,255,255,0.38);
         }
 
         /* ── Section label ── */
         .sb-section-label {
-          padding: 20px 20px 8px;
-          font-size: 9.5px; font-weight: 700; color: var(--text-muted);
+          padding: 22px 20px 8px;
+          font-size: 9.5px; font-weight: 700; color: rgba(255,255,255,0.28);
           text-transform: uppercase; letter-spacing: 2px;
-          position: relative; z-index: 1;
         }
 
         /* ── Nav ── */
         .sb-nav {
           flex: 1; padding: 2px 10px 8px;
-          display: flex; flex-direction: column; gap: 3px;
-          position: relative; z-index: 1;
+          display: flex; flex-direction: column; gap: 2px;
         }
 
+        /* Nav links — clean white text, no border tricks */
         .sb-link {
-          display: flex; align-items: center; gap: 11px;
-          padding: 10px 12px; border-radius: 11px;
-          text-decoration: none; font-weight: 500;
-          font-size: 14.5px; color: var(--text-secondary);
-          transition: all 0.18s; position: relative;
-          border: 1px solid transparent;
+          display: flex; align-items: center; gap: 13px;
+          padding: 11px 12px; border-radius: 10px;
+          text-decoration: none;
+          font-size: 15px; font-weight: 500;
+          color: rgba(255,255,255,0.65);
+          transition: background 0.14s, color 0.14s;
           letter-spacing: -0.01em;
+          position: relative;
         }
         .sb-link:hover {
-          color: var(--text-primary);
-          background: var(--surface-hover);
-          border-color: var(--border-muted);
+          color: #ffffff;
+          background: rgba(255,255,255,0.08);
         }
+        /* Active: slightly lighter navy bg + white text + left bar */
         .sb-link.active {
-          color: #1d4ed8;
-          background: rgba(37,99,235,0.08);
-          border-color: rgba(37,99,235,0.22);
-          font-weight: 700;
+          color: #ffffff;
+          background: rgba(255,255,255,0.12);
+          font-weight: 600;
         }
         .sb-link.active::before {
           content: '';
-          position: absolute; left: -1px; top: 18%; height: 64%;
+          position: absolute; left: 0; top: 20%; height: 60%;
           width: 3px; border-radius: 0 3px 3px 0;
-          background: linear-gradient(180deg, #60a5fa, #818cf8);
+          background: #4f9cf9;
         }
 
+        /* Icon wrapper — same colour as text */
         .sb-icon {
-          width: 34px; height: 34px; border-radius: 9px;
+          width: 32px; height: 32px; border-radius: 8px;
           flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-          transition: all 0.18s; color: inherit;
+          color: inherit;
         }
-        .sb-link.active .sb-icon {
-          background: rgba(59,130,246,0.18);
-          color: #2563eb;
-        }
+        .sb-link.active .sb-icon { color: #ffffff; }
+
         .sb-link-label { flex: 1; }
+
+        /* AI badge */
         .sb-ai-tag {
-          font-size: 9px; font-weight: 800; letter-spacing: 0.8px;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.6px;
           padding: 2px 7px; border-radius: 5px;
-          background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(37,99,235,0.14));
-          color: #5b21b6; border: 1px solid rgba(124,58,237,0.24);
+          background: rgba(124,58,237,0.25);
+          color: #c4b5fd; border: 1px solid rgba(124,58,237,0.3);
           text-transform: uppercase;
         }
 
         /* ── Divider ── */
         .sb-divider {
-          margin: 6px 10px;
-          height: 1px;
-          background: var(--border-muted);
-          position: relative; z-index: 1;
+          margin: 8px 12px; height: 1px;
+          background: rgba(255,255,255,0.07);
         }
 
         /* ── Footer ── */
-        .sb-footer {
-          padding: 8px 10px 20px;
-          position: relative; z-index: 1;
-        }
+        .sb-footer { padding: 8px 10px 22px; }
 
         /* User card */
         .sb-user {
           display: flex; align-items: center; gap: 11px;
-          padding: 11px 12px; border-radius: 12px;
-          cursor: pointer;
-          border: 1px solid var(--border-soft);
-          background: #ffffff;
-          transition: all 0.15s; margin-bottom: 4px;
+          padding: 11px 12px; border-radius: 10px; cursor: pointer;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(255,255,255,0.05);
+          transition: background 0.14s; margin-bottom: 4px;
           text-decoration: none;
         }
-        .sb-user:hover {
-          background: var(--surface-hover);
-          border-color: var(--border-input);
-        }
+        .sb-user:hover { background: rgba(255,255,255,0.09); }
         .sb-avatar {
-          width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-          background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+          width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
           display: flex; align-items: center; justify-content: center;
-          font-size: 12.5px; font-weight: 800; color: white;
-          box-shadow: 0 2px 10px rgba(37,99,235,0.35);
+          font-size: 12px; font-weight: 700; color: white;
         }
         .sb-user-name {
-          font-size: 13.5px; font-weight: 700; color: var(--text-primary);
+          font-size: 13.5px; font-weight: 600; color: #ffffff;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .sb-user-email {
-          font-size: 11px; color: var(--text-muted);
+          font-size: 11px; color: rgba(255,255,255,0.38);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           margin-top: 2px;
         }
 
         /* Footer buttons */
         .sb-footer-btn {
-          display: flex; align-items: center; gap: 10px;
+          display: flex; align-items: center; gap: 11px;
           padding: 9px 12px; border-radius: 10px;
           border: none; background: transparent;
-          font-family: inherit; font-size: 14px; font-weight: 600;
+          font-family: inherit; font-size: 14.5px; font-weight: 500;
           width: 100%; text-align: left; cursor: pointer;
-          transition: all 0.15s; text-decoration: none;
-          letter-spacing: -0.01em;
+          transition: background 0.14s, color 0.14s; text-decoration: none;
+          color: rgba(255,255,255,0.6);
         }
-        .sb-footer-btn.settings {
-          color: var(--text-secondary);
-        }
-        .sb-footer-btn.settings:hover {
-          color: var(--text-primary); background: var(--surface-hover);
-        }
-        .sb-footer-btn.signout {
-          color: var(--text-secondary);
-        }
-        .sb-footer-btn.signout:hover {
-          color: #fca5a5; background: rgba(239,68,68,0.08);
-        }
+        .sb-footer-btn:hover { color: #ffffff; background: rgba(255,255,255,0.08); }
+        .sb-footer-btn.signout:hover { color: #fca5a5; background: rgba(239,68,68,0.1); }
 
-        /* Logout modal */
+        /* ── Logout modal ── */
         .sb-modal-overlay {
           position: fixed; inset: 0;
-          background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+          background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
           z-index: 400; display: flex; align-items: center; justify-content: center;
-          padding: 20px; animation: fadeIn 0.15s ease;
+          padding: 20px; animation: sbFadeIn 0.15s ease;
         }
         .sb-modal {
-          background: var(--surface-card); border: 1px solid var(--border-soft);
+          background: var(--surface-card, #ffffff);
+          border: 1px solid var(--border-soft, #e2e8f0);
           border-radius: 20px; padding: 28px; max-width: 360px; width: 100%;
-          box-shadow: 0 24px 60px rgba(0,0,0,0.3); animation: scaleIn 0.18s ease;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.25); animation: sbScaleIn 0.18s ease;
         }
         .sb-modal-icon {
           width: 52px; height: 52px; border-radius: 14px;
-          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.18);
+          background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
           display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
         }
-        .sb-modal-title { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
-        .sb-modal-text  { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .sb-modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary,#0f172a); margin-bottom: 8px; }
+        .sb-modal-text  { color: var(--text-secondary,#475569); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
         .sb-modal-btns  { display: flex; gap: 10px; }
         .sb-modal-cancel {
           flex: 1; padding: 12px; border-radius: 11px;
-          border: 1.5px solid var(--border-soft); background: var(--surface-card);
-          color: var(--text-secondary); font-weight: 600; font-size: 14px;
-          cursor: pointer; font-family: inherit; transition: all 0.15s;
+          border: 1.5px solid var(--border-soft,#e2e8f0);
+          background: var(--surface-card,#ffffff);
+          color: var(--text-secondary,#475569); font-weight: 600; font-size: 14px;
+          cursor: pointer; font-family: inherit; transition: background 0.15s;
         }
-        .sb-modal-cancel:hover { background: var(--surface-hover); }
+        .sb-modal-cancel:hover { background: var(--surface-hover,#f8fafc); }
         .sb-modal-confirm {
           flex: 1; padding: 12px; border-radius: 11px; border: none;
           background: #ef4444; color: white; font-weight: 700; font-size: 14px;
-          cursor: pointer; font-family: inherit;
-          box-shadow: 0 4px 14px rgba(239,68,68,0.3); transition: all 0.15s;
+          cursor: pointer; font-family: inherit; transition: all 0.15s;
         }
-        .sb-modal-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.4); }
+        .sb-modal-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.38); }
 
         @media (max-width: 768px) {
           .sb-trigger { display: flex; }
@@ -279,27 +277,34 @@ export default function Sidebar() {
       {isOpen && <div className="sb-overlay" onClick={() => setIsOpen(false)} />}
 
       <nav className={`sidebar${isOpen ? " open" : ""}`}>
-        {/* Logo */}
+
+        {/* ── Logo ── */}
         <div className="sb-logo">
-          <AnimatedLogo size="sm" dark={false} />
+          <div className="sb-logo-icon">
+            <DiamondLogo />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p className="sb-logo-name">ScreenAI</p>
+            <p className="sb-logo-tag">Talent Screening</p>
+          </div>
           {isOpen && (
             <button
               onClick={() => setIsOpen(false)}
-              style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 4, borderRadius: 7 }}
+              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", padding: 4, borderRadius: 7 }}
             >
               <X size={18} />
             </button>
           )}
         </div>
 
-        {/* Nav */}
+        {/* ── Nav ── */}
         <p className="sb-section-label">Main Menu</p>
         <div className="sb-nav">
           {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
             return (
               <Link key={item.href} href={item.href} className={`sb-link${isActive ? " active" : ""}`}>
-                <span className="sb-icon"><item.icon size={17} /></span>
+                <span className="sb-icon"><item.icon size={18} /></span>
                 <span className="sb-link-label">{item.label}</span>
                 {item.tag && <span className="sb-ai-tag">{item.tag}</span>}
               </Link>
@@ -309,7 +314,7 @@ export default function Sidebar() {
 
         <div className="sb-divider" />
 
-        {/* Footer */}
+        {/* ── Footer ── */}
         <div className="sb-footer">
           <Link href="/profile" className="sb-user">
             <div className="sb-avatar">{initials}</div>

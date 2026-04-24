@@ -10,7 +10,7 @@ import { clearAssistantContext } from "../store/slices/screeningSlice";
 import { getAllJobs } from "../services/jobService";
 import {
   Sun, Moon,
-  Bell, Settings, ChevronDown, CheckCircle2,
+  Bell, Settings, ChevronDown,
   Users, Briefcase, Sparkles, User, LogOut, ArrowRight, Info,
 } from "lucide-react";
 
@@ -33,7 +33,10 @@ type HeaderNotification = {
 };
 
 const READ_NOTIFS_KEY = "notif_read_ids_v1";
-const CLEARED_AT_KEY = "notif_cleared_at_v1";
+const CLEARED_AT_KEY  = "notif_cleared_at_v1";
+
+// Same deep navy as sidebar
+const HEADER_BG = "#0f1c3a";
 
 const timeAgo = (value?: string) => {
   if (!value) return "recently";
@@ -41,7 +44,7 @@ const timeAgo = (value?: string) => {
   if (Number.isNaN(date.getTime())) return "recently";
   const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
+  if (mins < 1)  return "just now";
   if (mins < 60) return `${mins} min ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs} hour${hrs > 1 ? "s" : ""} ago`;
@@ -50,13 +53,14 @@ const timeAgo = (value?: string) => {
 };
 
 const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, actions }) => {
-  const { user }   = useSelector((s: RootState) => s.auth);
-  const dispatch   = useDispatch();
-  const router     = useRouter();
-  const [notifOpen,   setNotifOpen]   = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [showLogout,  setShowLogout]  = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const { user } = useSelector((s: RootState) => s.auth);
+  const dispatch  = useDispatch();
+  const router    = useRouter();
+
+  const [notifOpen,     setNotifOpen]     = useState(false);
+  const [profileOpen,   setProfileOpen]   = useState(false);
+  const [showLogout,    setShowLogout]    = useState(false);
+  const [theme,         setTheme]         = useState<"light" | "dark">("light");
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
 
   const initials = user?.name
@@ -71,130 +75,90 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
     router.push("/");
   };
 
+  // Load live notifications from jobs data
   useEffect(() => {
     let mounted = true;
-
-    const loadNotifications = async () => {
+    const load = async () => {
       try {
-        const res = await getAllJobs();
+        const res  = await getAllJobs();
         const jobs = (res.jobs || []) as any[];
         if (!mounted) return;
 
-        const openJobs = jobs.filter((j) => j.status === "open");
-        const screeningJobs = jobs.filter((j) => j.status === "screening");
-        const jobsWithCandidates = jobs.filter((j) => (j.applicantsCount || 0) > 0);
-        const latestJobTime = Math.max(
-          ...jobs.map((j) => new Date(j.updatedAt || j.createdAt || 0).getTime()),
-          0
-        );
-        const newest = [...jobs].sort(
-          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-        )[0];
-        const mostCandidates = [...jobsWithCandidates].sort(
-          (a, b) => (b.applicantsCount || 0) - (a.applicantsCount || 0)
-        )[0];
+        const openJobs        = jobs.filter((j) => j.status === "open");
+        const screeningJobs   = jobs.filter((j) => j.status === "screening");
+        const jobsWithCands   = jobs.filter((j) => (j.applicantsCount || 0) > 0);
+        const latestTime      = Math.max(...jobs.map((j) => new Date(j.updatedAt || j.createdAt || 0).getTime()), 0);
+        const newest          = [...jobs].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+        const mostCandidates  = [...jobsWithCands].sort((a, b) => (b.applicantsCount || 0) - (a.applicantsCount || 0))[0];
 
         const live: HeaderNotification[] = [
           {
             id: "open-jobs",
             title: "Open positions",
-            message:
-              openJobs.length > 0
-                ? `${openJobs.length} job${openJobs.length > 1 ? "s are" : " is"} actively receiving candidates.`
-                : "No open jobs right now. Publish a role to attract applicants.",
+            message: openJobs.length > 0
+              ? `${openJobs.length} job${openJobs.length > 1 ? "s are" : " is"} actively receiving candidates.`
+              : "No open jobs right now. Publish a role to attract applicants.",
             read: openJobs.length === 0,
-            time: "live",
-            icon: Briefcase,
-            color: "#2563eb",
-            createdAt: latestJobTime,
+            time: "live", icon: Briefcase, color: "#60a5fa", createdAt: latestTime,
           },
           {
             id: "screening",
             title: "Screening pipeline",
-            message:
-              screeningJobs.length > 0
-                ? `${screeningJobs.length} job${screeningJobs.length > 1 ? "s are" : " is"} in AI screening stage.`
-                : "No active AI screening in progress yet.",
+            message: screeningJobs.length > 0
+              ? `${screeningJobs.length} job${screeningJobs.length > 1 ? "s are" : " is"} in AI screening stage.`
+              : "No active AI screening in progress yet.",
             read: screeningJobs.length === 0,
-            time: "live",
-            icon: Sparkles,
-            color: "#7c3aed",
-            createdAt: latestJobTime,
+            time: "live", icon: Sparkles, color: "#a78bfa", createdAt: latestTime,
           },
         ];
 
-        if (newest) {
-          live.push({
-            id: `newest-${newest._id}`,
-            title: "Latest job posted",
-            message: `${newest.title} was added to your hiring pipeline.`,
-            read: false,
-            time: timeAgo(newest.createdAt),
-            icon: Briefcase,
-            color: "#16a34a",
-            createdAt: new Date(newest.createdAt || Date.now()).getTime(),
-          });
-        }
+        if (newest) live.push({
+          id: `newest-${newest._id}`,
+          title: "Latest job posted",
+          message: `${newest.title} was added to your hiring pipeline.`,
+          read: false, time: timeAgo(newest.createdAt),
+          icon: Briefcase, color: "#34d399",
+          createdAt: new Date(newest.createdAt || Date.now()).getTime(),
+        });
 
-        if (mostCandidates) {
-          live.push({
-            id: `candidates-${mostCandidates._id}`,
-            title: "Highest candidate volume",
-            message: `${mostCandidates.title} has ${mostCandidates.applicantsCount} candidate${mostCandidates.applicantsCount > 1 ? "s" : ""}.`,
-            read: false,
-            time: timeAgo(mostCandidates.updatedAt || mostCandidates.createdAt),
-            icon: Users,
-            color: "#0891b2",
-            createdAt: new Date(mostCandidates.updatedAt || mostCandidates.createdAt || Date.now()).getTime(),
-          });
-        }
+        if (mostCandidates) live.push({
+          id: `candidates-${mostCandidates._id}`,
+          title: "Highest candidate volume",
+          message: `${mostCandidates.title} has ${mostCandidates.applicantsCount} candidate${mostCandidates.applicantsCount > 1 ? "s" : ""}.`,
+          read: false, time: timeAgo(mostCandidates.updatedAt || mostCandidates.createdAt),
+          icon: Users, color: "#38bdf8",
+          createdAt: new Date(mostCandidates.updatedAt || mostCandidates.createdAt || Date.now()).getTime(),
+        });
 
-        const clearedAtRaw = localStorage.getItem(CLEARED_AT_KEY);
-        const clearedAt = clearedAtRaw ? new Date(clearedAtRaw).getTime() : 0;
-        const readIds = new Set(
-          JSON.parse(localStorage.getItem(READ_NOTIFS_KEY) || "[]") as string[]
+        const clearedAt = localStorage.getItem(CLEARED_AT_KEY) ? new Date(localStorage.getItem(CLEARED_AT_KEY)!).getTime() : 0;
+        const readIds   = new Set(JSON.parse(localStorage.getItem(READ_NOTIFS_KEY) || "[]") as string[]);
+
+        setNotifications(
+          live
+            .filter((n) => (clearedAt ? n.createdAt > clearedAt : true))
+            .map((n) => (readIds.has(n.id) ? { ...n, read: true } : n))
         );
-
-        const filtered = live
-          .filter((n) => (clearedAt ? n.createdAt > clearedAt : true))
-          .map((n) => (readIds.has(n.id) ? { ...n, read: true } : n));
-
-        setNotifications(filtered);
       } catch {
         if (!mounted) return;
-        setNotifications([
-          {
-            id: "fallback",
-            title: "Activity unavailable",
-            message: "We could not fetch recent activity. Refresh in a moment.",
-            read: true,
-            time: "now",
-            icon: Info,
-            color: "#64748b",
-            createdAt: Date.now(),
-          },
-        ]);
+        setNotifications([{
+          id: "fallback", title: "Activity unavailable",
+          message: "Could not fetch recent activity. Refresh in a moment.",
+          read: true, time: "now", icon: Info, color: "#64748b", createdAt: Date.now(),
+        }]);
       }
     };
-
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 60000);
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
+    load();
+    const interval = setInterval(load, 60000);
+    return () => { mounted = false; clearInterval(interval); };
   }, []);
 
-  const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.read).length,
-    [notifications]
-  );
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
 
   useEffect(() => {
     const saved = (localStorage.getItem("theme") || "light") as "light" | "dark";
-    const normalized = saved === "dark" ? "dark" : "light";
-    setTheme(normalized);
-    document.documentElement.classList.toggle("dark", normalized === "dark");
+    const norm  = saved === "dark" ? "dark" : "light";
+    setTheme(norm);
+    document.documentElement.classList.toggle("dark", norm === "dark");
   }, []);
 
   const toggleTheme = () => {
@@ -208,9 +172,8 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
 
   const markOneAsRead = (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    const prevIds = JSON.parse(localStorage.getItem(READ_NOTIFS_KEY) || "[]") as string[];
-    const next = Array.from(new Set([...prevIds, id]));
-    localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify(next));
+    const prev = JSON.parse(localStorage.getItem(READ_NOTIFS_KEY) || "[]") as string[];
+    localStorage.setItem(READ_NOTIFS_KEY, JSON.stringify(Array.from(new Set([...prev, id]))));
   };
 
   const markAllAsRead = () => {
@@ -227,175 +190,148 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
   return (
     <div className="header-wrapper">
       <style>{`
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-6px); }
-          to   { opacity: 1; transform: translateY(0); }
+        @keyframes ahSlideDown {
+          from { opacity:0; transform:translateY(-6px); }
+          to   { opacity:1; transform:translateY(0); }
         }
+        @keyframes ahFadeIn  { from{opacity:0} to{opacity:1} }
+        @keyframes ahScaleIn { from{opacity:0;transform:scale(.96)} to{opacity:1;transform:scale(1)} }
 
-        /* ── Header shell ── */
+        /* ── Header shell — same navy as sidebar, no shadow ── */
         .header-wrapper {
           position: sticky; top: 0; z-index: 100;
-          --ah-text: #0d1525;
-          --ah-sub: #64748b;
-          --ah-icon: #64748b;
-          --ah-dd-bg: #ffffff;
-          --ah-dd-text: #0d1525;
-          --ah-btn-bg: #ffffff;
-          --ah-btn-border: #d7deea;
-          background: var(--surface-primary, #f7f7f8);
-          border-bottom: 1px solid var(--border-soft);
+          background: ${HEADER_BG};
+          border-bottom: 1px solid rgba(255,255,255,0.07);
           box-shadow: none;
-        }
-        .dark .header-wrapper {
-          --ah-text: #f1f5f9;
-          --ah-sub: #94a3b8;
-          --ah-icon: #94a3b8;
-          --ah-dd-bg: #1e293b;
-          --ah-dd-text: #f1f5f9;
-          --ah-btn-bg: #0f172a;
-          --ah-btn-border: rgba(255,255,255,0.12);
-          background: #0f1623;
-          border-bottom-color: rgba(255,255,255,0.07);
-        }
-        .dark .app-header { color: #e2e8f0; }
-        /* removed top accent line */
-        .header-wrapper::before {
-          display: none;
         }
 
         .app-header {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 0 28px; height: 64px; gap: 16px;
-          font-family: var(--font-body, system-ui);
+          padding: 0 28px; height: 62px; gap: 16px;
+          font-family: var(--font-body, 'Inter', system-ui);
         }
 
-        /* Left: page title */
-        .header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        /* Left: title */
+        .header-left  { display: flex; align-items: center; gap: 14px; min-width: 0; }
         .header-accent {
-          width: 3px; height: 36px; border-radius: 2px; flex-shrink: 0;
-          background: linear-gradient(180deg, #60a5fa, #818cf8);
+          width: 3px; height: 30px; border-radius: 2px; flex-shrink: 0;
+          background: #4f9cf9;
         }
         .header-title {
-          font-size: 20px; font-weight: 700; color: var(--ah-text);
-          letter-spacing: -0.04em; line-height: 1.15;
+          font-size: 18px; font-weight: 700; color: #ffffff;
+          letter-spacing: -0.03em; line-height: 1.2;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          font-family: var(--font-display, sans-serif);
+          font-family: var(--font-display, 'Inter', sans-serif);
         }
         .header-subtitle {
-          font-size: 12.5px; color: var(--ah-sub); margin-top: 2px;
-          white-space: nowrap; font-weight: 500;
+          font-size: 12px; color: rgba(255,255,255,0.38); margin-top: 2px;
+          white-space: nowrap; font-weight: 400;
         }
 
-        /* Right controls */
-        .header-right   { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .header-actions { display: flex; align-items: center; gap: 8px; margin-right: 4px; }
+        /* Right */
+        .header-right   { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .header-actions { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
 
-        /* Icon buttons */
+        /* Icon buttons — subtle, no heavy border */
         .header-icon-btn {
-          width: 36px; height: 36px; border-radius: 10px;
+          width: 36px; height: 36px; border-radius: 9px;
           display: flex; align-items: center; justify-content: center;
-          border: 1px solid var(--ah-btn-border);
-          background: var(--ah-btn-bg);
-          color: var(--ah-icon); cursor: pointer; text-decoration: none;
-          transition: all 0.15s; position: relative;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.05);
+          color: rgba(255,255,255,0.6); cursor: pointer; text-decoration: none;
+          transition: background 0.14s, color 0.14s; position: relative;
         }
         .header-icon-btn:hover {
-          background: var(--surface-hover);
-          color: var(--ah-text);
-          border-color: var(--ah-btn-border);
+          background: rgba(255,255,255,0.1); color: #ffffff;
         }
         .header-notif-badge {
-          position: absolute; top: 7px; right: 7px;
-          width: 7px; height: 7px; border-radius: 50%;
-          background: #ef4444; border: 1.5px solid #ffffff;
+          position: absolute; top: 8px; right: 8px;
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #ef4444; border: 1.5px solid ${HEADER_BG};
         }
 
         /* Notification panel */
         .notif-panel {
           position: absolute; top: calc(100% + 10px); right: 0;
-          width: 340px; background: var(--ah-dd-bg);
-          border: 1px solid var(--border-soft); border-radius: 16px;
-          box-shadow: 0 8px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1);
-          animation: slideDown 0.18s ease; overflow: hidden; z-index: 299;
+          width: 340px; background: #0d1b35;
+          border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+          animation: ahSlideDown 0.18s ease; overflow: hidden; z-index: 299;
         }
         .notif-header {
-          padding: 14px 16px; border-bottom: 1px solid var(--border-muted);
+          padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.07);
           display: flex; align-items: center; justify-content: space-between;
         }
         .notif-actions { display: flex; align-items: center; gap: 8px; }
         .notif-action-btn {
-          border: none; background: transparent; color: var(--brand-primary);
-          font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0;
+          border: none; background: transparent; color: #60a5fa;
+          font-size: 11.5px; font-weight: 700; cursor: pointer; padding: 0; font-family: inherit;
         }
         .notif-action-btn:hover { text-decoration: underline; }
-        .notif-title { font-weight: 700; font-size: 14px; color: var(--ah-dd-text); }
-        .notif-count-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: rgba(37,99,235,0.1); color: #2563eb; }
+        .notif-title       { font-weight: 700; font-size: 14px; color: #ffffff; }
+        .notif-count-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: rgba(96,165,250,0.15); color: #60a5fa; }
         .notif-item {
           display: flex; align-items: flex-start; gap: 11px;
-          padding: 12px 16px; cursor: pointer; transition: background 0.15s;
-          border-bottom: 1px solid var(--border-muted);
+          padding: 12px 16px; cursor: pointer; transition: background 0.13s;
+          border-bottom: 1px solid rgba(255,255,255,0.05);
         }
         .notif-item:last-child { border-bottom: none; }
-        .notif-item:hover { background: var(--surface-hover); }
-        .notif-item.unread { background: rgba(37,99,235,0.03); }
-        .notif-icon-wrap { width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-        .notif-item-title { font-size: 13px; font-weight: 700; color: var(--ah-dd-text); }
-        .notif-item-msg   { font-size: 12px; color: var(--ah-sub); margin-top: 2px; line-height: 1.45; }
-        .notif-item-time  { font-size: 10.5px; color: var(--ah-sub); margin-top: 4px; }
+        .notif-item:hover  { background: rgba(255,255,255,0.05); }
+        .notif-item.unread { background: rgba(96,165,250,0.04); }
+        .notif-icon-wrap   { width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .notif-item-title  { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+        .notif-item-msg    { font-size: 12px; color: rgba(255,255,255,0.45); margin-top: 2px; line-height: 1.45; }
+        .notif-item-time   { font-size: 10.5px; color: rgba(255,255,255,0.28); margin-top: 4px; }
         .notif-dot { width: 7px; height: 7px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; margin-top: 5px; }
 
         /* Profile button */
         .header-profile-btn {
           display: flex; align-items: center; gap: 8px;
-          padding: 5px 12px 5px 5px; border-radius: 11px;
-          border: 1px solid var(--ah-btn-border);
-          background: var(--ah-btn-bg);
-          cursor: pointer; transition: all 0.15s; font-family: var(--font-body);
+          padding: 5px 10px 5px 5px; border-radius: 10px;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.05);
+          cursor: pointer; transition: background 0.14s; font-family: inherit;
         }
-        .header-profile-btn:hover {
-          background: var(--surface-hover);
-          border-color: var(--border-input);
-        }
+        .header-profile-btn:hover { background: rgba(255,255,255,0.09); }
         .header-avatar {
           width: 30px; height: 30px; border-radius: 50%;
-          background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
           display: flex; align-items: center; justify-content: center;
-          font-size: 11px; font-weight: 800; color: white; flex-shrink: 0;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.35);
+          font-size: 11px; font-weight: 700; color: white; flex-shrink: 0;
         }
-        .header-profile-name { font-size: 13.5px; font-weight: 700; color: var(--ah-text); }
+        .header-profile-name { font-size: 13.5px; font-weight: 600; color: #ffffff; }
 
         /* Profile dropdown */
         .dropdown-panel {
           position: absolute; top: calc(100% + 10px); right: 0;
-          width: 220px; background: var(--ah-dd-bg);
-          border: 1px solid var(--border-soft); border-radius: 14px;
-          box-shadow: 0 8px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1);
-          animation: slideDown 0.18s ease; overflow: hidden; z-index: 299;
+          width: 210px; background: #0d1b35;
+          border: 1px solid rgba(255,255,255,0.1); border-radius: 13px;
+          box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+          animation: ahSlideDown 0.18s ease; overflow: hidden; z-index: 299;
         }
-        .dropdown-header { padding: 14px 16px 11px; border-bottom: 1px solid var(--border-muted); }
-        .dropdown-username { font-weight: 700; font-size: 13.5px; color: var(--ah-dd-text); }
-        .dropdown-email    { font-size: 11.5px; color: var(--ah-sub); margin-top: 2px; }
+        .dropdown-header { padding: 13px 16px 11px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .dropdown-username { font-weight: 700; font-size: 13.5px; color: #ffffff; }
+        .dropdown-email    { font-size: 11.5px; color: rgba(255,255,255,0.35); margin-top: 2px; }
         .dropdown-section  { padding: 5px 0; }
         .dropdown-item {
           display: flex; align-items: center; gap: 9px;
           padding: 9px 14px; font-size: 13.5px; font-weight: 500;
-          color: var(--ah-sub); text-decoration: none;
-          transition: all 0.12s; cursor: pointer;
+          color: rgba(255,255,255,0.65); text-decoration: none;
+          transition: background 0.13s, color 0.13s; cursor: pointer;
           border: none; background: none; width: 100%;
-          font-family: var(--font-body); text-align: left;
+          font-family: inherit; text-align: left;
         }
-        .dropdown-item:hover { background: var(--surface-hover); color: var(--ah-dd-text); }
-        .dropdown-item.danger:hover { background: rgba(239,68,68,0.06); color: #ef4444; }
-        .dropdown-divider { height: 1px; background: var(--border-muted); margin: 2px 0; }
+        .dropdown-item:hover { background: rgba(255,255,255,0.07); color: #ffffff; }
+        .dropdown-item.danger:hover { background: rgba(239,68,68,0.1); color: #fca5a5; }
+        .dropdown-divider { height: 1px; background: rgba(255,255,255,0.07); margin: 2px 0; }
 
         /* Workflow banner */
         .workflow-banner {
           display: flex; align-items: center; gap: 10px;
-          padding: 10px 28px; font-size: 13px; font-weight: 500;
-          color: var(--text-secondary);
-          background: #ffffff;
-          border-top: 1px solid var(--border-muted);
+          padding: 9px 28px; font-size: 13px; font-weight: 500;
+          color: rgba(255,255,255,0.5);
+          background: rgba(255,255,255,0.03);
+          border-top: 1px solid rgba(255,255,255,0.05);
         }
         .workflow-banner-link {
           display: inline-flex; align-items: center; gap: 4px;
@@ -409,35 +345,35 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
           position: fixed; inset: 0;
           background: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
           z-index: 500; display: flex; align-items: center; justify-content: center;
-          padding: 20px; animation: fadeIn 0.15s ease;
+          padding: 20px; animation: ahFadeIn 0.15s ease;
         }
         .ah-modal {
-          background: var(--surface-card); border: 1px solid var(--border-soft);
+          background: var(--surface-card,#ffffff); border: 1px solid var(--border-soft,#e2e8f0);
           border-radius: 20px; padding: 28px; max-width: 360px; width: 100%;
-          box-shadow: 0 24px 60px rgba(0,0,0,0.25); animation: scaleIn 0.18s ease;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.25); animation: ahScaleIn 0.18s ease;
         }
         .ah-modal-icon {
           width: 52px; height: 52px; border-radius: 14px;
           background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.15);
           display: flex; align-items: center; justify-content: center; margin-bottom: 16px;
         }
-        .ah-modal-title { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 8px; }
-        .ah-modal-text  { color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+        .ah-modal-title { font-size: 18px; font-weight: 700; color: var(--text-primary,#0f172a); margin-bottom: 8px; }
+        .ah-modal-text  { color: var(--text-secondary,#475569); font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
         .ah-modal-btns  { display: flex; gap: 10px; }
         .ah-modal-cancel {
           flex: 1; padding: 12px; border-radius: 11px;
-          border: 1.5px solid var(--border-soft); background: var(--surface-card);
-          color: var(--text-secondary); font-weight: 600; font-size: 14px;
-          cursor: pointer; font-family: inherit; transition: all 0.15s;
+          border: 1.5px solid var(--border-soft,#e2e8f0);
+          background: var(--surface-card,#ffffff);
+          color: var(--text-secondary,#475569); font-weight: 600; font-size: 14px;
+          cursor: pointer; font-family: inherit; transition: background 0.15s;
         }
-        .ah-modal-cancel:hover { background: var(--surface-hover); }
+        .ah-modal-cancel:hover { background: var(--surface-hover,#f8fafc); }
         .ah-modal-confirm {
           flex: 1; padding: 12px; border-radius: 11px; border: none;
           background: #ef4444; color: white; font-weight: 700; font-size: 14px;
-          cursor: pointer; font-family: inherit;
-          box-shadow: 0 4px 14px rgba(239,68,68,0.3); transition: all 0.15s;
+          cursor: pointer; font-family: inherit; transition: all 0.15s;
         }
-        .ah-modal-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.4); }
+        .ah-modal-confirm:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(239,68,68,0.38); }
 
         @media (max-width: 768px) {
           .app-header { padding: 0 16px; }
@@ -455,16 +391,13 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
           </div>
         </div>
 
-        {/* Right: actions + icons + profile */}
+        {/* Right */}
         <div className="header-right">
           {actions && <div className="header-actions">{actions}</div>}
 
-          <button
-            className="header-icon-btn"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+          {/* Theme toggle */}
+          <button className="header-icon-btn" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 
           {/* Notifications */}
@@ -474,7 +407,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
               onClick={() => { setNotifOpen(!notifOpen); setProfileOpen(false); }}
               aria-label="Notifications"
             >
-              <Bell size={17} />
+              <Bell size={16} />
               {unreadCount > 0 && <span className="header-notif-badge" />}
             </button>
 
@@ -486,18 +419,18 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
                     {unreadCount > 0 && <span className="notif-count-badge">{unreadCount} new</span>}
                     {notifications.length > 0 && (
                       <>
-                        <button className="notif-action-btn" onClick={markAllAsRead}>Mark all read</button>
+                        <button className="notif-action-btn" onClick={markAllAsRead}>Mark read</button>
                         <button className="notif-action-btn" onClick={clearNotifications}>Clear</button>
                       </>
                     )}
                   </div>
                 </div>
                 {notifications.length === 0 && (
-                  <div style={{ padding: "14px 16px", fontSize: 12.5, color: "var(--text-muted)" }}>No notifications</div>
+                  <div style={{ padding: "14px 16px", fontSize: 12.5, color: "rgba(255,255,255,0.35)" }}>No notifications</div>
                 )}
                 {notifications.map((n) => (
                   <div key={n.id} className={`notif-item${n.read ? "" : " unread"}`} onClick={() => markOneAsRead(n.id)}>
-                    <div className="notif-icon-wrap" style={{ background: `${n.color}15` }}>
+                    <div className="notif-icon-wrap" style={{ background: `${n.color}20` }}>
                       <n.icon size={16} color={n.color} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -512,12 +445,12 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
             )}
           </div>
 
-          {/* Settings icon */}
+          {/* Settings */}
           <Link href="/settings" className="header-icon-btn" aria-label="Settings">
-            <Settings size={17} />
+            <Settings size={16} />
           </Link>
 
-          {/* Profile button */}
+          {/* Profile */}
           <div style={{ position: "relative" }}>
             <button
               className="header-profile-btn"
@@ -525,7 +458,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
             >
               <div className="header-avatar">{initials}</div>
               <span className="header-profile-name">{user?.name?.split(" ")[0] || "User"}</span>
-              <ChevronDown size={14} color="#64748b" />
+              <ChevronDown size={13} color="rgba(255,255,255,0.4)" />
             </button>
 
             {profileOpen && (
@@ -536,16 +469,16 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
                 </div>
                 <div className="dropdown-section">
                   <Link href="/profile" className="dropdown-item" onClick={() => setProfileOpen(false)}>
-                    <User size={15} /> Profile
+                    <User size={14} /> Profile
                   </Link>
                   <Link href="/settings" className="dropdown-item" onClick={() => setProfileOpen(false)}>
-                    <Settings size={15} /> Settings
+                    <Settings size={14} /> Settings
                   </Link>
                 </div>
                 <div className="dropdown-divider" />
                 <div className="dropdown-section">
                   <button className="dropdown-item danger" onClick={() => { setProfileOpen(false); setShowLogout(true); }}>
-                    <LogOut size={15} /> Sign out
+                    <LogOut size={14} /> Sign out
                   </button>
                 </div>
               </div>
@@ -557,10 +490,10 @@ const AppHeader: React.FC<AppHeaderProps> = ({ title, subtitle, workflowBanner, 
       {/* Workflow banner */}
       {workflowBanner && (
         <div className="workflow-banner">
-          <Info size={14} />
+          <Info size={13} />
           <span>{workflowBanner.message}</span>
           <Link href={workflowBanner.linkHref} className="workflow-banner-link">
-            {workflowBanner.linkText} <ArrowRight size={13} />
+            {workflowBanner.linkText} <ArrowRight size={12} />
           </Link>
         </div>
       )}

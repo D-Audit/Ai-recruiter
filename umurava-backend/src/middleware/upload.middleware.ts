@@ -1,20 +1,32 @@
-// src/middleware/upload.middleware.ts
-// UPDATED — now also allows .docx .doc .txt .odt for the /upload/resume route
+// umurava-backend/src/middleware/upload.middleware.ts
+// Fixed:
+//   - diskStorage destination now auto-creates the uploads/ directory if it doesn't exist
+//   - resumeFileFilter accepts all common resume types
+//   - Sizes increased slightly to handle larger PDFs/DOCX
+
 import multer from "multer";
 import path from "path";
+import fs from "fs";
+
+// Ensure uploads directory exists at startup (prevents ENOENT on first deploy)
+const UPLOADS_DIR = "uploads/";
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
+  destination: (_req, _file, cb) => {
+    cb(null, UPLOADS_DIR);
   },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${file.originalname}`;
-    cb(null, uniqueName);
+  filename: (_req, file, cb) => {
+    // Sanitise original name before using it in the filename
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    cb(null, `${Date.now()}-${safe}`);
   },
 });
 
-// Original filter — CSV, PDF, XLSX only (kept for csv/xlsx routes)
-const fileFilter = (req: any, file: any, cb: any) => {
+// ── CSV / XLSX filter (for csv + xlsx upload routes) ──────────────────────
+const fileFilter = (_req: any, file: any, cb: any) => {
   const allowedTypes = [".csv", ".pdf", ".xlsx"];
   const ext = path.extname(file.originalname).toLowerCase();
   if (allowedTypes.includes(ext)) {
@@ -24,27 +36,38 @@ const fileFilter = (req: any, file: any, cb: any) => {
   }
 };
 
-// NEW filter — for /upload/resume route: PDF + DOCX + DOC + TXT + ODT
-const resumeFileFilter = (req: any, file: any, cb: any) => {
+// ── Resume filter (PDF + DOCX + DOC + TXT + ODT) ─────────────────────────
+const resumeFileFilter = (_req: any, file: any, cb: any) => {
   const allowedTypes = [".pdf", ".docx", ".doc", ".txt", ".odt"];
   const ext = path.extname(file.originalname).toLowerCase();
   if (allowedTypes.includes(ext)) {
     cb(null, true);
   } else {
-    cb(new Error("Only PDF, DOCX, DOC, TXT or ODT files are allowed for resume upload"), false);
+    cb(
+      new Error(
+        `File type "${ext}" is not allowed. Please upload a PDF, DOCX, DOC, TXT, or ODT file.`
+      ),
+      false
+    );
   }
 };
 
-// Original export — unchanged, used by csv/xlsx/pdf routes
+// ── Original export — used by csv/xlsx/pdf routes ─────────────────────────
 export const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: {
+    fileSize: 15 * 1024 * 1024, // 15 MB — generous for PDF uploads
+    files:    20,                // max 20 files per request
+  },
 });
 
-// NEW export — used only by /upload/resume route
+// ── Resume export — used by /upload/resume route ──────────────────────────
 export const resumeUpload = multer({
   storage,
   fileFilter: resumeFileFilter,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB (DOCX can be larger)
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 MB — DOCX with embedded images can be large
+    files:    20,                // max 20 files per request (batch resume uploads)
+  },
 });
