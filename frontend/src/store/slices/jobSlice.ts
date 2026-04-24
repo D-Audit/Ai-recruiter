@@ -73,6 +73,8 @@ const jobSlice = createSlice({
     setCurrentJob: (state, action) => {
       state.currentJob = action.payload;
     },
+
+    // Optimistic delta — used when backend doesn't return real count
     bumpJobApplicants: (state, action: { payload: { jobId: string; delta: number } }) => {
       const j = state.jobs.find((x) => x._id === action.payload.jobId);
       if (j) {
@@ -80,6 +82,15 @@ const jobSlice = createSlice({
           0,
           (j.applicantsCount || 0) + action.payload.delta
         );
+      }
+    },
+
+    // ✅ NEW: Set the REAL count returned by the backend
+    // Prevents drift caused by duplicate-skipping or race conditions
+    syncJobCount: (state, action: { payload: { jobId: string; count: number } }) => {
+      const j = state.jobs.find((x) => x._id === action.payload.jobId);
+      if (j) {
+        j.applicantsCount = Math.max(0, action.payload.count);
       }
     },
   },
@@ -112,5 +123,5 @@ const jobSlice = createSlice({
   },
 });
 
-export const { setCurrentJob, bumpJobApplicants } = jobSlice.actions;
+export const { setCurrentJob, bumpJobApplicants, syncJobCount } = jobSlice.actions;
 export default jobSlice.reducer;

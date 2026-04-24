@@ -110,6 +110,7 @@ IMPORTANT RULES:
 - Never give the same score to two different candidates
 - Scores must reflect real relative ranking — spread them out
 
+
 ════════════════════════════════════════
 CANDIDATES (${applicants.length} total)
 ════════════════════════════════════════

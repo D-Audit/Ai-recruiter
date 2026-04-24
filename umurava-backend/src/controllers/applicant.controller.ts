@@ -1,9 +1,4 @@
 // umurava-backend/src/controllers/applicant.controller.ts
-// Fixed:
-//   - uploadPDF: now cleans up file correctly; Cloudinary handled inside resume.service
-//   - uploadResume: same — cleanup is inside resume.service after Cloudinary
-//   - uploadPDF: now supports multiple PDFs in one request (multiUpload)
-//   - All file paths cleaned up on error paths too
 
 import { Response } from "express";
 import fs from "fs";
@@ -26,23 +21,35 @@ function cleanupFile(filePath?: string): void {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: link an applicant to a job, handling duplicates gracefully
+// Always returns the applicant (new or existing) so frontend can display it
 // ─────────────────────────────────────────────────────────────────────────────
 async function linkApplicantToJob(
   profile: any,
   jobId: string
 ): Promise<{ applicant: any; isNew: boolean }> {
-  const existing = await Applicant.findOne({ email: profile.email });
+  // Email is required to detect duplicates
+  if (!profile.email || profile.email.trim() === "") {
+    // Create with a unique placeholder so it still saves — recruiter can edit later
+    const fallbackEmail = `candidate.${Date.now()}.${Math.random().toString(36).slice(2, 7)}@review.pending`;
+    profile = { ...profile, email: fallbackEmail, _emailMissing: true };
+  }
+
+  const existing = await Applicant.findOne({ email: profile.email.toLowerCase().trim() });
+
   if (existing) {
-    // Update existing applicant's resume URL if a new one was provided
+    // Existing applicant — link to this job and optionally update resumeUrl
     const update: any = { $addToSet: { jobIds: jobId } };
     if (profile.resumeUrl && profile.resumeUrl !== existing.resumeUrl) {
       update.$set = { resumeUrl: profile.resumeUrl };
     }
-    await Applicant.findByIdAndUpdate(existing._id, update);
-    return { applicant: existing, isNew: false };
+    const updated = await Applicant.findByIdAndUpdate(existing._id, update, { new: true });
+    return { applicant: updated || existing, isNew: false };
   }
+
+  // New applicant
   const applicant = await Applicant.create({
     ...profile,
+    email: profile.email.toLowerCase().trim(),
     jobIds: [jobId],
   });
   return { applicant, isNew: true };
@@ -125,7 +132,9 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
     res.json({
       success: true,
       count,
-      message: `${count} applicant${count !== 1 ? "s" : ""} uploaded from CSV${parsed.length > count ? ` (${parsed.length - count} duplicates skipped)` : ""}`,
+      message: `${count} applicant${count !== 1 ? "s" : ""} uploaded from CSV${
+        parsed.length > count ? ` (${parsed.length - count} duplicates skipped)` : ""
+      }`,
     });
   } catch (error: any) {
     console.error("❌ CSV upload error:", error);
@@ -137,15 +146,9 @@ export const uploadCSV = async (req: any, res: Response): Promise<void> => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/applicants/upload/pdf
-// Single OR multiple PDFs (field name "file" or "files")
-//
-// Fixed:
-//   - File cleanup now handled inside resume.service (after Cloudinary upload)
-//   - Supports multi-PDF (array of files) via upload.array("file", 20)
-//   - Returns count of all added applicants across all PDFs
+// Supports single or multiple PDFs
 // ─────────────────────────────────────────────────────────────────────────────
 export const uploadPDF = async (req: any, res: Response): Promise<void> => {
-  // Support both single file (req.file) and multiple files (req.files)
   const files: Express.Multer.File[] = req.files?.length
     ? (req.files as Express.Multer.File[])
     : req.file
@@ -159,41 +162,41 @@ export const uploadPDF = async (req: any, res: Response): Promise<void> => {
 
   const { jobId } = req.body;
   if (!jobId) {
-    // Clean up all uploaded files
     files.forEach(f => cleanupFile(f.path));
     res.status(400).json({ success: false, message: "jobId is required" });
     return;
   }
 
-  const results: { file: string; status: "created" | "linked" | "error"; name?: string; error?: string }[] = [];
+  const results: {
+    file: string;
+    status: "created" | "linked" | "error";
+    name?: string;
+    applicant?: any;
+    error?: string;
+  }[] = [];
   let totalAdded = 0;
 
   for (const file of files) {
     try {
       console.log(`📄 Parsing PDF: ${file.originalname}`);
-      // parsePDFResume → parseResumeFile → uploads to Cloudinary, cleans up temp file
       const parsed = await parsePDFResume(file.path);
-
       const { applicant, isNew } = await linkApplicantToJob(parsed, jobId);
+
       if (isNew) {
         await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
         totalAdded++;
       }
 
       results.push({
-        file:   file.originalname,
-        status: isNew ? "created" : "linked",
-        name:   `${parsed.firstName || ""} ${parsed.lastName || ""}`.trim() || file.originalname,
+        file:      file.originalname,
+        status:    isNew ? "created" : "linked",
+        name:      `${parsed.firstName || ""} ${parsed.lastName || ""}`.trim() || file.originalname,
+        applicant, // always return applicant so frontend can display it
       });
     } catch (error: any) {
       console.error(`❌ PDF upload error for ${file.originalname}:`, error);
-      // Attempt cleanup in case resume.service didn't (e.g. early throw)
       cleanupFile(file.path);
-      results.push({
-        file:   file.originalname,
-        status: "error",
-        error:  error.message,
-      });
+      results.push({ file: file.originalname, status: "error", error: error.message });
     }
   }
 
@@ -201,23 +204,23 @@ export const uploadPDF = async (req: any, res: Response): Promise<void> => {
   const errorCount   = results.filter(r => r.status === "error").length;
 
   if (successCount === 0 && errorCount > 0) {
-    res.status(500).json({
-      success: false,
-      message: "All PDF uploads failed",
-      results,
-    });
+    res.status(500).json({ success: false, message: "All PDF uploads failed", results });
     return;
   }
 
-  const status = successCount > 0 && files.length === 1
-    ? (results[0].status === "created" ? 201 : 200)
-    : 200;
+  const httpStatus =
+    successCount > 0 && files.length === 1
+      ? results[0].status === "created" ? 201 : 200
+      : 200;
 
-  res.status(status).json({
+  res.status(httpStatus).json({
     success: true,
     count:   totalAdded,
-    message: `${successCount} PDF${successCount !== 1 ? "s" : ""} processed${errorCount > 0 ? `, ${errorCount} failed` : ""}`,
+    message: `${successCount} PDF${successCount !== 1 ? "s" : ""} processed${
+      errorCount > 0 ? `, ${errorCount} failed` : ""
+    }`,
     results,
+    applicant: results.find(r => r.applicant)?.applicant, // backward compat
   });
 };
 
@@ -267,16 +270,10 @@ export const uploadXLSX = async (req: any, res: Response): Promise<void> => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/applicants/upload/resume
-// Generic resume handler (PDF, DOCX, DOC, TXT, ODT)
-// Supports multiple files via resumeUpload.array("file", 20)
-//
-// Fixed:
-//   - File cleanup is now inside resume.service (after Cloudinary upload completes)
-//   - Multiple files processed sequentially (respects Gemini rate limit)
-//   - Returns per-file results for frontend progress display
+// Generic resume handler: PDF, DOCX, DOC, TXT, ODT — single or multiple files
+// Always returns the applicant object (new or existing) for frontend display
 // ─────────────────────────────────────────────────────────────────────────────
 export const uploadResume = async (req: any, res: Response): Promise<void> => {
-  // Support both single file and array
   const files: Express.Multer.File[] = req.files?.length
     ? (req.files as Express.Multer.File[])
     : req.file
@@ -295,16 +292,20 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
     return;
   }
 
-  const results: { file: string; status: "created" | "linked" | "error"; applicant?: any; error?: string }[] = [];
+  const results: {
+    file: string;
+    status: "created" | "linked" | "error";
+    applicant?: any;
+    error?: string;
+  }[] = [];
   let totalAdded = 0;
 
   for (const file of files) {
     try {
       console.log(`📄 Parsing resume: ${file.originalname}`);
-      // parseResumeFile handles: text extraction → Cloudinary upload → cleanup → Gemini parse
       const parsed = await parseResumeFile(file.path);
-
       const { applicant, isNew } = await linkApplicantToJob(parsed, jobId);
+
       if (isNew) {
         await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
         totalAdded++;
@@ -313,16 +314,18 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
       results.push({
         file:      file.originalname,
         status:    isNew ? "created" : "linked",
-        applicant: isNew ? applicant : undefined,
+        applicant, // ✅ FIXED: always return applicant, not just for new ones
       });
+
+      if (isNew) {
+        console.log(`✅ New applicant created: ${applicant.firstName} ${applicant.lastName}`);
+      } else {
+        console.log(`🔗 Existing applicant linked: ${applicant.firstName} ${applicant.lastName}`);
+      }
     } catch (error: any) {
       console.error(`❌ Resume upload error for ${file.originalname}:`, error);
-      cleanupFile(file.path); // Fallback cleanup in case resume.service threw early
-      results.push({
-        file:   file.originalname,
-        status: "error",
-        error:  error.message,
-      });
+      cleanupFile(file.path);
+      results.push({ file: file.originalname, status: "error", error: error.message });
     }
   }
 
@@ -338,17 +341,19 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
     return;
   }
 
-  // For backward compat with frontend (expects .applicant and .count)
   const firstApplicant = results.find(r => r.applicant)?.applicant;
-  const httpStatus = successCount > 0 && files.length === 1
-    ? (results[0].status === "created" ? 201 : 200)
-    : 200;
+  const httpStatus =
+    successCount > 0 && files.length === 1
+      ? results[0].status === "created" ? 201 : 200
+      : 200;
 
   res.status(httpStatus).json({
     success:   true,
     count:     totalAdded,
     applicant: firstApplicant, // backward compat for single-file callers
-    message:   `${successCount} resume${successCount !== 1 ? "s" : ""} processed${errorCount > 0 ? `, ${errorCount} failed` : ""}`,
+    message: `${successCount} resume${successCount !== 1 ? "s" : ""} processed${
+      errorCount > 0 ? `, ${errorCount} failed` : ""
+    }`,
     results,
   });
 };
@@ -365,7 +370,6 @@ const BLOCKED_DOMAINS = [
 async function fetchUrl(url: string): Promise<{ buffer: Buffer; contentType: string }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const lib = parsedUrl.protocol === "https:" ? require("https") : require("http");
     const request = lib.request(
       {
@@ -428,7 +432,6 @@ function detectKind(contentType: string, url: string): UrlKind {
 export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, url } = req.body;
-
     if (!jobId || !url) {
       res.status(400).json({ success: false, message: "jobId and url are required" });
       return;
@@ -445,7 +448,7 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-    const isBlocked = BLOCKED_DOMAINS.some((d) => parsedUrl.hostname.includes(d));
+    const isBlocked = BLOCKED_DOMAINS.some(d => parsedUrl.hostname.includes(d));
     if (isBlocked) {
       res.status(400).json({
         success: false,
@@ -461,11 +464,11 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
     const kind = detectKind(contentType, url);
 
     if (kind === "csv" || kind === "xlsx" || kind === "xls") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const XLSX = require("xlsx");
-      const workbook = kind === "csv"
-        ? XLSX.read(buffer.toString("utf-8"), { type: "string" })
-        : XLSX.read(buffer, { type: "buffer" });
+      const workbook =
+        kind === "csv"
+          ? XLSX.read(buffer.toString("utf-8"), { type: "string" })
+          : XLSX.read(buffer, { type: "buffer" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
@@ -482,8 +485,8 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
           certifications: [], projects: [],
           availability: { status: "Available", type: "Full-time", startDate: "" },
           socialLinks:  { linkedin: "", github: "", portfolio: "" },
-          source:  "external",
-          jobIds:  [jobId],
+          source: "external",
+          jobIds: [jobId],
         });
       }
 
@@ -503,15 +506,12 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
       return;
     }
 
-     let rawText = "";
+    let rawText = "";
     if (kind === "pdf") {
-      // ✅ FIX: pdf-parse v2.x changed its export — use .default
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const pdfParseModule = require("pdf-parse");
       const pdfParse = pdfParseModule.default ?? pdfParseModule;
       rawText = (await pdfParse(buffer)).text || "";
     } else if (kind === "docx") {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mammoth = require("mammoth");
       rawText = (await mammoth.extractRawText({ buffer })).value || "";
     } else if (kind === "text") {
@@ -519,6 +519,7 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
     } else {
       rawText = htmlToText(buffer.toString("utf-8"));
     }
+
     if (rawText.trim().length < 50) {
       res.status(422).json({
         success: false,
@@ -531,13 +532,12 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
 
     console.log(`🤖 Parsing URL content with Gemini (${rawText.length} chars)`);
     const parsed = await parseResumeUrl(url, rawText);
-
     const { applicant, isNew } = await linkApplicantToJob(parsed, jobId);
     if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
 
     res.status(isNew ? 201 : 200).json({
       success:   true,
-      count:     1,
+      count:     isNew ? 1 : 0,
       applicant,
       message:   isNew ? "Applicant imported from URL" : "Applicant already existed — linked to this job",
     });
@@ -568,7 +568,7 @@ export const submitManualApplicant = async (req: any, res: Response): Promise<vo
     );
     if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
 
-    res.status(isNew ? 201 : 200).json({ success: true, count: 1, applicant });
+    res.status(isNew ? 201 : 200).json({ success: true, count: isNew ? 1 : 0, applicant });
   } catch (error: any) {
     console.error("❌ Manual applicant error:", error);
     res.status(500).json({ success: false, message: "Manual applicant submit failed: " + error.message });
@@ -576,7 +576,7 @@ export const submitManualApplicant = async (req: any, res: Response): Promise<vo
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/select
+// POST /api/applicants/select (Umurava profiles)
 // ─────────────────────────────────────────────────────────────────────────────
 export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
@@ -587,7 +587,7 @@ export const selectUmuravaProfiles = async (req: any, res: Response): Promise<vo
     }
 
     const alreadyLinked    = await Applicant.find({ _id: { $in: profileIds }, jobIds: jobId }).select("_id");
-    const alreadyLinkedIds = new Set(alreadyLinked.map((p) => String(p._id)));
+    const alreadyLinkedIds = new Set(alreadyLinked.map(p => String(p._id)));
     const newIds           = profileIds.filter((id: string) => !alreadyLinkedIds.has(String(id)));
 
     if (newIds.length === 0) {
@@ -618,7 +618,7 @@ export const removeApplicantFromJob = async (req: any, res: Response): Promise<v
       return;
     }
 
-    applicant.jobIds = applicant.jobIds.filter((id) => String(id) !== String(jobId));
+    applicant.jobIds = applicant.jobIds.filter(id => String(id) !== String(jobId));
 
     if (applicant.jobIds.length === 0) {
       await Applicant.findByIdAndDelete(applicantId);
@@ -630,14 +630,6 @@ export const removeApplicantFromJob = async (req: any, res: Response): Promise<v
       { jobId },
       { $pull: { rankedCandidates: { candidateId: applicant._id } } }
     );
-
-    const screeningResults = await ScreeningResult.find({ jobId });
-    for (const sr of screeningResults) {
-      await ScreeningResult.findByIdAndUpdate(sr._id, {
-        totalApplicants:  sr.rankedCandidates.length,
-        shortlistedCount: sr.rankedCandidates.filter((c) => c.score >= 60).length,
-      });
-    }
 
     await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: -1 } });
 
