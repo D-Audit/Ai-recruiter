@@ -76,6 +76,7 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const googleCallbackRef = useRef<(response: any) => void>(() => {});
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     if (!clientId) return;
@@ -84,8 +85,11 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
     const existing = document.getElementById("google-gsi-script");
     const init = () => {
       if (!window.google || !clientId || !buttonRef.current) return;
+      if (!initializedRef.current) {
+        window.google.accounts.id.initialize({ client_id: clientId, callback: googleCallbackRef.current, ux_mode: "popup" });
+        initializedRef.current = true;
+      }
       buttonRef.current.innerHTML = "";
-      window.google.accounts.id.initialize({ client_id: clientId, callback: googleCallbackRef.current, ux_mode: "popup" });
       window.google.accounts.id.renderButton(buttonRef.current, { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left", shape: "pill" });
     };
     if (existing) { init(); return; }
@@ -106,11 +110,6 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
     <div
       style={{
         width: "100%",
-        padding: "6px",
-        borderRadius: 999,
-        background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-        border: "1px solid #e2e8f0",
-        boxShadow: "0 10px 28px rgba(15,23,42,0.06)",
         opacity: loading ? 0.6 : 1,
         pointerEvents: loading ? "none" : "auto"
       }}
@@ -124,7 +123,6 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
           alignItems: "center",
           justifyContent: "center",
           overflow: "hidden",
-          borderRadius: 999,
         }}
       />
     </div>
@@ -194,7 +192,7 @@ export default function RegisterPage() {
     <>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        .reg-root { min-height: 100vh; display: flex; font-family: 'Inter', system-ui, sans-serif; }
+        .reg-root { min-height: 100vh; display: flex; font-family: var(--font-body, 'Manrope', 'Inter', system-ui, sans-serif); }
         .reg-hero {
           flex: 1 1 50%;
           background: linear-gradient(160deg, #0f1c3a 0%, #0b1528 40%, #0d1f4a 100%);
@@ -207,42 +205,63 @@ export default function RegisterPage() {
           background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%); pointer-events: none;
         }
         .reg-hero::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-image:
+            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+          background-size: 76px 76px;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .reg-hero .hero-grid-fade {
+          position: absolute;
+          inset: 0;
+          background:
+            radial-gradient(circle at top left, rgba(37,99,235,0.08), transparent 34%),
+            linear-gradient(180deg, rgba(15,28,58,0.18), rgba(15,28,58,0.28));
+          pointer-events: none;
+          z-index: 0;
+        }
+        .reg-hero .hero-orb {
           content: ''; position: absolute; bottom: -80px; right: -80px;
           width: 300px; height: 300px; border-radius: 50%;
           background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%); pointer-events: none;
+          z-index: 0;
         }
         .reg-hero-content { position: relative; z-index: 1; width: 100%; }
-        .reg-hero-tagline { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 18px; line-height: 1.45; font-weight: 600; letter-spacing: -0.02em; color: rgba(255,255,255,0.9); margin-top: 28px; text-align: left; }
-        .reg-hero-steps { margin-top: 40px; display: flex; flex-direction: column; gap: 0; }
-        .reg-step { display: flex; align-items: flex-start; gap: 14px; padding: 16px 0; position: relative; }
-        .reg-step:not(:last-child)::after { content: ''; position: absolute; left: 17px; top: 46px; width: 1px; height: 20px; background: rgba(255,255,255,0.1); }
-        .reg-step-num { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; background: linear-gradient(135deg, rgba(37,99,235,0.4), rgba(124,58,237,0.4)); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: white; }
-        .reg-step-title { font-family: var(--font-display, 'Sora', sans-serif); font-weight: 700; color: white; font-size: 17px; letter-spacing: -0.03em; margin-bottom: 4px; line-height: 1.12; }
-        .reg-step-text  { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.68); line-height: 1.5; letter-spacing: -0.01em; }
+        .reg-hero-tagline { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 19px; line-height: 1.42; font-weight: 600; letter-spacing: -0.02em; color: rgba(255,255,255,0.9); margin-top: 28px; text-align: left; max-width: 440px; }
+        .reg-hero-steps { margin-top: 36px; display: flex; flex-direction: column; gap: 16px; max-width: 460px; }
+        .reg-step { display: flex; align-items: center; gap: 14px; padding: 0; position: relative; border-radius: 0; background: transparent; border: none; backdrop-filter: none; }
+        .reg-step:not(:last-child)::after { display: none; }
+        .reg-step-num { width: 28px; height: 28px; border-radius: 0; flex-shrink: 0; background: transparent; border: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: white; }
+        .reg-step-title { font-family: var(--font-display, 'Sora', sans-serif); font-weight: 700; color: white; font-size: 17px; letter-spacing: -0.025em; line-height: 1.12; }
+        .reg-step-text  { display: none; }
 
-        .reg-form-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; background: #f8fafc; padding: 40px 24px; }
-        .reg-form-card  { width: 100%; max-width: 440px; background: white; border-radius: 24px; border: 1px solid #e2e8f0; box-shadow: 0 4px 24px rgba(0,0,0,0.07); padding: 40px 36px; animation: slideUp 0.3s ease; }
+        .reg-form-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%); padding: 48px 24px; }
+        .reg-form-card  { width: 100%; max-width: 440px; background: rgba(255,255,255,0.94); border-radius: 28px; border: 1px solid rgba(226,232,240,0.9); box-shadow: none; backdrop-filter: blur(10px); padding: 44px 40px 40px; animation: slideUp 0.3s ease; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
-        .form-title { font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.4px; margin-bottom: 4px; }
-        .form-sub   { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+        .form-title { font-family: var(--font-display, 'Sora', 'Inter', sans-serif); font-size: clamp(2.25rem, 3.6vw, 2.55rem); font-weight: 800; color: #0b1220; letter-spacing: -0.055em; line-height: 1.02; margin-bottom: 10px; }
+        .form-sub   { font-size: 17px; color: #667085; margin-bottom: 32px; line-height: 1.5; font-weight: 500; }
 
         .form-error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 11px; margin-bottom: 20px; background: #fef2f2; border: 1px solid #fecaca; animation: slideDown 0.2s ease; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
         .form-error-text { font-size: 13.5px; color: #dc2626; line-height: 1.5; font-weight: 500; }
 
-        .form-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
-        .form-divider-line { flex: 1; height: 1px; background: #e2e8f0; }
-        .form-divider-text { font-size: 12px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+        .form-divider { display: flex; align-items: center; gap: 14px; margin: 28px 0 24px; }
+        .form-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(226,232,240,0), #dbe3ee 18%, #dbe3ee 82%, rgba(226,232,240,0)); }
+        .form-divider-text { font-size: 12px; color: #98a2b3; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
 
-        .field-wrap  { margin-bottom: 14px; }
-        .field-label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .field-wrap  { margin-bottom: 18px; }
+        .field-label { display: block; font-size: 11px; font-weight: 600; color: #667085; margin-bottom: 9px; text-transform: uppercase; letter-spacing: 0.18em; }
         .field-input-wrap { position: relative; }
-        .field-icon  { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
-        .field-input { width: 100%; padding: 12px 14px 12px 40px; border-radius: 11px; border: 1.5px solid #e2e8f0; font-size: 14px; color: #0f172a; outline: none; background: #f8fafc; font-family: inherit; transition: all 0.15s; }
-        .field-input:focus { border-color: #2563eb; background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        .field-input::placeholder { color: #cbd5e1; }
-        .field-eye { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94a3b8; padding: 2px; display: flex; transition: color 0.15s; }
+        .field-icon  { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #98a2b3; pointer-events: none; }
+        .field-input { width: 100%; height: 54px; padding: 0 16px 0 44px; border-radius: 16px; border: 1.5px solid #e5e7eb; font-size: 15px; color: #0f172a; outline: none; background: #ffffff; font-family: inherit; box-shadow: 0 1px 2px rgba(15,23,42,0.03); transition: all 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+        .field-input:focus { border-color: #4f6df5; background: #ffffff; box-shadow: 0 0 0 4px rgba(79,109,245,0.12), 0 10px 24px rgba(79,109,245,0.08); }
+        .field-input::placeholder { color: #9aa4b2; }
+        .field-eye { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #98a2b3; padding: 2px; display: flex; transition: color 0.15s; }
         .field-eye:hover { color: #475569; }
 
         /* Strength bar */
@@ -253,38 +272,40 @@ export default function RegisterPage() {
 
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-        .btn-submit { width: 100%; padding: 13px; border-radius: 12px; border: none; background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px rgba(37,99,235,0.35); transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 20px; margin-top: 20px; }
-        .btn-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.45); }
+        .btn-submit { width: 100%; height: 56px; padding: 0 18px; border-radius: 16px; border: none; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%); color: white; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 14px 30px rgba(79,70,229,0.26), 0 6px 16px rgba(37,99,235,0.18); transition: all 0.18s ease; display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 22px; margin-top: 24px; }
+        .btn-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(79,70,229,0.28), 0 8px 18px rgba(37,99,235,0.2); }
         .btn-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
 
         .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .terms-note { font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5; }
+        .terms-note { font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.6; margin-top: 4px; }
         .terms-note a { color: #2563eb; text-decoration: none; }
         .terms-note a:hover { text-decoration: underline; }
 
-        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 16px; }
+        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 22px; }
         .form-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
         .form-footer a:hover { text-decoration: underline; }
 
-        @media (max-width: 900px) { .reg-hero { display: none; } .reg-form-panel { background: white; padding: 24px 16px; } .reg-form-card { box-shadow: none; border: none; padding: 32px 20px; } .two-col { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) { .reg-hero { display: none; } .reg-form-panel { background: white; padding: 24px 16px; } .reg-form-card { box-shadow: none; border: none; padding: 32px 20px; border-radius: 24px; } .two-col { grid-template-columns: 1fr; } }
       `}</style>
 
       <div className="reg-root">
         {/* ── Hero ── */}
         <div className="reg-hero">
+          <div className="hero-grid-fade" />
+          <div className="hero-orb" />
           <div className="reg-hero-content">
             <AnimatedBrandLogo />
             <p className="reg-hero-tagline">
-              Join ScreenAI and start hiring smarter with AI-powered candidate screening.
+              Create your account and start with a sharper, more organized hiring setup.
             </p>
             <div className="reg-hero-steps">
               {[
-                { n: "1", title: "Create your account", text: "Free to start — no credit card needed." },
-                { n: "2", title: "Post a job", text: "Define the role requirements and required skills." },
-                { n: "3", title: "Upload candidates", text: "Import from CSV, Excel, PDF or add manually." },
-                { n: "4", title: "Run AI screening", text: "Get a ranked shortlist with explanations in seconds." },
+                { n: "1", title: "Create Workspace", text: "" },
+                { n: "2", title: "Add Roles", text: "" },
+                { n: "3", title: "Bring Candidates", text: "" },
+                { n: "4", title: "Review Faster", text: "" },
               ].map(s => (
                 <div key={s.n} className="reg-step">
                   <div className="reg-step-num">{s.n}</div>
@@ -325,14 +346,14 @@ export default function RegisterPage() {
                   <label className="field-label">Full name</label>
                   <div className="field-input-wrap">
                     <User size={15} className="field-icon" />
-                    <input className="field-input" type="text" placeholder="Alice Uwimana" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" disabled={loading} />
+                    <input className="field-input" type="text" placeholder="Enter your full name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" disabled={loading} />
                   </div>
                 </div>
                 <div className="field-wrap">
                   <label className="field-label">Company</label>
                   <div className="field-input-wrap">
                     <Building2 size={15} className="field-icon" />
-                    <input className="field-input" type="text" placeholder="Optional" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} autoComplete="organization" disabled={loading} />
+                    <input className="field-input" type="text" placeholder="Your company name" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} autoComplete="organization" disabled={loading} />
                   </div>
                 </div>
               </div>
@@ -341,7 +362,7 @@ export default function RegisterPage() {
                 <label className="field-label">Email address</label>
                 <div className="field-input-wrap">
                   <Mail size={15} className="field-icon" />
-                  <input className="field-input" type="email" placeholder="you@company.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" disabled={loading} />
+                  <input className="field-input" type="email" placeholder="Enter your work email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" disabled={loading} />
                 </div>
               </div>
 
@@ -349,7 +370,7 @@ export default function RegisterPage() {
                 <label className="field-label">Password</label>
                 <div className="field-input-wrap">
                   <Lock size={15} className="field-icon" />
-                  <input className="field-input" type={showPass ? "text" : "password"} placeholder="Min. 6 characters" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" disabled={loading} />
+                  <input className="field-input" type={showPass ? "text" : "password"} placeholder="Enter your password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" disabled={loading} />
                   <button type="button" className="field-eye" onClick={() => setShowPass(!showPass)} tabIndex={-1}>
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
