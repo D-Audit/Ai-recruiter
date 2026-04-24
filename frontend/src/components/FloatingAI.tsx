@@ -181,7 +181,7 @@ export default function FloatingAI() {
       {!open && (
         <button type="button" className="ai-fab" aria-label="Open Umurava AI assistant" onClick={() => setOpen(true)}>
           <Brain size={17} strokeWidth={2.5} />
-          Assistant AI
+         Chat Bot
         </button>
       )}
 
