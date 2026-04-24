@@ -1,287 +1,532 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
-import Link from "next/link";
-import { loginUser } from "@/store/slices/authSlice";
-import { AppDispatch, RootState } from "@/store";
-import AnimatedLogo from "@/components/AnimatedLogo";
-import { Eye, EyeOff, ArrowRight, Mail, Lock, Zap, BarChart2, GitCompare, Search, Sparkles } from "lucide-react";
+import { loginUser, loginWithGoogle, clearError } from "../../store/slices/authSlice";
+import { AppDispatch, RootState } from "../../store";
+import { Eye, EyeOff, Mail, Lock, AlertCircle, Sparkles } from "lucide-react";
 
-const FEATURES = [
-  { icon: Zap,        text: "Screen 100+ candidates instantly" },
-  { icon: BarChart2,  text: "AI-powered match scoring 0–100" },
-  { icon: GitCompare, text: "Side-by-side candidate comparison" },
-  { icon: Search,     text: "Detailed strengths & gap analysis" },
-];
+// ── Shared Diamond Logo (identical to Sidebar) ──────────────────────────────
+function DiamondLogo({ size = 40 }: { size?: number }) {
+  const s = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 22 22" fill="none">
+      <path d="M11 1L21 8.5L17 21H5L1 8.5L11 1Z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M11 5L18 9.5L15 19H7L4 9.5L11 5Z" fill="white" fillOpacity="0.25" stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+      <path d="M11 9L14.5 11.5L13 17H9L7.5 11.5L11 9Z" fill="white" />
+    </svg>
+  );
+}
 
+// ── Animated Logo (same as sidebar but larger) ────────────────────────────
+function AnimatedBrandLogo() {
+  return (
+    <>
+      <style>{`
+        @keyframes logo-glow {
+          0%,100% { box-shadow: 0 4px 20px rgba(37,99,235,0.5), 0 0 0 0 rgba(99,102,241,0.5); }
+          50%     { box-shadow: 0 6px 30px rgba(124,58,237,0.8), 0 0 0 10px rgba(99,102,241,0); }
+        }
+        @keyframes logo-orbit-cw  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes logo-orbit-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+        @keyframes logo-float {
+          0%,100% { transform: translateY(0px); }
+          50%     { transform: translateY(-4px); }
+        }
+
+        .brand-logo-wrap {
+          display: flex; flex-direction: column; align-items: center; gap: 16px;
+          animation: logo-float 4s ease-in-out infinite;
+        }
+        .brand-logo-orbit-wrap {
+          position: relative; width: 100px; height: 100px;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .brand-logo-icon {
+          width: 68px; height: 68px; border-radius: 20px; flex-shrink: 0;
+          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 60%, #7c3aed 100%);
+          display: flex; align-items: center; justify-content: center;
+          animation: logo-glow 3s ease-in-out infinite;
+          position: relative; z-index: 2;
+        }
+        .brand-logo-ring {
+          position: absolute; inset: 0; border-radius: 50%;
+          border: 1.5px dashed rgba(147,197,253,0.4);
+          animation: logo-orbit-cw 8s linear infinite;
+        }
+        .brand-logo-ring-2 {
+          position: absolute; inset: 8px; border-radius: 50%;
+          border: 1px dashed rgba(167,139,250,0.3);
+          animation: logo-orbit-ccw 6s linear infinite;
+        }
+        /* Orbiting dots */
+        .brand-logo-dot {
+          position: absolute; width: 8px; height: 8px; border-radius: 50%;
+          top: 50%; left: 50%; margin-top: -4px; margin-left: -4px;
+        }
+        .brand-logo-dot-1 {
+          background: rgba(147,197,253,0.9);
+          box-shadow: 0 0 6px rgba(147,197,253,0.8);
+          transform-origin: 50px 4px;
+          animation: logo-orbit-cw 8s linear infinite;
+          transform: translateX(46px);
+        }
+        .brand-logo-dot-2 {
+          background: rgba(167,139,250,0.9);
+          box-shadow: 0 0 6px rgba(167,139,250,0.8);
+          transform-origin: 37px 4px;
+          animation: logo-orbit-ccw 6s linear infinite;
+          transform: translateX(33px);
+        }
+        .brand-name {
+          font-size: 28px; font-weight: 800; color: #ffffff;
+          letter-spacing: -0.5px; line-height: 1;
+        }
+        .brand-tag {
+          font-size: 11px; font-weight: 600; letter-spacing: 2px;
+          text-transform: uppercase; color: rgba(255,255,255,0.42);
+          margin-top: 4px; text-align: center;
+        }
+      `}</style>
+      <div className="brand-logo-wrap">
+        <div className="brand-logo-orbit-wrap">
+          <div className="brand-logo-ring" />
+          <div className="brand-logo-ring-2" />
+          <div className="brand-logo-dot brand-logo-dot-1" />
+          <div className="brand-logo-dot brand-logo-dot-2" />
+          <div className="brand-logo-icon">
+            <DiamondLogo size={36} />
+          </div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <p className="brand-name">ScreenAI</p>
+          <p className="brand-tag">Talent Screening Platform</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Google Sign-In Button ─────────────────────────────────────────────────
+declare global {
+  interface Window {
+    google?: any;
+    handleGoogleCredential?: (response: any) => void;
+  }
+}
+
+function GoogleSignInButton({ onCredential, loading }: {
+  onCredential: (credential: string) => void;
+  loading: boolean;
+}) {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    if (!clientId) return;
+
+    // Expose callback globally for Google's script
+    window.handleGoogleCredential = (response: any) => {
+      if (response?.credential) {
+        onCredential(response.credential);
+      }
+    };
+
+    // Load Google Identity Services script
+    const existingScript = document.getElementById("google-gsi-script");
+    if (existingScript) {
+      initGoogle();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id  = "google-gsi-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = initGoogle;
+    document.head.appendChild(script);
+
+    return () => {
+      window.handleGoogleCredential = undefined;
+    };
+  }, [clientId, onCredential]);
+
+  function initGoogle() {
+    if (!window.google || !clientId) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback:  "handleGoogleCredential",
+      ux_mode:   "popup",
+    });
+    window.google.accounts.id.renderButton(
+      document.getElementById("google-btn-container"),
+      {
+        theme:     "outline",
+        size:      "large",
+        width:     "100%",
+        text:      "signin_with",
+        logo_alignment: "left",
+      }
+    );
+  }
+
+  if (!clientId) {
+    // Show a placeholder if GOOGLE_CLIENT_ID is not set
+    return (
+      <button
+        type="button"
+        disabled
+        style={{
+          width: "100%", padding: "12px 16px", borderRadius: 12,
+          border: "1.5px solid #e2e8f0", background: "#f8fafc",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+          fontSize: 14, fontWeight: 600, color: "#94a3b8", cursor: "not-allowed",
+          fontFamily: "inherit",
+        }}
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18">
+          <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+          <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
+          <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
+          <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
+        </svg>
+        Google sign-in not configured
+      </button>
+    );
+  }
+
+  return (
+    <div
+      id="google-btn-container"
+      style={{
+        width: "100%",
+        opacity: loading ? 0.6 : 1,
+        pointerEvents: loading ? "none" : "auto",
+        minHeight: 44,
+      }}
+    />
+  );
+}
+
+// ── Main Login Page ───────────────────────────────────────────────────────
 export default function LoginPage() {
-  const router   = useRouter();
   const dispatch = useDispatch<AppDispatch>();
-  const { token, loading, error } = useSelector((s: RootState) => s.auth);
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
-  const [showPwd,  setShowPwd]  = useState(false);
+  const router   = useRouter();
+  const { loading, error, user } = useSelector((s: RootState) => s.auth);
 
-  useEffect(() => { if (token) router.push("/dashboard"); }, [token, router]);
+  const [email,     setEmail]    = useState("");
+  const [password,  setPassword] = useState("");
+  const [showPass,  setShowPass] = useState(false);
+  const [localErr,  setLocalErr] = useState("");
 
-  const handleSubmit = async () => {
-    if (!email || !password) return;
-    await dispatch(loginUser({ email, password }));
+  // If already logged in, redirect
+  useEffect(() => {
+    if (user) router.replace("/dashboard");
+  }, [user, router]);
+
+  // Clear store error on unmount
+  useEffect(() => {
+    return () => { dispatch(clearError()); };
+  }, [dispatch]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalErr("");
+    dispatch(clearError());
+
+    if (!email.trim()) { setLocalErr("Email is required"); return; }
+    if (!password)     { setLocalErr("Password is required"); return; }
+
+    try {
+      await dispatch(loginUser({ email: email.trim(), password })).unwrap();
+      router.push("/dashboard");
+    } catch {
+      // error is already in Redux state
+    }
   };
+
+  const handleGoogleCredential = useCallback(async (credential: string) => {
+    setLocalErr("");
+    dispatch(clearError());
+    try {
+      await dispatch(loginWithGoogle({ credential })).unwrap();
+      router.push("/dashboard");
+    } catch {
+      // error in Redux state
+    }
+  }, [dispatch, router]);
+
+  const displayError = localErr || error;
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-        :root { --f: 'Inter', var(--font-body, system-ui), sans-serif; --blue: #2452d4; }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; font-family: var(--f); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
-        .lg-root { display: flex; min-height: 100vh; }
+        .login-root {
+          min-height: 100vh;
+          display: flex;
+          font-family: 'Inter', system-ui, sans-serif;
+        }
 
-        /* ══ LEFT ══ */
-        .lg-left {
-          width: 50%;
-          flex: 0 0 50%;
-          background: linear-gradient(160deg, #1230a8 0%, #1a40cc 40%, #2655e8 70%, #3468f0 100%);
-          padding: 48px 56px;
+        /* ── Left panel — deep navy hero ── */
+        .login-hero {
+          width: 480px; flex-shrink: 0;
+          background: linear-gradient(160deg, #0f1c3a 0%, #0b1528 40%, #0d1f4a 100%);
           display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          padding: 60px 48px;
           position: relative; overflow: hidden;
         }
-        .lg-left::after {
+        .login-hero::before {
           content: '';
-          position: absolute; bottom: -200px; right: -200px;
-          width: 600px; height: 600px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(100,140,255,0.28) 0%, transparent 65%);
-          pointer-events: none;
-        }
-        .lg-left::before {
-          content: '';
-          position: absolute; top: -120px; left: -80px;
+          position: absolute; top: -120px; left: -120px;
           width: 400px; height: 400px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(60,100,255,0.15) 0%, transparent 65%);
+          background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%);
           pointer-events: none;
         }
-
-        /* Logo */
-        .lg-logo-tag  { font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1.8px; margin-top: 2px; }
-
-        /* Badge */
-        .lg-badge {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 5px 13px; border-radius: 99px;
-          border: 1px solid rgba(255,255,255,0.18);
-          background: rgba(255,255,255,0.08);
-          backdrop-filter: blur(10px);
-          color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 500;
-          margin-bottom: 22px; width: fit-content; position: relative; z-index: 2;
-          letter-spacing: -0.1px;
+        .login-hero::after {
+          content: '';
+          position: absolute; bottom: -80px; right: -80px;
+          width: 300px; height: 300px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%);
+          pointer-events: none;
         }
-
-        /* Hero */
-        .lg-hero {
-          font-family: var(--f);
-          font-size: clamp(2.4rem, 4vw, 3.2rem);
-          font-weight: 800; color: #fff;
-          line-height: 1.08; letter-spacing: -2px;
-          position: relative; z-index: 2;
+        .hero-content { position: relative; z-index: 1; width: 100%; }
+        .hero-tagline {
+          font-size: 17px; line-height: 1.65;
+          color: rgba(255,255,255,0.55);
+          margin-top: 28px; text-align: center;
         }
-        .lg-hero-accent {
-          display: block; position: relative; width: fit-content; padding-bottom: 6px;
+        .hero-features {
+          margin-top: 40px; display: flex; flex-direction: column; gap: 14px; width: 100%;
         }
-        .lg-hero-accent::after {
-          content: ''; position: absolute; bottom: 0; left: 0;
-          width: 100%; height: 2px;
-          background: rgba(255,255,255,0.3); border-radius: 2px;
+        .hero-feature {
+          display: flex; align-items: center; gap: 12px;
+          padding: 14px 18px; border-radius: 12px;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.08);
         }
-        .lg-hero-sub {
-          font-family: var(--f); font-size: 14.5px; color: rgba(255,255,255,0.55);
-          line-height: 1.72; margin-top: 18px; margin-bottom: 40px;
-          max-width: 360px; position: relative; z-index: 2; letter-spacing: -0.1px;
-        }
-
-        /* Features */
-        .lg-feats { display: flex; flex-direction: column; gap: 9px; position: relative; z-index: 2; max-width: 420px; }
-        .lg-feat {
-          display: flex; align-items: center; gap: 13px; padding: 13px 16px;
-          border-radius: 11px;
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.11);
-          transition: background 0.15s; cursor: default;
-          backdrop-filter: blur(6px);
-        }
-        .lg-feat:hover { background: rgba(255,255,255,0.13); }
-        .lg-feat-ico {
-          width: 32px; height: 32px; border-radius: 8px;
-          background: rgba(255,255,255,0.12);
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        .lg-feat-label { flex: 1; font-family: var(--f); font-size: 13.5px; color: rgba(255,255,255,0.88); font-weight: 500; letter-spacing: -0.1px; }
-        .lg-feat-ring {
-          width: 18px; height: 18px; border-radius: 50%;
-          border: 1.5px solid rgba(255,255,255,0.28);
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-
-        .lg-left-foot {
-          margin-top: auto; padding-top: 40px;
-          font-family: var(--f); font-size: 11.5px; color: rgba(255,255,255,0.25);
-          position: relative; z-index: 2; letter-spacing: -0.05px;
-        }
-
-        /* ══ RIGHT ══ */
-        .lg-right {
-          width: 50%; flex: 0 0 50%; background: #fff;
+        .hero-feature-icon {
+          width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+          background: linear-gradient(135deg, rgba(37,99,235,0.3), rgba(124,58,237,0.3));
           display: flex; align-items: center; justify-content: center;
-          padding: 52px 60px;
+          font-size: 17px;
         }
-        .lg-box { width: 100%; max-width: 370px; }
+        .hero-feature-text { font-size: 13.5px; color: rgba(255,255,255,0.7); line-height: 1.4; }
+        .hero-feature-title { font-weight: 700; color: white; font-size: 14px; }
 
-        /* Title */
-        .lg-title {
-          font-family: var(--f); font-size: 28px; font-weight: 800;
-          color: #0d1525; letter-spacing: -0.8px; margin-bottom: 5px; line-height: 1.15;
+        /* ── Right panel — form ── */
+        .login-form-panel {
+          flex: 1; display: flex; align-items: center; justify-content: center;
+          background: #f8fafc; padding: 40px 24px;
         }
-        .lg-subtitle { font-family: var(--f); font-size: 14px; color: #64748b; margin-bottom: 30px; line-height: 1.5; letter-spacing: -0.1px; }
-
-        /* Tabs */
-        .lg-tabs { display: flex; border: 1.5px solid #e8edf3; border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
-        .lg-tab {
-          flex: 1; padding: 11px 16px; text-align: center;
-          font-family: var(--f); font-size: 13.5px; font-weight: 600;
-          border: none; background: transparent; cursor: pointer;
-          color: #94a3b8; transition: all 0.15s; letter-spacing: -0.1px;
+        .login-form-card {
+          width: 100%; max-width: 440px;
+          background: white; border-radius: 24px;
+          border: 1px solid #e2e8f0;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.07);
+          padding: 40px 36px;
+          animation: slideUp 0.3s ease;
         }
-        .lg-tab + .lg-tab { border-left: 1.5px solid #e8edf3; }
-        .lg-tab.on { color: white; background: var(--blue); font-weight: 700; border-radius: 8px; }
-        .lg-tab:not(.on):hover { background: #f8fafc; color: #475569; }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .form-title { font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.4px; margin-bottom: 4px; }
+        .form-sub   { font-size: 14px; color: #64748b; margin-bottom: 28px; }
 
-        /* Fields */
-        .lg-field { margin-bottom: 18px; }
-        .lg-label { display: block; font-family: var(--f); font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.9px; }
-        .lg-ig    { position: relative; display: flex; align-items: center; }
-        .lg-ic    { position: absolute; left: 13px; color: #c0cad5; display: flex; pointer-events: none; }
-        .lg-input {
+        /* Error banner */
+        .form-error {
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 12px 14px; border-radius: 11px; margin-bottom: 20px;
+          background: #fef2f2; border: 1px solid #fecaca;
+          animation: slideDown 0.2s ease;
+        }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        .form-error-text { font-size: 13.5px; color: #dc2626; line-height: 1.5; font-weight: 500; }
+
+        /* Divider */
+        .form-divider {
+          display: flex; align-items: center; gap: 12px; margin: 20px 0;
+        }
+        .form-divider-line { flex: 1; height: 1px; background: #e2e8f0; }
+        .form-divider-text { font-size: 12px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+
+        /* Field */
+        .field-wrap { margin-bottom: 16px; }
+        .field-label {
+          display: block; font-size: 12px; font-weight: 700;
+          color: #475569; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        .field-input-wrap { position: relative; }
+        .field-icon {
+          position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+          color: #94a3b8; pointer-events: none;
+        }
+        .field-input {
           width: 100%; padding: 12px 14px 12px 40px;
-          border: 1.5px solid #e8edf3; border-radius: 10px;
-          background: #f9fafb; color: #0d1525;
-          font-family: var(--f); font-size: 14px; outline: none; transition: all 0.15s;
-          letter-spacing: -0.1px;
+          border-radius: 11px; border: 1.5px solid #e2e8f0;
+          font-size: 14px; color: #0f172a; outline: none;
+          background: #f8fafc; font-family: inherit;
+          transition: all 0.15s;
         }
-        .lg-input:focus { border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px rgba(36,82,212,0.08); }
-        .lg-input::placeholder { color: #b8c4d0; }
-        .lg-eye { position: absolute; right: 11px; background: none; border: none; cursor: pointer; color: #94a3b8; display: flex; padding: 4px; transition: color 0.15s; align-items: center; }
-        .lg-eye:hover { color: var(--blue); }
-
-        /* Error */
-        .lg-error { background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 10px; padding: 10px 14px; color: #dc2626; font-family: var(--f); font-size: 13px; font-weight: 500; margin-bottom: 14px; letter-spacing: -0.1px; }
-
-        /* Button */
-        .lg-btn {
-          width: 100%; padding: 14px; border-radius: 10px; border: none;
-          background: var(--blue); color: #fff;
-          font-family: var(--f); font-weight: 600; font-size: 14.5px;
-          letter-spacing: -0.2px; cursor: pointer; transition: all 0.15s;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          box-shadow: 0 4px 16px rgba(36,82,212,0.26);
+        .field-input:focus { border-color: #2563eb; background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .field-input::placeholder { color: #cbd5e1; }
+        .field-eye {
+          position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer; color: #94a3b8;
+          padding: 2px; display: flex; align-items: center;
+          transition: color 0.15s;
         }
-        .lg-btn:hover:not(:disabled) { background: #1a3ec7; box-shadow: 0 6px 22px rgba(36,82,212,0.38); transform: translateY(-1px); }
-        .lg-btn:active:not(:disabled) { transform: translateY(0); }
-        .lg-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .field-eye:hover { color: #475569; }
 
-        .lg-spin { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: lgSpin 0.7s linear infinite; flex-shrink: 0; }
-        @keyframes lgSpin { to { transform: rotate(360deg); } }
+        /* Forgot link */
+        .forgot-row { display: flex; justify-content: flex-end; margin-top: -8px; margin-bottom: 20px; }
+        .forgot-link { font-size: 12.5px; color: #2563eb; font-weight: 600; text-decoration: none; }
+        .forgot-link:hover { text-decoration: underline; }
 
-        /* Footer */
-        .lg-foot { text-align: center; margin-top: 20px; font-family: var(--f); font-size: 12.5px; color: #94a3b8; line-height: 1.8; letter-spacing: -0.05px; }
-        .lg-foot a { color: var(--blue); font-weight: 600; text-decoration: none; }
-        .lg-foot a:hover { text-decoration: underline; }
+        /* Submit button */
+        .btn-submit {
+          width: 100%; padding: 13px; border-radius: 12px; border: none;
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
+          color: white; font-size: 15px; font-weight: 700;
+          cursor: pointer; font-family: inherit;
+          box-shadow: 0 4px 14px rgba(37,99,235,0.35);
+          transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px;
+          margin-bottom: 20px;
+        }
+        .btn-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.45); }
+        .btn-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        @media (max-width: 960px) {
-          .lg-left  { display: none; }
-          .lg-right { width: 100%; padding: 40px 24px; }
+        /* Spinner */
+        .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Footer link */
+        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 20px; }
+        .form-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
+        .form-footer a:hover { text-decoration: underline; }
+
+        @media (max-width: 900px) {
+          .login-hero { display: none; }
+          .login-form-panel { padding: 24px 16px; background: white; }
+          .login-form-card { box-shadow: none; border: none; padding: 32px 20px; }
         }
       `}</style>
 
-      <div className="lg-root">
-
-        {/* ══ LEFT ══ */}
-        <div className="lg-left">
-          <div style={{ marginBottom: 60, position: "relative", zIndex: 2 }}>
-            <AnimatedLogo size="md" dark={true} />
-          </div>
-
-          <div className="lg-badge"><Sparkles size={11} /> Powered by Gemini AI</div>
-
-          <h1 className="lg-hero">
-            Hire smarter<br />
-            <span className="lg-hero-accent">with AI precision</span>
-          </h1>
-          <p className="lg-hero-sub">Screen hundreds of candidates in seconds. Get ranked shortlists with AI-powered explanations tailored to your job requirements.</p>
-
-          <div className="lg-feats">
-            {FEATURES.map(f => (
-              <div key={f.text} className="lg-feat">
-                <div className="lg-feat-ico"><f.icon size={14} color="rgba(255,255,255,0.9)" /></div>
-                <span className="lg-feat-label">{f.text}</span>
-                <div className="lg-feat-ring">
-                  <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                    <path d="M1 3l1.5 1.5L7 1" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+      <div className="login-root">
+        {/* ── Hero ── */}
+        <div className="login-hero">
+          <div className="hero-content">
+            <AnimatedBrandLogo />
+            <p className="hero-tagline">
+              AI-powered talent screening that helps you hire the best candidates — faster and more fairly.
+            </p>
+            <div className="hero-features">
+              {[
+                { icon: "🤖", title: "Gemini AI Screening", text: "Score every candidate in seconds with Google's latest AI." },
+                { icon: "📊", title: "Ranked Shortlists", text: "Get your top 10 candidates ranked with full explanations." },
+                { icon: "⚖️", title: "Bias-Aware", text: "AI assists — humans make the final hiring decisions." },
+              ].map((f) => (
+                <div key={f.title} className="hero-feature">
+                  <div className="hero-feature-icon">{f.icon}</div>
+                  <div>
+                    <p className="hero-feature-title">{f.title}</p>
+                    <p className="hero-feature-text">{f.text}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-
-          <div className="lg-left-foot">Powered by Google Gemini AI · Debug Thugs Team</div>
         </div>
 
-        {/* ══ RIGHT ══ */}
-        <div className="lg-right">
-          <div className="lg-box">
-            <h2 className="lg-title">Welcome back</h2>
-            <p className="lg-subtitle">Sign in to your recruiter dashboard</p>
+        {/* ── Form Panel ── */}
+        <div className="login-form-panel">
+          <div className="login-form-card">
+            <h1 className="form-title">Welcome back</h1>
+            <p className="form-sub">Sign in to your ScreenAI account</p>
 
-            <div className="lg-tabs">
-              <button className="lg-tab on">Login</button>
-              <Link href="/register" style={{ flex:1, display:"flex" }}>
-                <button className="lg-tab" style={{ width:"100%" }}>Register</button>
-              </Link>
-            </div>
-
-            <div className="lg-field">
-              <label className="lg-label">Email Address</label>
-              <div className="lg-ig">
-                <span className="lg-ic"><Mail size={14} /></span>
-                <input className="lg-input" type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key==="Enter" && handleSubmit()} />
+            {/* Error */}
+            {displayError && (
+              <div className="form-error">
+                <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p className="form-error-text">{displayError}</p>
               </div>
+            )}
+
+            {/* Google Sign-In */}
+            <GoogleSignInButton onCredential={handleGoogleCredential} loading={loading} />
+
+            <div className="form-divider">
+              <div className="form-divider-line" />
+              <span className="form-divider-text">or sign in with email</span>
+              <div className="form-divider-line" />
             </div>
 
-            <div className="lg-field">
-              <label className="lg-label">Password</label>
-              <div className="lg-ig">
-                <span className="lg-ic"><Lock size={14} /></span>
-                <input className="lg-input" type={showPwd?"text":"password"} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key==="Enter" && handleSubmit()} style={{ paddingRight:42 }} />
-                <button className="lg-eye" type="button" onClick={() => setShowPwd(!showPwd)}>
-                  {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
+            {/* Email/Password Form */}
+            <form onSubmit={handleSubmit}>
+              <div className="field-wrap">
+                <label className="field-label">Email address</label>
+                <div className="field-input-wrap">
+                  <Mail size={15} className="field-icon" />
+                  <input
+                    className="field-input"
+                    type="email"
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    disabled={loading}
+                  />
+                </div>
               </div>
-            </div>
 
-            {error && <div className="lg-error">⚠ {error}</div>}
+              <div className="field-wrap">
+                <label className="field-label">Password</label>
+                <div className="field-input-wrap">
+                  <Lock size={15} className="field-icon" />
+                  <input
+                    className="field-input"
+                    type={showPass ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    className="field-eye"
+                    onClick={() => setShowPass(!showPass)}
+                    tabIndex={-1}
+                  >
+                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
 
-            <button className="lg-btn" disabled={loading || !email || !password} onClick={handleSubmit}>
-              {loading ? <><div className="lg-spin" /> Signing in…</> : <>Sign In <ArrowRight size={15} /></>}
-            </button>
+              <div className="forgot-row">
+                <Link href="/forgot-password" className="forgot-link">Forgot password?</Link>
+              </div>
 
-            <p className="lg-foot">
-              Powered by Google Gemini AI · Debug Thugs Team<br />
-              No account? <Link href="/register">Register here →</Link>
+              <button type="submit" className="btn-submit" disabled={loading}>
+                {loading ? (
+                  <><div className="spin" /> Signing in…</>
+                ) : (
+                  <><Sparkles size={15} /> Sign in</>
+                )}
+              </button>
+            </form>
+
+            <p className="form-footer">
+              Don't have an account?{" "}
+              <Link href="/register">Create one free</Link>
             </p>
           </div>
         </div>
-
       </div>
     </>
   );

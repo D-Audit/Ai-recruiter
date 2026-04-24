@@ -318,7 +318,7 @@ function ApplicantsPageContent() {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     setScreeningRunning(true);
     try {
-      await (dispatch as any)(triggerScreening(selectedJob)).unwrap();
+      await (dispatch as any)(triggerScreening({jobId: selectedJob, topN })).unwrap();
       toast.success("AI screening complete! Loading results…");
       router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}&autoload=1`);
     } catch (e: unknown) {

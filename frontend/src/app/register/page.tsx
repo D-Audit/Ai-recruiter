@@ -1,254 +1,355 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
-import Link from "next/link";
-import { registerUser } from "@/store/slices/authSlice";
-import { AppDispatch, RootState } from "@/store";
-import { Eye, EyeOff, ArrowRight, Mail, Lock, User, Building2, Zap, BarChart2, GitCompare, Search, Sparkles } from "lucide-react";
-import AnimatedLogo from "@/components/AnimatedLogo";
+import { registerUser, loginWithGoogle, clearError } from "../../store/slices/authSlice";
+import { AppDispatch, RootState } from "../../store";
+import { Eye, EyeOff, Mail, Lock, User, Building2, AlertCircle, CheckCircle2, Sparkles } from "lucide-react";
 
-const FEATURES = [
-  { icon: Zap,        text: "Screen 100+ candidates instantly" },
-  { icon: BarChart2,  text: "AI-powered match scoring 0–100" },
-  { icon: GitCompare, text: "Side-by-side candidate comparison" },
-  { icon: Search,     text: "Detailed strengths & gap analysis" },
-];
+// ── Shared Diamond Logo (identical to Sidebar) ──────────────────────────────
+function DiamondLogo({ size = 40 }: { size?: number }) {
+  const s = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 22 22" fill="none">
+      <path d="M11 1L21 8.5L17 21H5L1 8.5L11 1Z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M11 5L18 9.5L15 19H7L4 9.5L11 5Z" fill="white" fillOpacity="0.25" stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+      <path d="M11 9L14.5 11.5L13 17H9L7.5 11.5L11 9Z" fill="white" />
+    </svg>
+  );
+}
+
+function AnimatedBrandLogo() {
+  return (
+    <>
+      <style>{`
+        @keyframes reg-logo-glow {
+          0%,100% { box-shadow: 0 4px 20px rgba(37,99,235,0.5), 0 0 0 0 rgba(99,102,241,0.5); }
+          50%     { box-shadow: 0 6px 30px rgba(124,58,237,0.8), 0 0 0 10px rgba(99,102,241,0); }
+        }
+        @keyframes reg-orbit-cw  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes reg-orbit-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+        @keyframes reg-float {
+          0%,100% { transform: translateY(0px); }
+          50%     { transform: translateY(-4px); }
+        }
+        .reg-brand-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; animation: reg-float 4s ease-in-out infinite; }
+        .reg-orbit-wrap { position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; }
+        .reg-logo-icon {
+          width: 68px; height: 68px; border-radius: 20px;
+          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 60%, #7c3aed 100%);
+          display: flex; align-items: center; justify-content: center;
+          animation: reg-logo-glow 3s ease-in-out infinite; position: relative; z-index: 2;
+        }
+        .reg-ring   { position: absolute; inset: 0; border-radius: 50%; border: 1.5px dashed rgba(147,197,253,0.4); animation: reg-orbit-cw 8s linear infinite; }
+        .reg-ring-2 { position: absolute; inset: 8px; border-radius: 50%; border: 1px dashed rgba(167,139,250,0.3); animation: reg-orbit-ccw 6s linear infinite; }
+        .reg-dot {
+          position: absolute; width: 8px; height: 8px; border-radius: 50%;
+          top: 50%; left: 50%; margin-top: -4px; margin-left: -4px;
+        }
+        .reg-dot-1 { background: rgba(147,197,253,0.9); box-shadow: 0 0 6px rgba(147,197,253,0.8); transform: translateX(46px); animation: reg-orbit-cw 8s linear infinite; transform-origin: 50px 4px; }
+        .reg-dot-2 { background: rgba(167,139,250,0.9); box-shadow: 0 0 6px rgba(167,139,250,0.8); transform: translateX(33px); animation: reg-orbit-ccw 6s linear infinite; transform-origin: 37px 4px; }
+        .reg-brand-name { font-size: 28px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px; line-height: 1; }
+        .reg-brand-tag  { font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,0.42); margin-top: 4px; text-align: center; }
+      `}</style>
+      <div className="reg-brand-wrap">
+        <div className="reg-orbit-wrap">
+          <div className="reg-ring" />
+          <div className="reg-ring-2" />
+          <div className="reg-dot reg-dot-1" />
+          <div className="reg-dot reg-dot-2" />
+          <div className="reg-logo-icon"><DiamondLogo size={36} /></div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <p className="reg-brand-name">ScreenAI</p>
+          <p className="reg-brand-tag">Talent Screening Platform</p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+declare global { interface Window { google?: any; handleGoogleCredentialReg?: (r: any) => void; } }
+
+function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: string) => void; loading: boolean }) {
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    if (!clientId) return;
+    window.handleGoogleCredentialReg = (response: any) => { if (response?.credential) onCredential(response.credential); };
+    const existing = document.getElementById("google-gsi-script");
+    const init = () => {
+      if (!window.google || !clientId) return;
+      window.google.accounts.id.initialize({ client_id: clientId, callback: "handleGoogleCredentialReg", ux_mode: "popup" });
+      window.google.accounts.id.renderButton(document.getElementById("google-reg-btn"), { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left" });
+    };
+    if (existing) { init(); return; }
+    const script = document.createElement("script");
+    script.id = "google-gsi-script"; script.src = "https://accounts.google.com/gsi/client"; script.async = true; script.defer = true; script.onload = init;
+    document.head.appendChild(script);
+    return () => { window.handleGoogleCredentialReg = undefined; };
+  }, [clientId, onCredential]);
+
+  if (!clientId) return (
+    <button type="button" disabled style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontSize: 14, fontWeight: 600, color: "#94a3b8", cursor: "not-allowed", fontFamily: "inherit" }}>
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/></svg>
+      Google sign-in not configured
+    </button>
+  );
+
+  return <div id="google-reg-btn" style={{ width: "100%", opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto", minHeight: 44 }} />;
+}
+
+// ── Password strength ─────────────────────────────────────────────────────
+function passwordStrength(p: string): { score: number; label: string; color: string } {
+  if (!p) return { score: 0, label: "", color: "#e2e8f0" };
+  let score = 0;
+  if (p.length >= 8)  score++;
+  if (p.length >= 12) score++;
+  if (/[A-Z]/.test(p)) score++;
+  if (/[0-9]/.test(p)) score++;
+  if (/[^A-Za-z0-9]/.test(p)) score++;
+  const map = [
+    { score: 1, label: "Very weak",  color: "#ef4444" },
+    { score: 2, label: "Weak",       color: "#f97316" },
+    { score: 3, label: "Fair",       color: "#eab308" },
+    { score: 4, label: "Good",       color: "#22c55e" },
+    { score: 5, label: "Strong",     color: "#16a34a" },
+  ];
+  return map[score - 1] || { score: 0, label: "", color: "#e2e8f0" };
+}
 
 export default function RegisterPage() {
-  const router   = useRouter();
   const dispatch = useDispatch<AppDispatch>();
-  const { token, loading, error } = useSelector((s: RootState) => s.auth);
-  const [form, setForm] = useState({ firstName:"", lastName:"", email:"", password:"", company:"" });
-  const [showPwd, setShowPwd] = useState(false);
+  const router   = useRouter();
+  const { loading, error, user } = useSelector((s: RootState) => s.auth);
 
-  useEffect(() => { if (token) router.push("/dashboard"); }, [token, router]);
+  const [form,     setForm]     = useState({ name: "", email: "", password: "", company: "" });
+  const [showPass, setShowPass] = useState(false);
+  const [localErr, setLocalErr] = useState("");
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  useEffect(() => { if (user) router.replace("/dashboard"); }, [user, router]);
+  useEffect(() => () => { dispatch(clearError()); }, [dispatch]);
 
-  const handleSubmit = async () => {
-    const { firstName, lastName, email, password, company } = form;
-    if (!firstName || !lastName || !email || !password) return;
-    await dispatch(registerUser({ name: `${firstName.trim()} ${lastName.trim()}`, email, password, company }));
+  const strength = passwordStrength(form.password);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalErr("");
+    dispatch(clearError());
+
+    if (!form.name.trim())     { setLocalErr("Full name is required"); return; }
+    if (!form.email.trim())    { setLocalErr("Email is required"); return; }
+    if (!form.password)        { setLocalErr("Password is required"); return; }
+    if (form.password.length < 6) { setLocalErr("Password must be at least 6 characters"); return; }
+
+    try {
+      await dispatch(registerUser(form)).unwrap();
+      router.push("/dashboard");
+    } catch { /* Redux error state handles display */ }
   };
 
-  const pwStrength = (p: string) => {
-    if (!p) return null;
-    if (p.length < 6)  return { label:"Weak",   color:"#ef4444", w:"25%" };
-    if (p.length < 10) return { label:"Fair",    color:"#f59e0b", w:"55%" };
-    if (/[A-Z]/.test(p) && /[0-9]/.test(p)) return { label:"Strong", color:"#22c55e", w:"100%" };
-    return { label:"Good", color:"#2452d4", w:"80%" };
-  };
-  const pw = pwStrength(form.password);
+  const handleGoogleCredential = useCallback(async (credential: string) => {
+    setLocalErr(""); dispatch(clearError());
+    try {
+      await dispatch(loginWithGoogle({ credential, company: form.company })).unwrap();
+      router.push("/dashboard");
+    } catch { /* Redux error state */ }
+  }, [dispatch, router, form.company]);
+
+  const displayError = localErr || error;
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-        :root { --f: 'Inter', var(--font-body, system-ui), sans-serif; --blue: #2452d4; }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { height: 100%; font-family: var(--f); }
-
-        .rg-root { display: flex; min-height: 100vh; }
-
-        /* ══ LEFT ══ */
-        .rg-left {
-          width: 50%;
-          flex: 0 0 50%;
-          background: linear-gradient(160deg, #1230a8 0%, #1a40cc 40%, #2655e8 70%, #3468f0 100%);
-          padding: 48px 56px;
-          display: flex; flex-direction: column;
-          position: relative; overflow: hidden;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .reg-root { min-height: 100vh; display: flex; font-family: 'Inter', system-ui, sans-serif; }
+        .reg-hero {
+          width: 480px; flex-shrink: 0;
+          background: linear-gradient(160deg, #0f1c3a 0%, #0b1528 40%, #0d1f4a 100%);
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          padding: 60px 48px; position: relative; overflow: hidden;
         }
-        .rg-left::after {
-          content: ''; position: absolute; bottom: -200px; right: -200px;
-          width: 600px; height: 600px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(100,140,255,0.28) 0%, transparent 65%);
-          pointer-events: none;
-        }
-        .rg-left::before {
-          content: ''; position: absolute; top: -120px; left: -80px;
+        .reg-hero::before {
+          content: ''; position: absolute; top: -120px; left: -120px;
           width: 400px; height: 400px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(60,100,255,0.15) 0%, transparent 65%);
-          pointer-events: none;
+          background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%); pointer-events: none;
         }
-
-        .rg-logo-tag  { font-size: 9px; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1.8px; margin-top: 2px; }
-
-        .rg-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px; border-radius: 99px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); color: rgba(255,255,255,0.8); font-size: 12px; font-weight: 500; margin-bottom: 22px; width: fit-content; position: relative; z-index: 2; letter-spacing: -0.1px; }
-
-        .rg-hero { font-family: var(--f); font-size: clamp(2.4rem, 4vw, 3.2rem); font-weight: 800; color: #fff; line-height: 1.08; letter-spacing: -2px; position: relative; z-index: 2; }
-        .rg-hero-accent { display: block; position: relative; width: fit-content; padding-bottom: 6px; }
-        .rg-hero-accent::after { content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: 2px; background: rgba(255,255,255,0.3); border-radius: 2px; }
-        .rg-hero-sub { font-family: var(--f); font-size: 14.5px; color: rgba(255,255,255,0.55); line-height: 1.72; margin-top: 18px; margin-bottom: 40px; max-width: 360px; position: relative; z-index: 2; letter-spacing: -0.1px; }
-
-        .rg-feats { display: flex; flex-direction: column; gap: 9px; position: relative; z-index: 2; max-width: 420px; }
-        .rg-feat { display: flex; align-items: center; gap: 13px; padding: 13px 16px; border-radius: 11px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.11); transition: background 0.15s; cursor: default; backdrop-filter: blur(6px); }
-        .rg-feat:hover { background: rgba(255,255,255,0.13); }
-        .rg-feat-ico { width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .rg-feat-label { flex: 1; font-family: var(--f); font-size: 13.5px; color: rgba(255,255,255,0.88); font-weight: 500; letter-spacing: -0.1px; }
-        .rg-feat-ring { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.28); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-
-        .rg-left-foot { margin-top: auto; padding-top: 40px; font-family: var(--f); font-size: 11.5px; color: rgba(255,255,255,0.25); position: relative; z-index: 2; }
-
-        /* ══ RIGHT ══ */
-        .rg-right { width: 50%; flex: 0 0 50%; background: #fff; display: flex; align-items: center; justify-content: center; padding: 44px 60px; overflow-y: auto; }
-        .rg-box { width: 100%; max-width: 370px; margin: auto 0; }
-
-        .rg-title { font-family: var(--f); font-size: 28px; font-weight: 800; color: #0d1525; letter-spacing: -0.8px; margin-bottom: 5px; line-height: 1.15; }
-        .rg-subtitle { font-family: var(--f); font-size: 14px; color: #64748b; margin-bottom: 26px; line-height: 1.5; letter-spacing: -0.1px; }
-
-        .rg-tabs { display: flex; border: 1.5px solid #e8edf3; border-radius: 10px; overflow: hidden; margin-bottom: 22px; }
-        .rg-tab { flex: 1; padding: 11px 16px; text-align: center; font-family: var(--f); font-size: 13.5px; font-weight: 600; border: none; background: transparent; cursor: pointer; color: #94a3b8; transition: all 0.15s; letter-spacing: -0.1px; }
-        .rg-tab + .rg-tab { border-left: 1.5px solid #e8edf3; }
-        .rg-tab.on { color: white; background: var(--blue); font-weight: 700; border-radius: 8px; }
-        .rg-tab:not(.on):hover { background: #f8fafc; color: #475569; }
-
-        .rg-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-        .rg-field { margin-bottom: 14px; }
-        .rg-label { display: block; font-family: var(--f); font-size: 11px; font-weight: 700; color: #475569; margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.9px; }
-        .rg-opt   { font-weight: 400; color: #94a3b8; text-transform: none; letter-spacing: 0; margin-left: 3px; }
-        .rg-ig    { position: relative; display: flex; align-items: center; }
-        .rg-ic    { position: absolute; left: 12px; color: #c0cad5; display: flex; pointer-events: none; }
-        .rg-input { width: 100%; padding: 11px 13px 11px 38px; border: 1.5px solid #e8edf3; border-radius: 10px; background: #f9fafb; color: #0d1525; font-family: var(--f); font-size: 13.5px; outline: none; transition: all 0.15s; letter-spacing: -0.1px; }
-        .rg-input:focus { border-color: var(--blue); background: #fff; box-shadow: 0 0 0 3px rgba(36,82,212,0.08); }
-        .rg-input::placeholder { color: #b8c4d0; }
-        .rg-eye { position: absolute; right: 11px; background: none; border: none; cursor: pointer; color: #94a3b8; display: flex; padding: 4px; transition: color 0.15s; align-items: center; }
-        .rg-eye:hover { color: var(--blue); }
-
-        .rg-bar  { height: 3px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 5px; }
-        .rg-fill { height: 100%; border-radius: 99px; transition: all 0.3s; }
-
-        .rg-error { background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 10px; padding: 10px 13px; color: #dc2626; font-family: var(--f); font-size: 13px; font-weight: 500; margin-bottom: 12px; }
-
-        .rg-btn { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--blue); color: #fff; font-family: var(--f); font-weight: 600; font-size: 14.5px; letter-spacing: -0.2px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 4px; box-shadow: 0 4px 16px rgba(36,82,212,0.26); }
-        .rg-btn:hover:not(:disabled) { background: #1a3ec7; box-shadow: 0 6px 22px rgba(36,82,212,0.38); transform: translateY(-1px); }
-        .rg-btn:active:not(:disabled) { transform: translateY(0); }
-        .rg-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-
-        .rg-spin { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: rgSpin 0.7s linear infinite; flex-shrink: 0; }
-        @keyframes rgSpin { to { transform: rotate(360deg); } }
-
-        .rg-foot { text-align: center; margin-top: 16px; font-family: var(--f); font-size: 12.5px; color: #94a3b8; line-height: 1.8; }
-        .rg-foot a { color: var(--blue); font-weight: 600; text-decoration: none; }
-        .rg-foot a:hover { text-decoration: underline; }
-
-        @media (max-width: 960px) {
-          .rg-left  { display: none; }
-          .rg-right { width: 100%; padding: 40px 24px; }
-          .rg-row   { grid-template-columns: 1fr; }
+        .reg-hero::after {
+          content: ''; position: absolute; bottom: -80px; right: -80px;
+          width: 300px; height: 300px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%); pointer-events: none;
         }
+        .reg-hero-content { position: relative; z-index: 1; width: 100%; }
+        .reg-hero-tagline { font-size: 17px; line-height: 1.65; color: rgba(255,255,255,0.55); margin-top: 28px; text-align: center; }
+        .reg-hero-steps { margin-top: 40px; display: flex; flex-direction: column; gap: 0; }
+        .reg-step { display: flex; align-items: flex-start; gap: 14px; padding: 16px 0; position: relative; }
+        .reg-step:not(:last-child)::after { content: ''; position: absolute; left: 17px; top: 46px; width: 1px; height: 20px; background: rgba(255,255,255,0.1); }
+        .reg-step-num { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; background: linear-gradient(135deg, rgba(37,99,235,0.4), rgba(124,58,237,0.4)); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: white; }
+        .reg-step-title { font-weight: 700; color: white; font-size: 14px; margin-bottom: 2px; }
+        .reg-step-text  { font-size: 12.5px; color: rgba(255,255,255,0.55); line-height: 1.4; }
+
+        .reg-form-panel { flex: 1; display: flex; align-items: center; justify-content: center; background: #f8fafc; padding: 40px 24px; }
+        .reg-form-card  { width: 100%; max-width: 440px; background: white; border-radius: 24px; border: 1px solid #e2e8f0; box-shadow: 0 4px 24px rgba(0,0,0,0.07); padding: 40px 36px; animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+        .form-title { font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.4px; margin-bottom: 4px; }
+        .form-sub   { font-size: 14px; color: #64748b; margin-bottom: 28px; }
+
+        .form-error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 11px; margin-bottom: 20px; background: #fef2f2; border: 1px solid #fecaca; animation: slideDown 0.2s ease; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+        .form-error-text { font-size: 13.5px; color: #dc2626; line-height: 1.5; font-weight: 500; }
+
+        .form-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+        .form-divider-line { flex: 1; height: 1px; background: #e2e8f0; }
+        .form-divider-text { font-size: 12px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+
+        .field-wrap  { margin-bottom: 14px; }
+        .field-label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .field-input-wrap { position: relative; }
+        .field-icon  { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+        .field-input { width: 100%; padding: 12px 14px 12px 40px; border-radius: 11px; border: 1.5px solid #e2e8f0; font-size: 14px; color: #0f172a; outline: none; background: #f8fafc; font-family: inherit; transition: all 0.15s; }
+        .field-input:focus { border-color: #2563eb; background: white; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        .field-input::placeholder { color: #cbd5e1; }
+        .field-eye { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #94a3b8; padding: 2px; display: flex; transition: color 0.15s; }
+        .field-eye:hover { color: #475569; }
+
+        /* Strength bar */
+        .strength-wrap { margin-top: 7px; }
+        .strength-bar  { height: 4px; border-radius: 2px; background: #e2e8f0; overflow: hidden; }
+        .strength-fill { height: 100%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
+        .strength-label { font-size: 11.5px; font-weight: 600; margin-top: 4px; }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .btn-submit { width: 100%; padding: 13px; border-radius: 12px; border: none; background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px rgba(37,99,235,0.35); transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 20px; margin-top: 20px; }
+        .btn-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,99,235,0.45); }
+        .btn-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .terms-note { font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5; }
+        .terms-note a { color: #2563eb; text-decoration: none; }
+        .terms-note a:hover { text-decoration: underline; }
+
+        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 16px; }
+        .form-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
+        .form-footer a:hover { text-decoration: underline; }
+
+        @media (max-width: 900px) { .reg-hero { display: none; } .reg-form-panel { background: white; padding: 24px 16px; } .reg-form-card { box-shadow: none; border: none; padding: 32px 20px; } .two-col { grid-template-columns: 1fr; } }
       `}</style>
 
-      <div className="rg-root">
-
-        {/* ══ LEFT ══ */}
-        <div className="rg-left">
-          <div style={{ marginBottom: 60, position: "relative", zIndex: 2 }}>
-            <AnimatedLogo size="md" dark={true} />
-          </div>
-
-          <div className="rg-badge"><Sparkles size={11} /> Powered by Gemini AI</div>
-
-          <h1 className="rg-hero">
-            Hire smarter<br />
-            <span className="rg-hero-accent">with AI precision</span>
-          </h1>
-          <p className="rg-hero-sub">Screen hundreds of candidates in seconds. Get ranked shortlists with AI-powered explanations tailored to your job requirements.</p>
-
-          <div className="rg-feats">
-            {FEATURES.map(f => (
-              <div key={f.text} className="rg-feat">
-                <div className="rg-feat-ico"><f.icon size={14} color="rgba(255,255,255,0.9)" /></div>
-                <span className="rg-feat-label">{f.text}</span>
-                <div className="rg-feat-ring">
-                  <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                    <path d="M1 3l1.5 1.5L7 1" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
+      <div className="reg-root">
+        {/* ── Hero ── */}
+        <div className="reg-hero">
+          <div className="reg-hero-content">
+            <AnimatedBrandLogo />
+            <p className="reg-hero-tagline">
+              Join ScreenAI and start hiring smarter with AI-powered candidate screening.
+            </p>
+            <div className="reg-hero-steps">
+              {[
+                { n: "1", title: "Create your account", text: "Free to start — no credit card needed." },
+                { n: "2", title: "Post a job", text: "Define the role requirements and required skills." },
+                { n: "3", title: "Upload candidates", text: "Import from CSV, Excel, PDF or add manually." },
+                { n: "4", title: "Run AI screening", text: "Get a ranked shortlist with explanations in seconds." },
+              ].map(s => (
+                <div key={s.n} className="reg-step">
+                  <div className="reg-step-num">{s.n}</div>
+                  <div>
+                    <p className="reg-step-title">{s.title}</p>
+                    <p className="reg-step-text">{s.text}</p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-
-          <div className="rg-left-foot">Powered by Google Gemini AI · Debug Thugs Team</div>
         </div>
 
-        {/* ══ RIGHT ══ */}
-        <div className="rg-right">
-          <div className="rg-box">
-            <h2 className="rg-title">Create account</h2>
-            <p className="rg-subtitle">Start screening smarter — free for 14 days</p>
+        {/* ── Form ── */}
+        <div className="reg-form-panel">
+          <div className="reg-form-card">
+            <h1 className="form-title">Create your account</h1>
+            <p className="form-sub">Start screening candidates with AI today</p>
 
-            <div className="rg-tabs">
-              <Link href="/login" style={{ flex:1, display:"flex" }}>
-                <button className="rg-tab" style={{ width:"100%" }}>Login</button>
-              </Link>
-              <button className="rg-tab on">Register</button>
+            {displayError && (
+              <div className="form-error">
+                <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
+                <p className="form-error-text">{displayError}</p>
+              </div>
+            )}
+
+            <GoogleSignInButton onCredential={handleGoogleCredential} loading={loading} />
+
+            <div className="form-divider">
+              <div className="form-divider-line" />
+              <span className="form-divider-text">or register with email</span>
+              <div className="form-divider-line" />
             </div>
 
-            <div className="rg-row">
-              <div className="rg-field">
-                <label className="rg-label">First Name</label>
-                <div className="rg-ig">
-                  <span className="rg-ic"><User size={13} /></span>
-                  <input className="rg-input" type="text" placeholder="First" value={form.firstName} onChange={e => set("firstName", e.target.value)} />
+            <form onSubmit={handleSubmit}>
+              <div className="two-col">
+                <div className="field-wrap">
+                  <label className="field-label">Full name</label>
+                  <div className="field-input-wrap">
+                    <User size={15} className="field-icon" />
+                    <input className="field-input" type="text" placeholder="Alice Uwimana" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" disabled={loading} />
+                  </div>
+                </div>
+                <div className="field-wrap">
+                  <label className="field-label">Company</label>
+                  <div className="field-input-wrap">
+                    <Building2 size={15} className="field-icon" />
+                    <input className="field-input" type="text" placeholder="Optional" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} autoComplete="organization" disabled={loading} />
+                  </div>
                 </div>
               </div>
-              <div className="rg-field">
-                <label className="rg-label">Last Name</label>
-                <div className="rg-ig">
-                  <span className="rg-ic"><User size={13} /></span>
-                  <input className="rg-input" type="text" placeholder="Last" value={form.lastName} onChange={e => set("lastName", e.target.value)} />
+
+              <div className="field-wrap">
+                <label className="field-label">Email address</label>
+                <div className="field-input-wrap">
+                  <Mail size={15} className="field-icon" />
+                  <input className="field-input" type="email" placeholder="you@company.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" disabled={loading} />
                 </div>
               </div>
-            </div>
 
-            <div className="rg-field">
-              <label className="rg-label">Email Address</label>
-              <div className="rg-ig">
-                <span className="rg-ic"><Mail size={13} /></span>
-                <input className="rg-input" type="email" placeholder="you@company.com" value={form.email} onChange={e => set("email", e.target.value)} />
+              <div className="field-wrap">
+                <label className="field-label">Password</label>
+                <div className="field-input-wrap">
+                  <Lock size={15} className="field-icon" />
+                  <input className="field-input" type={showPass ? "text" : "password"} placeholder="Min. 6 characters" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" disabled={loading} />
+                  <button type="button" className="field-eye" onClick={() => setShowPass(!showPass)} tabIndex={-1}>
+                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                {form.password && (
+                  <div className="strength-wrap">
+                    <div className="strength-bar">
+                      <div className="strength-fill" style={{ width: `${(strength.score / 5) * 100}%`, background: strength.color }} />
+                    </div>
+                    <p className="strength-label" style={{ color: strength.color }}>{strength.label}</p>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <div className="rg-field">
-              <label className="rg-label">Password</label>
-              <div className="rg-ig">
-                <span className="rg-ic"><Lock size={13} /></span>
-                <input className="rg-input" type={showPwd?"text":"password"} placeholder="Min. 6 characters" value={form.password} onChange={e => set("password", e.target.value)} style={{ paddingRight:40 }} />
-                <button className="rg-eye" type="button" onClick={() => setShowPwd(!showPwd)}>
-                  {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-              {pw && (
-                <>
-                  <div className="rg-bar"><div className="rg-fill" style={{ width:pw.w, background:pw.color }} /></div>
-                  <p style={{ fontFamily:"var(--f)", fontSize:11, color:pw.color, marginTop:4, fontWeight:600 }}>{pw.label} password</p>
-                </>
-              )}
-            </div>
+              <p className="terms-note">
+                By creating an account you agree to our{" "}
+                <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+              </p>
 
-            <div className="rg-field">
-              <label className="rg-label">Company <span className="rg-opt">(optional)</span></label>
-              <div className="rg-ig">
-                <span className="rg-ic"><Building2 size={13} /></span>
-                <input className="rg-input" type="text" placeholder="Your organisation" value={form.company} onChange={e => set("company", e.target.value)} />
-              </div>
-            </div>
+              <button type="submit" className="btn-submit" disabled={loading}>
+                {loading ? <><div className="spin" /> Creating account…</> : <><Sparkles size={15} /> Create account</>}
+              </button>
+            </form>
 
-            {error && <div className="rg-error">⚠ {error}</div>}
-
-            <button className="rg-btn" disabled={loading || !form.firstName || !form.lastName || !form.email || !form.password} onClick={handleSubmit}>
-              {loading ? <><div className="rg-spin" /> Creating account…</> : <>Create Account <ArrowRight size={15} /></>}
-            </button>
-
-            <p className="rg-foot">
-              Powered by Google Gemini AI · Debug Thugs Team<br />
-              Already have an account? <Link href="/login">Sign in →</Link>
+            <p className="form-footer">
+              Already have an account?{" "}
+              <Link href="/login">Sign in</Link>
             </p>
           </div>
         </div>
-
       </div>
     </>
   );

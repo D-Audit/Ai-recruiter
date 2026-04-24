@@ -94,7 +94,7 @@ function ScreeningsInner() {
   const handleRerun = useCallback(async () => {
     if (!selectedJobId) return;
     try {
-      await dispatch(triggerScreening(selectedJobId)).unwrap();
+      await dispatch(triggerScreening({jobId : selectedJobId})).unwrap();
       setResultsLoaded(true);
       toast.success("AI screening complete!");
     } catch (e: unknown) {

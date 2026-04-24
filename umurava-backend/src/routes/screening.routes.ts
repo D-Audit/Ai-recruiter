@@ -1,8 +1,9 @@
+// umurava-backend/src/routes/screening.routes.ts
 import { Router } from "express";
 import {
   runScreening,
-  getResults,
-  compareSelectedCandidates,
+  getScreeningResults,
+  compareApplicants,
   getAllScreenings,
 } from "../controllers/screening.controller";
 import { protect } from "../middleware/auth.middleware";
@@ -10,9 +11,10 @@ import { protect } from "../middleware/auth.middleware";
 const router = Router();
 
 router.use(protect);
-router.get("/all", getAllScreenings);
-router.post("/run/:jobId", runScreening);
-router.get("/results/:jobId", getResults);
-router.post("/compare", compareSelectedCandidates);
+
+router.post("/run/:jobId",    runScreening);
+router.get("/results/:jobId", getScreeningResults);
+router.post("/compare",       compareApplicants);
+router.get("/all",            getAllScreenings);
 
 export default router;

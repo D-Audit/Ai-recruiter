@@ -1,3 +1,4 @@
+// frontend/src/services/authService.ts
 import api from "./api";
 
 export const login = async (email: string, password: string) => {
@@ -15,20 +16,21 @@ export const register = async (
   return res.data;
 };
 
+/**
+ * Google Sign-In — sends the Google credential token to backend.
+ * The backend verifies it with Google and returns a JWT.
+ */
+export const googleAuth = async (credential: string, company?: string) => {
+  const res = await api.post("/auth/google", { credential, company });
+  return res.data;
+};
+
 export const getMe = async () => {
   const res = await api.get("/auth/me");
   return res.data;
 };
 
-export const updateMe = async (data: { name?: string; company?: string }) => {
-  const res = await api.put("/auth/me", data);
-  return res.data;
-};
-
-export const changePassword = async (data: {
-  currentPassword: string;
-  newPassword: string;
-}) => {
-  const res = await api.put("/auth/password", data);
+export const updateProfile = async (data: { name?: string; company?: string }) => {
+  const res = await api.put("/auth/profile", data);
   return res.data;
 };

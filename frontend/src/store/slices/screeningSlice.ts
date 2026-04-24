@@ -1,25 +1,32 @@
+// frontend/src/store/slices/screeningSlice.ts
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import {
   runScreening,
   getResults,
-  compareCandidates,
+  compareApplicants, // ✅ FIXED: was "compareCandidates" which doesn't exist in screeningService
 } from "../../services/screeningService";
 import type { ScreeningResult } from "../../types";
 import { buildScreeningChatContext } from "../../utils/screeningChatContext";
 
+// ✅ FIXED: now accepts an object { jobId, forceRerun?, topN? }
+// Previously accepted just jobId: string which broke when called with an object
 export const triggerScreening = createAsyncThunk(
   "screening/run",
-  async (jobId: string, { rejectWithValue }) => {
+  async (
+    params: { jobId: string; forceRerun?: boolean; topN?: number | "all" },
+    { rejectWithValue }
+  ) => {
     try {
-      const body = await runScreening(jobId);
+      const { jobId, forceRerun = false, topN } = params;
+      const body = await runScreening(jobId, forceRerun, topN);
       return {
-        result: body.data as ScreeningResult,
+        result:    body.data as ScreeningResult,
         fromCache: Boolean(body.fromCache),
       };
     } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } } };
+      const err = error as { response?: { data?: { message?: string } }; message?: string };
       return rejectWithValue(
-        err.response?.data?.message || "Screening failed"
+        err.response?.data?.message || err.message || "Screening failed"
       );
     }
   }
@@ -44,7 +51,8 @@ export const compareSelected = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const data = await compareCandidates(jobId, candidateIds);
+      // ✅ FIXED: was calling compareCandidates (didn't exist), now uses compareApplicants
+      const data = await compareApplicants(jobId, candidateIds);
       return data.data;
     } catch {
       return rejectWithValue("Comparison failed");
@@ -55,35 +63,33 @@ export const compareSelected = createAsyncThunk(
 const screeningSlice = createSlice({
   name: "screening",
   initialState: {
-    results: null as ScreeningResult | null,
-    fromCache: false,
+    results:    null as ScreeningResult | null,
+    fromCache:  false,
     /** Last screening snapshot for AI assistant (kept after leaving job page). */
     assistantScreeningContext: null as Record<string, unknown> | null,
-    comparison: null as unknown,
+    comparison:         null as unknown,
     selectedForCompare: [] as string[],
     loading: false,
-    error: null as string | null,
+    error:   null as string | null,
   },
   reducers: {
     toggleSelectForCompare: (state, action: { payload: string }) => {
       const id = action.payload;
       if (state.selectedForCompare.includes(id)) {
-        state.selectedForCompare = state.selectedForCompare.filter(
-          (i) => i !== id
-        );
+        state.selectedForCompare = state.selectedForCompare.filter((i) => i !== id);
       } else if (state.selectedForCompare.length < 3) {
         state.selectedForCompare.push(id);
       }
     },
     clearCompare: (state) => {
-      state.comparison = null;
+      state.comparison        = null;
       state.selectedForCompare = [];
     },
     clearResults: (state) => {
-      state.results = null;
-      state.fromCache = false;
+      state.results           = null;
+      state.fromCache         = false;
       state.selectedForCompare = [];
-      state.error = null;
+      state.error             = null;
     },
     clearAssistantContext: (state) => {
       state.assistantScreeningContext = null;
@@ -91,26 +97,29 @@ const screeningSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // ── triggerScreening ───────────────────────────────────────────────────
       .addCase(triggerScreening.pending, (state) => {
         state.loading = true;
-        state.error = null;
+        state.error   = null;
       })
       .addCase(triggerScreening.fulfilled, (state, action) => {
-        state.loading = false;
-        state.results = action.payload.result;
+        state.loading   = false;
+        state.results   = action.payload.result;
         state.fromCache = action.payload.fromCache;
         const ctx = buildScreeningChatContext(action.payload.result);
         if (ctx) state.assistantScreeningContext = ctx;
       })
       .addCase(triggerScreening.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error   = action.payload as string;
       })
+
+      // ── fetchResults ───────────────────────────────────────────────────────
       .addCase(fetchResults.pending, (state) => {
         state.error = null;
       })
       .addCase(fetchResults.fulfilled, (state, action) => {
-        state.results = action.payload;
+        state.results   = action.payload;
         state.fromCache = false;
         const ctx = buildScreeningChatContext(action.payload);
         if (ctx) state.assistantScreeningContext = ctx;
@@ -118,16 +127,18 @@ const screeningSlice = createSlice({
       .addCase(fetchResults.rejected, (state, action) => {
         state.error = action.payload as string;
       })
+
+      // ── compareSelected ────────────────────────────────────────────────────
       .addCase(compareSelected.pending, (state) => {
         state.loading = true;
       })
       .addCase(compareSelected.fulfilled, (state, action) => {
-        state.loading = false;
+        state.loading    = false;
         state.comparison = action.payload;
       })
       .addCase(compareSelected.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.payload as string;
+        state.error   = action.payload as string;
       });
   },
 });
@@ -138,4 +149,5 @@ export const {
   clearResults,
   clearAssistantContext,
 } = screeningSlice.actions;
+
 export default screeningSlice.reducer;
