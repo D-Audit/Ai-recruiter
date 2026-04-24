@@ -124,16 +124,17 @@ function GoogleSignInButton({ onCredential, loading }: {
 }) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const hiddenButtonRef = useRef<HTMLDivElement | null>(null);
+  const googleCallbackRef = useRef<(response: any) => void>(() => {});
 
   useEffect(() => {
     if (!clientId) return;
 
-    // Expose callback globally for Google's script
-    window.handleGoogleCredential = (response: any) => {
+    googleCallbackRef.current = (response: any) => {
       if (response?.credential) {
         onCredential(response.credential);
       }
     };
+    window.handleGoogleCredential = googleCallbackRef.current;
 
     // Load Google Identity Services script
     const existingScript = document.getElementById("google-gsi-script");
@@ -159,7 +160,7 @@ function GoogleSignInButton({ onCredential, loading }: {
     if (!window.google || !clientId) return;
     window.google.accounts.id.initialize({
       client_id: clientId,
-      callback:  "handleGoogleCredential",
+      callback:  googleCallbackRef.current,
       ux_mode:   "popup",
     });
     window.google.accounts.id.renderButton(
@@ -178,7 +179,11 @@ function GoogleSignInButton({ onCredential, loading }: {
     if (loading) return;
     const host = hiddenButtonRef.current;
     const clickable = host?.querySelector('[role="button"]') as HTMLElement | null;
-    clickable?.click();
+    if (clickable) {
+      clickable.click();
+      return;
+    }
+    window.google?.accounts?.id?.prompt?.();
   }
 
   if (!clientId) {

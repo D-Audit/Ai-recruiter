@@ -75,14 +75,16 @@ declare global { interface Window { google?: any; handleGoogleCredentialReg?: (r
 function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: string) => void; loading: boolean }) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const hiddenButtonRef = useRef<HTMLDivElement | null>(null);
+  const googleCallbackRef = useRef<(response: any) => void>(() => {});
 
   useEffect(() => {
     if (!clientId) return;
-    window.handleGoogleCredentialReg = (response: any) => { if (response?.credential) onCredential(response.credential); };
+    googleCallbackRef.current = (response: any) => { if (response?.credential) onCredential(response.credential); };
+    window.handleGoogleCredentialReg = googleCallbackRef.current;
     const existing = document.getElementById("google-gsi-script");
     const init = () => {
       if (!window.google || !clientId) return;
-      window.google.accounts.id.initialize({ client_id: clientId, callback: "handleGoogleCredentialReg", ux_mode: "popup" });
+      window.google.accounts.id.initialize({ client_id: clientId, callback: googleCallbackRef.current, ux_mode: "popup" });
       window.google.accounts.id.renderButton(hiddenButtonRef.current, { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left" });
     };
     if (existing) { init(); return; }
@@ -96,7 +98,11 @@ function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: strin
     if (loading) return;
     const host = hiddenButtonRef.current;
     const clickable = host?.querySelector('[role="button"]') as HTMLElement | null;
-    clickable?.click();
+    if (clickable) {
+      clickable.click();
+      return;
+    }
+    window.google?.accounts?.id?.prompt?.();
   }
 
   if (!clientId) return (
