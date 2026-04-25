@@ -6,147 +6,157 @@ import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { registerUser, loginWithGoogle, clearError } from "../../store/slices/authSlice";
 import { AppDispatch, RootState } from "../../store";
-import { Eye, EyeOff, Mail, Lock, User, Building2, AlertCircle, CheckCircle2, Sparkles } from "lucide-react";
+import {
+  Eye, EyeOff, Mail, Lock, User, Building2,
+  AlertCircle, ArrowRight, CheckCircle2,
+  FileText, Brain, Layers,
+} from "lucide-react";
 
-// ── Shared Diamond Logo (identical to Sidebar) ──────────────────────────────
-function DiamondLogo({ size = 40 }: { size?: number }) {
-  const s = size;
-  return (
-    <svg width={s} height={s} viewBox="0 0 22 22" fill="none">
-      <path d="M11 1L21 8.5L17 21H5L1 8.5L11 1Z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M11 5L18 9.5L15 19H7L4 9.5L11 5Z" fill="white" fillOpacity="0.25" stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
-      <path d="M11 9L14.5 11.5L13 17H9L7.5 11.5L11 9Z" fill="white" />
-    </svg>
-  );
+// ── Google types ──────────────────────────────────────────────────────────────
+type GoogleCredentialResponse = { credential?: string };
+type GoogleAccountsId = {
+  initialize: (config: { client_id: string; callback: (r: GoogleCredentialResponse) => void; ux_mode: "popup" }) => void;
+  renderButton: (el: HTMLElement, opts: object) => void;
+  prompt: () => void;
+};
+declare global {
+  interface Window {
+    google?: { accounts: { id: GoogleAccountsId } };
+    handleGoogleCredentialReg?: (r: GoogleCredentialResponse) => void;
+  }
 }
 
-function AnimatedBrandLogo() {
-  return (
-    <>
-      <style>{`
-        @keyframes reg-logo-glow {
-          0%,100% { box-shadow: 0 4px 20px rgba(37,99,235,0.5), 0 0 0 0 rgba(99,102,241,0.5); }
-          50%     { box-shadow: 0 6px 30px rgba(124,58,237,0.8), 0 0 0 10px rgba(99,102,241,0); }
-        }
-        @keyframes reg-orbit-cw  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes reg-orbit-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-        @keyframes reg-float {
-          0%,100% { transform: translateY(0px); }
-          50%     { transform: translateY(-4px); }
-        }
-        .reg-brand-wrap { display: flex; flex-direction: column; align-items: center; gap: 16px; animation: reg-float 4s ease-in-out infinite; }
-        .reg-orbit-wrap { position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; }
-        .reg-logo-icon {
-          width: 68px; height: 68px; border-radius: 20px;
-          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 60%, #7c3aed 100%);
-          display: flex; align-items: center; justify-content: center;
-          position: relative; z-index: 2;
-        }
-        .reg-ring   { position: absolute; inset: 0; border-radius: 50%; border: 1.5px dashed rgba(147,197,253,0.4); animation: reg-orbit-cw 8s linear infinite; }
-        .reg-ring-2 { position: absolute; inset: 8px; border-radius: 50%; border: 1px dashed rgba(167,139,250,0.3); animation: reg-orbit-ccw 6s linear infinite; }
-        .reg-dot {
-          position: absolute; width: 8px; height: 8px; border-radius: 50%;
-          top: 50%; left: 50%; margin-top: -4px; margin-left: -4px;
-        }
-        .reg-dot-1 { background: rgba(147,197,253,0.9); box-shadow: 0 0 6px rgba(147,197,253,0.8); transform: translateX(46px); animation: reg-orbit-cw 8s linear infinite; transform-origin: 50px 4px; }
-        .reg-dot-2 { background: rgba(167,139,250,0.9); box-shadow: 0 0 6px rgba(167,139,250,0.8); transform: translateX(33px); animation: reg-orbit-ccw 6s linear infinite; transform-origin: 37px 4px; }
-        .reg-brand-name { font-family: var(--font-display, 'Sora', sans-serif); font-size: 29px; font-weight: 800; color: #ffffff; letter-spacing: -0.04em; line-height: 0.98; }
-        .reg-brand-tag  { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 11px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255,255,255,0.42); margin-top: 4px; text-align: center; }
-      `}</style>
-      <div className="reg-brand-wrap">
-        <div className="reg-orbit-wrap">
-          <div className="reg-ring" />
-          <div className="reg-ring-2" />
-          <div className="reg-dot reg-dot-1" />
-          <div className="reg-dot reg-dot-2" />
-          <div className="reg-logo-icon"><DiamondLogo size={36} /></div>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <p className="reg-brand-name">ScreenAI</p>
-          <p className="reg-brand-tag">Talent Screening Platform</p>
-        </div>
-      </div>
-    </>
-  );
-}
+function GoogleSignInButton({
+  onCredential, loading, text = "signup_with",
+}: {
+  onCredential: (c: string) => void;
+  loading: boolean;
+  text?: "signin_with" | "signup_with";
+}) {
+  const clientId          = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const googleCallbackRef = useRef<(r: GoogleCredentialResponse) => void>(() => {});
+  const initializedRef    = useRef(false);
 
-declare global { interface Window { google?: any; handleGoogleCredentialReg?: (r: any) => void; } }
-
-function GoogleSignInButton({ onCredential, loading }: { onCredential: (c: string) => void; loading: boolean }) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  const buttonRef = useRef<HTMLDivElement | null>(null);
-  const googleCallbackRef = useRef<(response: any) => void>(() => {});
-  const initializedRef = useRef(false);
+  const initSdk = useCallback(() => {
+    if (!window.google || !clientId) return;
+    if (initializedRef.current) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback:  googleCallbackRef.current,
+      ux_mode:   "popup",
+    });
+    initializedRef.current = true;
+  }, [clientId]);
 
   useEffect(() => {
     if (!clientId) return;
-    googleCallbackRef.current = (response: any) => { if (response?.credential) onCredential(response.credential); };
-    window.handleGoogleCredentialReg = googleCallbackRef.current;
-    const existing = document.getElementById("google-gsi-script");
-    const init = () => {
-      if (!window.google || !clientId || !buttonRef.current) return;
-      if (!initializedRef.current) {
-        window.google.accounts.id.initialize({ client_id: clientId, callback: googleCallbackRef.current, ux_mode: "popup" });
-        initializedRef.current = true;
-      }
-      buttonRef.current.innerHTML = "";
-      window.google.accounts.id.renderButton(buttonRef.current, { theme: "outline", size: "large", width: "100%", text: "signup_with", logo_alignment: "left", shape: "pill" });
+    googleCallbackRef.current = (r: GoogleCredentialResponse) => {
+      if (r?.credential) onCredential(r.credential);
     };
-    if (existing) { init(); return; }
-    const script = document.createElement("script");
-    script.id = "google-gsi-script"; script.src = "https://accounts.google.com/gsi/client"; script.async = true; script.defer = true; script.onload = init;
-    document.head.appendChild(script);
-    return () => { window.handleGoogleCredentialReg = undefined; };
-  }, [clientId, onCredential]);
+    window.handleGoogleCredentialReg = googleCallbackRef.current;
 
-  if (!clientId) return (
-    <button type="button" disabled style={{ width: "100%", padding: "12px 16px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontSize: 14, fontWeight: 600, color: "#94a3b8", cursor: "not-allowed", fontFamily: "inherit" }}>
-      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/><path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/><path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/><path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/></svg>
-      Google sign-in not configured
-    </button>
-  );
+    const existing = document.getElementById("google-gsi-script");
+    if (existing) { initSdk(); return; }
+
+    const s    = document.createElement("script");
+    s.id       = "google-gsi-script";
+    s.src      = "https://accounts.google.com/gsi/client";
+    s.async    = true;
+    s.defer    = true;
+    s.onload   = initSdk;
+    document.head.appendChild(s);
+    return () => { window.handleGoogleCredentialReg = undefined; };
+  }, [clientId, initSdk, onCredential]);
+
+  const handleClick = () => {
+    if (!window.google || !clientId || loading) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback:  googleCallbackRef.current,
+      ux_mode:   "popup",
+    });
+    window.google.accounts.id.prompt();
+  };
+
+  const btnLabel = text === "signup_with" ? "Sign up with Google" : "Sign in with Google";
+  const disabled = loading || !clientId;
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
       style={{
-        width: "100%",
+        width: "100%", height: 48,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        borderRadius: 10, border: "1.5px solid #e2e8f0",
+        background: "#ffffff", color: "#374151",
+        fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+        cursor: disabled ? "not-allowed" : "pointer",
         opacity: loading ? 0.6 : 1,
-        pointerEvents: loading ? "none" : "auto"
+        transition: "border-color 0.15s, background 0.15s",
+        letterSpacing: "0.01em",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
       }}
+      onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#ffffff"; }}
     >
-      <div
-        ref={buttonRef}
-        style={{
-          width: "100%",
-          minHeight: 46,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        }}
-      />
-    </div>
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+        <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
+        <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
+        <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
+      </svg>
+      {!clientId ? "Google sign-in not configured" : btnLabel}
+    </button>
   );
 }
 
-// ── Password strength ─────────────────────────────────────────────────────
 function passwordStrength(p: string): { score: number; label: string; color: string } {
   if (!p) return { score: 0, label: "", color: "#e2e8f0" };
   let score = 0;
-  if (p.length >= 8)  score++;
-  if (p.length >= 12) score++;
-  if (/[A-Z]/.test(p)) score++;
-  if (/[0-9]/.test(p)) score++;
+  if (p.length >= 8)           score++;
+  if (p.length >= 12)          score++;
+  if (/[A-Z]/.test(p))         score++;
+  if (/[0-9]/.test(p))         score++;
   if (/[^A-Za-z0-9]/.test(p)) score++;
   const map = [
-    { score: 1, label: "Very weak",  color: "#ef4444" },
-    { score: 2, label: "Weak",       color: "#f97316" },
-    { score: 3, label: "Fair",       color: "#eab308" },
-    { score: 4, label: "Good",       color: "#22c55e" },
-    { score: 5, label: "Strong",     color: "#16a34a" },
+    { score:1, label:"Very weak",  color:"#ef4444" },
+    { score:2, label:"Weak",       color:"#f97316" },
+    { score:3, label:"Fair",       color:"#eab308" },
+    { score:4, label:"Good",       color:"#22c55e" },
+    { score:5, label:"Strong",     color:"#16a34a" },
   ];
   return map[score - 1] || { score: 0, label: "", color: "#e2e8f0" };
 }
+
+// ── Left-panel "how it works" steps ──────────────────────────────────────────
+const HOW_STEPS = [
+  {
+    icon: FileText,
+    num: "01",
+    title: "Post a Job",
+    desc: "Define the role, required skills, experience level, and location.",
+  },
+  {
+    icon: Brain,
+    num: "02",
+    title: "Upload Candidates",
+    desc: "CSV, PDF resumes, or import from the Umurava talent pool.",
+  },
+  {
+    icon: Layers,
+    num: "03",
+    title: "Get a Ranked Shortlist",
+    desc: "Gemini AI scores every applicant and explains each decision.",
+  },
+];
+
+const LEFT_BADGES = [
+  "No credit card needed",
+  "Free forever tier",
+  "Setup in 2 minutes",
+];
 
 export default function RegisterPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -164,18 +174,15 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalErr("");
-    dispatch(clearError());
-
-    if (!form.name.trim())     { setLocalErr("Full name is required"); return; }
-    if (!form.email.trim())    { setLocalErr("Email is required"); return; }
-    if (!form.password)        { setLocalErr("Password is required"); return; }
+    setLocalErr(""); dispatch(clearError());
+    if (!form.name.trim())        { setLocalErr("Full name is required"); return; }
+    if (!form.email.trim())       { setLocalErr("Email is required"); return; }
+    if (!form.password)           { setLocalErr("Password is required"); return; }
     if (form.password.length < 6) { setLocalErr("Password must be at least 6 characters"); return; }
-
     try {
       await dispatch(registerUser(form)).unwrap();
       router.push("/dashboard");
-    } catch { /* Redux error state handles display */ }
+    } catch { /* Redux state holds error */ }
   };
 
   const handleGoogleCredential = useCallback(async (credential: string) => {
@@ -183,7 +190,7 @@ export default function RegisterPage() {
     try {
       await dispatch(loginWithGoogle({ credential, company: form.company })).unwrap();
       router.push("/dashboard");
-    } catch { /* Redux error state */ }
+    } catch { /* Redux state holds error */ }
   }, [dispatch, router, form.company]);
 
   const displayError = localErr || error;
@@ -191,216 +198,586 @@ export default function RegisterPage() {
   return (
     <>
       <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        .reg-root { min-height: 100vh; display: flex; font-family: var(--font-body, 'Manrope', 'Inter', system-ui, sans-serif); }
-        .reg-hero {
-          flex: 1 1 50%;
-          background: linear-gradient(160deg, #0f1c3a 0%, #0b1528 40%, #0d1f4a 100%);
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          padding: 60px 48px; position: relative; overflow: hidden;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .rn-root {
+          min-height: 100vh;
+          display: flex;
+          font-family: 'Inter', system-ui, sans-serif;
+          -webkit-font-smoothing: antialiased;
         }
-        .reg-hero::before {
-          content: ''; position: absolute; top: -120px; left: -120px;
-          width: 400px; height: 400px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%); pointer-events: none;
+
+        /* ══════════════════════════════════════════════════
+           LEFT PANEL — same #0a1628 as login, consistent
+           ══════════════════════════════════════════════════ */
+        .rn-left {
+          flex: 0 0 46%;
+          background: #0a1628;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+          overflow: hidden;
         }
-        .reg-hero::after {
-          content: "";
+        .rn-left::before {
+          content: '';
           position: absolute;
           inset: 0;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 76px 76px;
+          background-image: radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px);
+          background-size: 28px 28px;
           pointer-events: none;
-          z-index: 0;
         }
-        .reg-hero .hero-grid-fade {
+        .rn-left::after {
+          content: '';
           position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(circle at top left, rgba(37,99,235,0.08), transparent 34%),
-            linear-gradient(180deg, rgba(15,28,58,0.18), rgba(15,28,58,0.28));
+          bottom: -100px;
+          right: -100px;
+          width: 400px;
+          height: 400px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(37,99,235,0.08) 0%, transparent 65%);
           pointer-events: none;
-          z-index: 0;
         }
-        .reg-hero .hero-orb {
-          content: ''; position: absolute; bottom: -80px; right: -80px;
-          width: 300px; height: 300px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%); pointer-events: none;
-          z-index: 0;
+
+        .rn-left-inner {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          padding: 52px 52px;
         }
-        .reg-hero-content { position: relative; z-index: 1; width: 100%; }
-        .reg-hero-tagline { font-family: var(--font-body, 'Manrope', sans-serif); font-size: 19px; line-height: 1.42; font-weight: 600; letter-spacing: -0.02em; color: rgba(255,255,255,0.9); margin-top: 28px; text-align: left; max-width: 440px; }
-        .reg-hero-steps { margin-top: 36px; display: flex; flex-direction: column; gap: 16px; max-width: 460px; }
-        .reg-step { display: flex; align-items: center; gap: 14px; padding: 0; position: relative; border-radius: 0; background: transparent; border: none; backdrop-filter: none; }
-        .reg-step:not(:last-child)::after { display: none; }
-        .reg-step-num { width: 28px; height: 28px; border-radius: 0; flex-shrink: 0; background: transparent; border: none; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: white; }
-        .reg-step-title { font-family: var(--font-display, 'Sora', sans-serif); font-weight: 700; color: white; font-size: 17px; letter-spacing: -0.025em; line-height: 1.12; }
-        .reg-step-text  { display: none; }
 
-        .reg-form-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%); padding: 48px 24px; }
-        .reg-form-card  { width: 100%; max-width: 440px; background: rgba(255,255,255,0.94); border-radius: 28px; border: 1px solid rgba(226,232,240,0.9); box-shadow: none; backdrop-filter: blur(10px); padding: 44px 40px 40px; animation: slideUp 0.3s ease; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        /* Logo — identical to login */
+        .rn-logo {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          margin-bottom: 64px;
+        }
+        .rn-logo-mark {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          background: #2563eb;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .rn-logo-name {
+          font-size: 18px;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: -0.03em;
+          line-height: 1;
+        }
+        .rn-logo-sub {
+          font-size: 11px;
+          color: rgba(255,255,255,0.35);
+          font-weight: 500;
+          letter-spacing: 0.04em;
+          margin-top: 3px;
+          text-transform: uppercase;
+        }
 
-        .form-title { font-family: var(--font-display, 'Sora', 'Inter', sans-serif); font-size: clamp(2.25rem, 3.6vw, 2.55rem); font-weight: 800; color: #0b1220; letter-spacing: -0.055em; line-height: 1.02; margin-bottom: 10px; }
-        .form-sub   { font-size: 17px; color: #667085; margin-bottom: 32px; line-height: 1.5; font-weight: 500; }
+        /* Hero copy */
+        .rn-eyebrow {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: #60a5fa;
+          margin-bottom: 16px;
+        }
+        .rn-hero-h {
+          font-size: clamp(1.8rem, 2.6vw, 2.3rem);
+          font-weight: 800;
+          color: #ffffff;
+          line-height: 1.12;
+          letter-spacing: -0.04em;
+          margin-bottom: 16px;
+        }
+        .rn-hero-sub {
+          font-size: 14.5px;
+          color: rgba(255,255,255,0.5);
+          line-height: 1.65;
+          font-weight: 400;
+          max-width: 360px;
+          margin-bottom: 48px;
+        }
 
-        .form-error { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 11px; margin-bottom: 20px; background: #fef2f2; border: 1px solid #fecaca; animation: slideDown 0.2s ease; }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-        .form-error-text { font-size: 13.5px; color: #dc2626; line-height: 1.5; font-weight: 500; }
+        /* How-it-works steps */
+        .rn-steps {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          margin-bottom: 48px;
+        }
+        .rn-step {
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          padding: 16px 0;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .rn-step:last-child { border-bottom: none; }
+        .rn-step-left {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0;
+          flex-shrink: 0;
+        }
+        .rn-step-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: rgba(37,99,235,0.15);
+          border: 1px solid rgba(37,99,235,0.25);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .rn-step-num {
+          font-size: 10px;
+          font-weight: 800;
+          color: rgba(255,255,255,0.25);
+          margin-top: 5px;
+          letter-spacing: 0.05em;
+        }
+        .rn-step-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: #ffffff;
+          margin-bottom: 4px;
+          letter-spacing: -0.02em;
+        }
+        .rn-step-desc {
+          font-size: 12.5px;
+          color: rgba(255,255,255,0.43);
+          line-height: 1.55;
+        }
 
-        .form-divider { display: flex; align-items: center; gap: 14px; margin: 28px 0 24px; }
-        .form-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(226,232,240,0), #dbe3ee 18%, #dbe3ee 82%, rgba(226,232,240,0)); }
-        .form-divider-text { font-size: 12px; color: #98a2b3; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
+        /* Free badges */
+        .rn-badges {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: auto;
+          padding-top: 28px;
+          border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .rn-badge {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          font-size: 13px;
+          color: rgba(255,255,255,0.55);
+          font-weight: 500;
+        }
+        .rn-badge-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: #22c55e;
+          flex-shrink: 0;
+        }
 
-        .field-wrap  { margin-bottom: 18px; }
-        .field-label { display: block; font-size: 11px; font-weight: 600; color: #667085; margin-bottom: 9px; text-transform: uppercase; letter-spacing: 0.18em; }
-        .field-input-wrap { position: relative; }
-        .field-icon  { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #98a2b3; pointer-events: none; }
-        .field-input { width: 100%; height: 54px; padding: 0 16px 0 44px; border-radius: 16px; border: 1.5px solid #e5e7eb; font-size: 15px; color: #0f172a; outline: none; background: #ffffff; font-family: inherit; box-shadow: 0 1px 2px rgba(15,23,42,0.03); transition: all 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
-        .field-input:focus { border-color: #4f6df5; background: #ffffff; box-shadow: 0 0 0 4px rgba(79,109,245,0.12), 0 10px 24px rgba(79,109,245,0.08); }
-        .field-input::placeholder { color: #9aa4b2; }
-        .field-eye { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #98a2b3; padding: 2px; display: flex; transition: color 0.15s; }
-        .field-eye:hover { color: #475569; }
+        /* ══════════════════════════════════════════════════
+           RIGHT PANEL — white, scrollable for longer form
+           ══════════════════════════════════════════════════ */
+        .rn-right {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #ffffff;
+          padding: 40px 40px;
+          overflow-y: auto;
+        }
+        .rn-form-wrap {
+          width: 100%;
+          max-width: 410px;
+          animation: rn-up 0.25s ease;
+        }
+        @keyframes rn-up {
+          from { opacity:0; transform:translateY(12px); }
+          to   { opacity:1; transform:translateY(0); }
+        }
 
-        /* Strength bar */
-        .strength-wrap { margin-top: 7px; }
-        .strength-bar  { height: 4px; border-radius: 2px; background: #e2e8f0; overflow: hidden; }
-        .strength-fill { height: 100%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
-        .strength-label { font-size: 11.5px; font-weight: 600; margin-top: 4px; }
+        .rn-form-title {
+          font-size: clamp(1.6rem, 2.8vw, 2rem);
+          font-weight: 800;
+          color: #0f172a;
+          letter-spacing: -0.04em;
+          line-height: 1.1;
+          margin-bottom: 6px;
+        }
+        .rn-form-sub {
+          font-size: 14px;
+          color: #64748b;
+          margin-bottom: 24px;
+          font-weight: 400;
+        }
 
-        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        /* Error */
+        .rn-err {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          padding: 11px 14px;
+          border-radius: 9px;
+          margin-bottom: 16px;
+          background: #fef2f2;
+          border: 1.5px solid #fecaca;
+          animation: rn-shake 0.25s ease;
+        }
+        @keyframes rn-shake {
+          0%,100% { transform:translateX(0); }
+          25%      { transform:translateX(-4px); }
+          75%      { transform:translateX(4px); }
+        }
+        .rn-err-text { font-size: 13px; color: #dc2626; line-height: 1.5; font-weight: 500; }
 
-        .btn-submit { width: 100%; height: 56px; padding: 0 18px; border-radius: 16px; border: none; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%); color: white; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 14px 30px rgba(79,70,229,0.26), 0 6px 16px rgba(37,99,235,0.18); transition: all 0.18s ease; display: flex; align-items: center; justify-content: center; gap: 9px; margin-bottom: 22px; margin-top: 24px; }
-        .btn-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(79,70,229,0.28), 0 8px 18px rgba(37,99,235,0.2); }
-        .btn-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
+        /* Divider */
+        .rn-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+        .rn-divider-line { flex:1; height:1px; background:#e2e8f0; }
+        .rn-divider-text { font-size: 12px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
 
-        .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Two-col grid */
+        .rn-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-        .terms-note { font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.6; margin-top: 4px; }
-        .terms-note a { color: #2563eb; text-decoration: none; }
-        .terms-note a:hover { text-decoration: underline; }
+        /* Fields */
+        .rn-field { margin-bottom: 13px; }
+        .rn-label {
+          display: block;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: #374151;
+          margin-bottom: 5px;
+          letter-spacing: 0.01em;
+        }
+        .rn-inp-w { position: relative; }
+        .rn-ico {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #9ca3af;
+          pointer-events: none;
+          display: flex;
+        }
+        .rn-inp {
+          width: 100%;
+          height: 44px;
+          padding: 0 13px 0 39px;
+          border-radius: 10px;
+          border: 1.5px solid #e2e8f0;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+          background: #ffffff;
+          font-family: inherit;
+          transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .rn-inp:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .rn-inp::placeholder { color: #9ca3af; }
+        .rn-eye {
+          position: absolute;
+          right: 11px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #9ca3af;
+          padding: 2px;
+          display: flex;
+          transition: color 0.15s;
+        }
+        .rn-eye:hover { color: #374151; }
 
-        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 22px; }
-        .form-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
-        .form-footer a:hover { text-decoration: underline; }
+        /* Strength */
+        .rn-strength-wrap { margin-top: 7px; }
+        .rn-strength-bar  { height: 4px; border-radius: 2px; background: #f1f5f9; overflow: hidden; }
+        .rn-strength-fill { height: 100%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
+        .rn-strength-lbl  { font-size: 11.5px; font-weight: 600; margin-top: 4px; }
 
-        @media (max-width: 900px) { .reg-hero { display: none; } .reg-form-panel { background: white; padding: 24px 16px; } .reg-form-card { box-shadow: none; border: none; padding: 32px 20px; border-radius: 24px; } .two-col { grid-template-columns: 1fr; } }
+        /* Terms */
+        .rn-terms {
+          font-size: 12px;
+          color: #94a3b8;
+          text-align: center;
+          line-height: 1.6;
+          margin-top: 6px;
+        }
+        .rn-terms a { color: #2563eb; text-decoration: none; }
+        .rn-terms a:hover { text-decoration: underline; }
+
+        /* Submit */
+        .rn-btn {
+          width: 100%;
+          height: 48px;
+          border-radius: 10px;
+          border: none;
+          background: #1e3a5f;
+          color: white;
+          font-size: 15px;
+          font-weight: 700;
+          font-family: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          cursor: pointer;
+          margin-top: 14px;
+          transition: background 0.15s, transform 0.15s;
+          letter-spacing: 0.01em;
+        }
+        .rn-btn:hover:not(:disabled) {
+          background: #162d4a;
+          transform: translateY(-1px);
+        }
+        .rn-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        /* Spinner */
+        .rn-spin {
+          width: 15px;
+          height: 15px;
+          border: 2px solid rgba(255,255,255,0.35);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: rn-spin-a 0.7s linear infinite;
+        }
+        @keyframes rn-spin-a { to { transform: rotate(360deg); } }
+
+        /* Footer */
+        .rn-footer {
+          text-align: center;
+          font-size: 13.5px;
+          color: #64748b;
+          margin-top: 20px;
+        }
+        .rn-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
+        .rn-footer a:hover { text-decoration: underline; }
+
+        @media (max-width: 960px) {
+          .rn-left { display: none; }
+          .rn-right { background: #f8fafc; padding: 28px 20px; }
+          .rn-two { grid-template-columns: 1fr; }
+        }
       `}</style>
 
-      <div className="reg-root">
-        {/* ── Hero ── */}
-        <div className="reg-hero">
-          <div className="hero-grid-fade" />
-          <div className="hero-orb" />
-          <div className="reg-hero-content">
-            <AnimatedBrandLogo />
-            <p className="reg-hero-tagline">
-              Create your account and start with a sharper, more organized hiring setup.
+      <div className="rn-root">
+
+        {/* ═══════════════════════════════════════
+            LEFT — dark navy, same as login
+            ═══════════════════════════════════════ */}
+        <div className="rn-left">
+          <div className="rn-left-inner">
+
+            {/* Logo — same mark as login */}
+            <div className="rn-logo">
+              <div className="rn-logo-mark">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                  <path d="M11 2L19 7.5V14.5L11 20L3 14.5V7.5L11 2Z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.4" strokeLinejoin="round"/>
+                  <path d="M11 6L16 9.5V13.5L11 17L6 13.5V9.5L11 6Z" fill="white" fillOpacity="0.5" stroke="white" strokeWidth="0.8" strokeLinejoin="round"/>
+                  <circle cx="11" cy="11" r="2.5" fill="white"/>
+                </svg>
+              </div>
+              <div>
+                <p className="rn-logo-name">Umurava AI</p>
+                <p className="rn-logo-sub">Talent Screening</p>
+              </div>
+            </div>
+
+            {/* Hero copy */}
+            <p className="rn-eyebrow">Start in 2 minutes</p>
+            <h1 className="rn-hero-h">
+              Your smarter<br />hiring workspace.
+            </h1>
+            <p className="rn-hero-sub">
+              Create a free account and start screening candidates with AI. No setup fees, no limits on your first jobs.
             </p>
-            <div className="reg-hero-steps">
-              {[
-                { n: "1", title: "Create Workspace", text: "" },
-                { n: "2", title: "Add Roles", text: "" },
-                { n: "3", title: "Bring Candidates", text: "" },
-                { n: "4", title: "Review Faster", text: "" },
-              ].map(s => (
-                <div key={s.n} className="reg-step">
-                  <div className="reg-step-num">{s.n}</div>
-                  <div>
-                    <p className="reg-step-title">{s.title}</p>
-                    <p className="reg-step-text">{s.text}</p>
+
+            {/* How it works */}
+            <div className="rn-steps">
+              {HOW_STEPS.map((s) => (
+                <div key={s.num} className="rn-step">
+                  <div className="rn-step-left">
+                    <div className="rn-step-icon">
+                      <s.icon size={16} color="#60a5fa" />
+                    </div>
+                    <span className="rn-step-num">{s.num}</span>
+                  </div>
+                  <div style={{ paddingTop: 2 }}>
+                    <p className="rn-step-title">{s.title}</p>
+                    <p className="rn-step-desc">{s.desc}</p>
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* Free badges */}
+            <div className="rn-badges">
+              {LEFT_BADGES.map((b) => (
+                <div key={b} className="rn-badge">
+                  <span className="rn-badge-dot" />
+                  {b}
+                </div>
+              ))}
+            </div>
+
           </div>
         </div>
 
-        {/* ── Form ── */}
-        <div className="reg-form-panel">
-          <div className="reg-form-card">
-            <h1 className="form-title">Create your account</h1>
-            <p className="form-sub">Start screening candidates with AI today</p>
+        {/* ═══════════════════════════════════════
+            RIGHT — pure white form
+            ═══════════════════════════════════════ */}
+        <div className="rn-right">
+          <div className="rn-form-wrap">
+
+            <h2 className="rn-form-title">Create your account</h2>
+            <p className="rn-form-sub">Start screening candidates with AI today</p>
 
             {displayError && (
-              <div className="form-error">
-                <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p className="form-error-text">{displayError}</p>
+              <div className="rn-err">
+                <AlertCircle size={15} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+                <p className="rn-err-text">{displayError}</p>
               </div>
             )}
 
-            <GoogleSignInButton onCredential={handleGoogleCredential} loading={loading} />
+            <GoogleSignInButton
+              onCredential={handleGoogleCredential}
+              loading={loading}
+              text="signup_with"
+            />
 
-            <div className="form-divider">
-              <div className="form-divider-line" />
-              <span className="form-divider-text">or register with email</span>
-              <div className="form-divider-line" />
+            <div className="rn-divider">
+              <div className="rn-divider-line"/>
+              <span className="rn-divider-text">or register with email</span>
+              <div className="rn-divider-line"/>
             </div>
 
             <form onSubmit={handleSubmit}>
-              <div className="two-col">
-                <div className="field-wrap">
-                  <label className="field-label">Full name</label>
-                  <div className="field-input-wrap">
-                    <User size={15} className="field-icon" />
-                    <input className="field-input" type="text" placeholder="Enter your full name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} autoComplete="name" disabled={loading} />
+              <div className="rn-two">
+                <div className="rn-field">
+                  <label className="rn-label">Full name</label>
+                  <div className="rn-inp-w">
+                    <span className="rn-ico"><User size={14}/></span>
+                    <input
+                      className="rn-inp"
+                      type="text"
+                      placeholder="Your full name"
+                      value={form.name}
+                      onChange={e => setForm({...form, name: e.target.value})}
+                      autoComplete="name"
+                      disabled={loading}
+                    />
                   </div>
                 </div>
-                <div className="field-wrap">
-                  <label className="field-label">Company</label>
-                  <div className="field-input-wrap">
-                    <Building2 size={15} className="field-icon" />
-                    <input className="field-input" type="text" placeholder="Your company name" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} autoComplete="organization" disabled={loading} />
+                <div className="rn-field">
+                  <label className="rn-label">Company</label>
+                  <div className="rn-inp-w">
+                    <span className="rn-ico"><Building2 size={14}/></span>
+                    <input
+                      className="rn-inp"
+                      type="text"
+                      placeholder="Company name"
+                      value={form.company}
+                      onChange={e => setForm({...form, company: e.target.value})}
+                      autoComplete="organization"
+                      disabled={loading}
+                    />
                   </div>
                 </div>
               </div>
 
-              <div className="field-wrap">
-                <label className="field-label">Email address</label>
-                <div className="field-input-wrap">
-                  <Mail size={15} className="field-icon" />
-                  <input className="field-input" type="email" placeholder="Enter your work email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} autoComplete="email" disabled={loading} />
+              <div className="rn-field">
+                <label className="rn-label">Email address</label>
+                <div className="rn-inp-w">
+                  <span className="rn-ico"><Mail size={14}/></span>
+                  <input
+                    className="rn-inp"
+                    type="email"
+                    placeholder="you@company.com"
+                    value={form.email}
+                    onChange={e => setForm({...form, email: e.target.value})}
+                    autoComplete="email"
+                    disabled={loading}
+                  />
                 </div>
               </div>
 
-              <div className="field-wrap">
-                <label className="field-label">Password</label>
-                <div className="field-input-wrap">
-                  <Lock size={15} className="field-icon" />
-                  <input className="field-input" type={showPass ? "text" : "password"} placeholder="Enter your password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} autoComplete="new-password" disabled={loading} />
-                  <button type="button" className="field-eye" onClick={() => setShowPass(!showPass)} tabIndex={-1}>
-                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+              <div className="rn-field">
+                <label className="rn-label">Password</label>
+                <div className="rn-inp-w">
+                  <span className="rn-ico"><Lock size={14}/></span>
+                  <input
+                    className="rn-inp"
+                    type={showPass ? "text" : "password"}
+                    placeholder="Min 6 characters"
+                    value={form.password}
+                    onChange={e => setForm({...form, password: e.target.value})}
+                    autoComplete="new-password"
+                    disabled={loading}
+                    style={{ paddingRight: 40 }}
+                  />
+                  <button
+                    type="button"
+                    className="rn-eye"
+                    onClick={() => setShowPass(!showPass)}
+                    tabIndex={-1}
+                  >
+                    {showPass ? <EyeOff size={14}/> : <Eye size={14}/>}
                   </button>
                 </div>
                 {form.password && (
-                  <div className="strength-wrap">
-                    <div className="strength-bar">
-                      <div className="strength-fill" style={{ width: `${(strength.score / 5) * 100}%`, background: strength.color }} />
+                  <div className="rn-strength-wrap">
+                    <div className="rn-strength-bar">
+                      <div
+                        className="rn-strength-fill"
+                        style={{ width: `${(strength.score / 5) * 100}%`, background: strength.color }}
+                      />
                     </div>
-                    <p className="strength-label" style={{ color: strength.color }}>{strength.label}</p>
+                    <p className="rn-strength-lbl" style={{ color: strength.color }}>{strength.label}</p>
                   </div>
                 )}
               </div>
 
-              <p className="terms-note">
+              <p className="rn-terms">
                 By creating an account you agree to our{" "}
                 <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
               </p>
 
-              <button type="submit" className="btn-submit" disabled={loading}>
-                {loading ? <><div className="spin" /> Creating account…</> : <><Sparkles size={15} /> Create account</>}
+              <button type="submit" className="rn-btn" disabled={loading}>
+                {loading
+                  ? <><div className="rn-spin"/> Creating account…</>
+                  : <>Create account <ArrowRight size={15}/></>
+                }
               </button>
             </form>
 
-            <p className="form-footer">
+            <p className="rn-footer">
               Already have an account?{" "}
               <Link href="/login">Sign in</Link>
             </p>
+
+            {/* Trust badge — same as login */}
+            <div style={{ marginTop: 24, padding: "12px 16px", borderRadius: 10, background: "#f8fafc", border: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={13} color="#16a34a" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                Free to start · No card required · Powered by Gemini AI
+              </p>
+            </div>
           </div>
         </div>
+
       </div>
     </>
   );

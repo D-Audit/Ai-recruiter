@@ -207,9 +207,7 @@ Reply in plain conversational English only.
   return callGeminiWithRetry(prompt, 2);
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Smoke-test Gemini connection
-// ─────────────────────────────────────────────────────────────────
+
 export async function testGeminiConnection(): Promise<boolean> {
   try {
     const result = await geminiModel.generateContent('Reply with "OK" only.');

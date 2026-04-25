@@ -1,10 +1,9 @@
 // umurava-backend/src/controllers/auth.controller.ts
-// Added: Google OAuth login endpoint
 
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import User from "../models/User.model";
-import {OAuth2Client} from "google-auth-library";
 
 const generateToken = (id: string, email: string, name: string): string => {
   return jwt.sign(
@@ -85,8 +84,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/google
-// Accepts a Google ID token from the frontend (from Google Sign-In).
-// Verifies it with Google, finds or creates the user, returns JWT.
+// Accepts a Google ID token from the frontend (Google Sign-In SDK).
+// Verifies it with Google's tokeninfo endpoint, finds or creates the user,
+// returns our own JWT — same shape as email login.
 // ─────────────────────────────────────────────────────────────────────────────
 export const googleLogin = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -97,10 +97,9 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Verify the Google ID token
+    // Verify the Google ID token against Google's public endpoint
     let googlePayload: any;
     try {
-      // Decode the JWT from Google (it is a standard JWT — we verify against Google's public keys)
       const response = await fetch(
         `https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`
       );
@@ -114,7 +113,7 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Validate the token is for our app
+    // Validate the token audience matches our app
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (clientId && googlePayload.aud !== clientId) {
       res.status(401).json({ success: false, message: "Google token audience mismatch." });
@@ -129,13 +128,12 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
     const email = googlePayload.email.toLowerCase();
     const name  = googlePayload.name || googlePayload.email.split("@")[0];
 
-    // Find existing user or create new one
+    // Find existing user or create a new one
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Create a new user — no password needed for Google users
-      // We generate a random long password they cannot use directly
-      const randomPassword = require("crypto").randomBytes(32).toString("hex");
+      // Google users get a random password they can never use directly
+      const randomPassword = crypto.randomBytes(32).toString("hex");
       user = await User.create({
         name,
         email,
@@ -202,5 +200,46 @@ export const updateProfile = async (req: any, res: Response): Promise<void> => {
     });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/auth/password
+// Used by settings/page.tsx to change password
+// ─────────────────────────────────────────────────────────────────────────────
+export const changePassword = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ success: false, message: "Current and new password are required" });
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      res.status(400).json({ success: false, message: "New password must be at least 6 characters" });
+      return;
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      res.status(404).json({ success: false, message: "User not found" });
+      return;
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      res.status(401).json({ success: false, message: "Current password is incorrect" });
+      return;
+    }
+
+    user.password = newPassword;
+    await user.save(); // triggers pre-save hash in User model
+    console.log(`✅ Password changed for user: ${user.email}`);
+
+    res.json({ success: true, message: "Password updated successfully" });
+  } catch (error: any) {
+    console.error("❌ Change password error:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to change password" });
   }
 };

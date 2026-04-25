@@ -6,275 +6,162 @@ import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { loginUser, loginWithGoogle, clearError } from "../../store/slices/authSlice";
 import { AppDispatch, RootState } from "../../store";
-import { Eye, EyeOff, Mail, Lock, AlertCircle, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, AlertCircle, ArrowRight, CheckCircle2, Users, BarChart3, Shield } from "lucide-react";
 
-// ── Shared Diamond Logo (identical to Sidebar) ──────────────────────────────
-function DiamondLogo({ size = 40 }: { size?: number }) {
-  const s = size;
-  return (
-    <svg width={s} height={s} viewBox="0 0 22 22" fill="none">
-      <path d="M11 1L21 8.5L17 21H5L1 8.5L11 1Z" fill="white" fillOpacity="0.15" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M11 5L18 9.5L15 19H7L4 9.5L11 5Z" fill="white" fillOpacity="0.25" stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
-      <path d="M11 9L14.5 11.5L13 17H9L7.5 11.5L11 9Z" fill="white" />
-    </svg>
-  );
-}
-
-// ── Animated Logo (same as sidebar but larger) ────────────────────────────
-function AnimatedBrandLogo() {
-  return (
-    <>
-      <style>{`
-        @keyframes logo-glow {
-          0%,100% { box-shadow: 0 4px 20px rgba(37,99,235,0.5), 0 0 0 0 rgba(99,102,241,0.5); }
-          50%     { box-shadow: 0 6px 30px rgba(124,58,237,0.8), 0 0 0 10px rgba(99,102,241,0); }
-        }
-        @keyframes logo-orbit-cw  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes logo-orbit-ccw { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
-        @keyframes logo-float {
-          0%,100% { transform: translateY(0px); }
-          50%     { transform: translateY(-4px); }
-        }
-
-        .brand-logo-wrap {
-          display: flex; flex-direction: column; align-items: center; gap: 16px;
-          animation: logo-float 4s ease-in-out infinite;
-        }
-        .brand-logo-orbit-wrap {
-          position: relative; width: 100px; height: 100px;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .brand-logo-icon {
-          width: 68px; height: 68px; border-radius: 20px; flex-shrink: 0;
-          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 60%, #7c3aed 100%);
-          display: flex; align-items: center; justify-content: center;
-          position: relative; z-index: 2;
-        }
-        .brand-logo-ring {
-          position: absolute; inset: 0; border-radius: 50%;
-          border: 1.5px dashed rgba(147,197,253,0.4);
-          animation: logo-orbit-cw 8s linear infinite;
-        }
-        .brand-logo-ring-2 {
-          position: absolute; inset: 8px; border-radius: 50%;
-          border: 1px dashed rgba(167,139,250,0.3);
-          animation: logo-orbit-ccw 6s linear infinite;
-        }
-        /* Orbiting dots */
-        .brand-logo-dot {
-          position: absolute; width: 8px; height: 8px; border-radius: 50%;
-          top: 50%; left: 50%; margin-top: -4px; margin-left: -4px;
-        }
-        .brand-logo-dot-1 {
-          background: rgba(147,197,253,0.9);
-          box-shadow: 0 0 6px rgba(147,197,253,0.8);
-          transform-origin: 50px 4px;
-          animation: logo-orbit-cw 8s linear infinite;
-          transform: translateX(46px);
-        }
-        .brand-logo-dot-2 {
-          background: rgba(167,139,250,0.9);
-          box-shadow: 0 0 6px rgba(167,139,250,0.8);
-          transform-origin: 37px 4px;
-          animation: logo-orbit-ccw 6s linear infinite;
-          transform: translateX(33px);
-        }
-        .brand-name {
-          font-family: var(--font-display, 'Sora', sans-serif);
-          font-size: 29px; font-weight: 800; color: #ffffff;
-          letter-spacing: -0.04em; line-height: 0.98;
-        }
-        .brand-tag {
-          font-family: var(--font-body, 'Manrope', sans-serif);
-          font-size: 11px; font-weight: 700; letter-spacing: 0.22em;
-          text-transform: uppercase; color: rgba(255,255,255,0.42);
-          margin-top: 4px; text-align: center;
-        }
-      `}</style>
-      <div className="brand-logo-wrap">
-        <div className="brand-logo-orbit-wrap">
-          <div className="brand-logo-ring" />
-          <div className="brand-logo-ring-2" />
-          <div className="brand-logo-dot brand-logo-dot-1" />
-          <div className="brand-logo-dot brand-logo-dot-2" />
-          <div className="brand-logo-icon">
-            <DiamondLogo size={36} />
-          </div>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <p className="brand-name">ScreenAI</p>
-          <p className="brand-tag">Talent Screening Platform</p>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ── Google Sign-In Button ─────────────────────────────────────────────────
+// ── Google type declarations ──────────────────────────────────────────────────
+type GoogleCredentialResponse = { credential?: string };
+type GoogleAccountsId = {
+  initialize: (config: { client_id: string; callback: (r: GoogleCredentialResponse) => void; ux_mode: "popup" }) => void;
+  renderButton: (el: HTMLElement, opts: object) => void;
+  prompt: () => void;
+};
 declare global {
   interface Window {
-    google?: any;
-    handleGoogleCredential?: (response: any) => void;
+    google?: { accounts: { id: GoogleAccountsId } };
+    handleGoogleCredential?: (response: GoogleCredentialResponse) => void;
   }
 }
 
-function GoogleSignInButton({ onCredential, loading }: {
-  onCredential: (credential: string) => void;
+function GoogleSignInButton({
+  onCredential, loading, text = "signin_with",
+}: {
+  onCredential: (c: string) => void;
   loading: boolean;
+  text?: "signin_with" | "signup_with";
 }) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  const buttonRef = useRef<HTMLDivElement | null>(null);
-  const googleCallbackRef = useRef<(response: any) => void>(() => {});
-  const initializedRef = useRef(false);
+  const clientId          = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const googleCallbackRef = useRef<(r: GoogleCredentialResponse) => void>(() => {});
+  const initializedRef    = useRef(false);
+
+  const initSdk = useCallback(() => {
+    if (!window.google || !clientId) return;
+    if (initializedRef.current) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback:  googleCallbackRef.current,
+      ux_mode:   "popup",
+    });
+    initializedRef.current = true;
+  }, [clientId]);
 
   useEffect(() => {
     if (!clientId) return;
-
-    googleCallbackRef.current = (response: any) => {
-      if (response?.credential) {
-        onCredential(response.credential);
-      }
+    googleCallbackRef.current = (r: GoogleCredentialResponse) => {
+      if (r?.credential) onCredential(r.credential);
     };
     window.handleGoogleCredential = googleCallbackRef.current;
 
-    // Load Google Identity Services script
-    const existingScript = document.getElementById("google-gsi-script");
-    if (existingScript) {
-      initGoogle();
-      return;
-    }
+    const existing = document.getElementById("google-gsi-script");
+    if (existing) { initSdk(); return; }
 
-    const script = document.createElement("script");
-    script.id  = "google-gsi-script";
-    script.src = "https://accounts.google.com/gsi/client";
-    script.async = true;
-    script.defer = true;
-    script.onload = initGoogle;
-    document.head.appendChild(script);
+    const s    = document.createElement("script");
+    s.id       = "google-gsi-script";
+    s.src      = "https://accounts.google.com/gsi/client";
+    s.async    = true;
+    s.defer    = true;
+    s.onload   = initSdk;
+    document.head.appendChild(s);
+    return () => { window.handleGoogleCredential = undefined; };
+  }, [clientId, initSdk, onCredential]);
 
-    return () => {
-      window.handleGoogleCredential = undefined;
-    };
-  }, [clientId, onCredential]);
+  const handleClick = () => {
+    if (!window.google || !clientId || loading) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback:  googleCallbackRef.current,
+      ux_mode:   "popup",
+    });
+    window.google.accounts.id.prompt();
+  };
 
-  function initGoogle() {
-    if (!window.google || !clientId || !buttonRef.current) return;
-    if (!initializedRef.current) {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback:  googleCallbackRef.current,
-        ux_mode:   "popup",
-      });
-      initializedRef.current = true;
-    }
-    buttonRef.current.innerHTML = "";
-    window.google.accounts.id.renderButton(
-      buttonRef.current,
-      {
-        theme:     "outline",
-        size:      "large",
-        width:     "100%",
-        text:      "signin_with",
-        logo_alignment: "left",
-        shape: "pill",
-      }
-    );
-  }
-
-  if (!clientId) {
-    // Show a placeholder if GOOGLE_CLIENT_ID is not set
-    return (
-      <button
-        type="button"
-        disabled
-        style={{
-          width: "100%", padding: "12px 16px", borderRadius: 12,
-          border: "1.5px solid #e2e8f0", background: "#f8fafc",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-          fontSize: 14, fontWeight: 600, color: "#94a3b8", cursor: "not-allowed",
-          fontFamily: "inherit",
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 18 18">
-          <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
-          <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
-          <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
-          <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
-        </svg>
-        Google sign-in not configured
-      </button>
-    );
-  }
+  const btnLabel = text === "signup_with" ? "Sign up with Google" : "Sign in with Google";
+  const disabled = loading || !clientId;
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
       style={{
-        width: "100%",
+        width: "100%", height: 48,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        borderRadius: 10, border: "1.5px solid #e2e8f0",
+        background: "#ffffff", color: "#374151",
+        fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+        cursor: disabled ? "not-allowed" : "pointer",
         opacity: loading ? 0.6 : 1,
-        pointerEvents: loading ? "none" : "auto"
+        transition: "border-color 0.15s, background 0.15s",
+        letterSpacing: "0.01em",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
       }}
+      onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "#ffffff"; }}
     >
-      <div
-        ref={buttonRef}
-        style={{
-          width: "100%",
-          minHeight: 46,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        }}
-      />
-    </div>
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 002.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+        <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 01-7.18-2.54H1.83v2.07A8 8 0 008.98 17z"/>
+        <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 010-3.04V5.41H1.83a8 8 0 000 7.18l2.67-2.07z"/>
+        <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 001.83 5.4L4.5 7.49a4.77 4.77 0 014.48-3.3z"/>
+      </svg>
+      {!clientId ? "Google sign-in not configured" : btnLabel}
+    </button>
   );
 }
 
-// ── Main Login Page ───────────────────────────────────────────────────────
+const LEFT_FEATURES = [
+  {
+    icon: BarChart3,
+    title: "AI-Ranked Shortlists",
+    desc: "Every candidate scored and ranked against your job requirements automatically.",
+  },
+  {
+    icon: Users,
+    title: "100+ Candidates in Minutes",
+    desc: "Upload CSV or PDF resumes in bulk. Gemini AI parses and profiles each one.",
+  },
+  {
+    icon: Shield,
+    title: "Bias-Aware Screening",
+    desc: "Skills-first scoring with automatic alerts when rankings skew unfairly.",
+  },
+];
+
+const LEFT_STATS = [
+  { value: "10K+", label: "Candidates Screened" },
+  { value: "98%",  label: "Parse Accuracy"      },
+  { value: "3.2×", label: "Faster Hiring"        },
+];
+
 export default function LoginPage() {
   const dispatch = useDispatch<AppDispatch>();
   const router   = useRouter();
   const { loading, error, user } = useSelector((s: RootState) => s.auth);
 
-  const [email,     setEmail]    = useState("");
-  const [password,  setPassword] = useState("");
-  const [showPass,  setShowPass] = useState(false);
-  const [localErr,  setLocalErr] = useState("");
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [localErr, setLocalErr] = useState("");
 
-  // If already logged in, redirect
-  useEffect(() => {
-    if (user) router.replace("/dashboard");
-  }, [user, router]);
-
-  // Clear store error on unmount
-  useEffect(() => {
-    return () => { dispatch(clearError()); };
-  }, [dispatch]);
+  useEffect(() => { if (user) router.replace("/dashboard"); }, [user, router]);
+  useEffect(() => () => { dispatch(clearError()); }, [dispatch]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLocalErr("");
-    dispatch(clearError());
-
+    setLocalErr(""); dispatch(clearError());
     if (!email.trim()) { setLocalErr("Email is required"); return; }
     if (!password)     { setLocalErr("Password is required"); return; }
-
     try {
       await dispatch(loginUser({ email: email.trim(), password })).unwrap();
       router.push("/dashboard");
-    } catch {
-      // error is already in Redux state
-    }
+    } catch { /* Redux state holds error */ }
   };
 
   const handleGoogleCredential = useCallback(async (credential: string) => {
-    setLocalErr("");
-    dispatch(clearError());
+    setLocalErr(""); dispatch(clearError());
     try {
       await dispatch(loginWithGoogle({ credential })).unwrap();
       router.push("/dashboard");
-    } catch {
-      // error in Redux state
-    }
+    } catch { /* Redux state holds error */ }
   }, [dispatch, router]);
 
   const displayError = localErr || error;
@@ -282,307 +169,557 @@ export default function LoginPage() {
   return (
     <>
       <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-        .login-root {
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        .ln-root {
           min-height: 100vh;
           display: flex;
-          font-family: var(--font-body, 'Manrope', 'Inter', system-ui, sans-serif);
+          font-family: 'Inter', system-ui, sans-serif;
+          -webkit-font-smoothing: antialiased;
         }
 
-        /* ── Left panel — deep navy hero ── */
-        .login-hero {
-          flex: 1 1 50%;
-          background: linear-gradient(160deg, #0f1c3a 0%, #0b1528 40%, #0d1f4a 100%);
-          display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          padding: 60px 48px;
-          position: relative; overflow: hidden;
-        }
-        .login-hero::before {
-          content: '';
-          position: absolute; top: -120px; left: -120px;
-          width: 400px; height: 400px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%);
-          pointer-events: none;
-        }
-        .login-hero::after {
-          content: "";
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 76px 76px;
-          pointer-events: none;
-          z-index: 0;
-        }
-        .login-hero .hero-grid-fade {
-          position: absolute;
-          inset: 0;
-          background:
-            radial-gradient(circle at top left, rgba(37,99,235,0.08), transparent 34%),
-            linear-gradient(180deg, rgba(15,28,58,0.18), rgba(15,28,58,0.28));
-          pointer-events: none;
-          z-index: 0;
-        }
-        .login-hero .hero-orb {
-          content: '';
-          position: absolute; bottom: -80px; right: -80px;
-          width: 300px; height: 300px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%);
-          pointer-events: none;
-          z-index: 0;
-        }
-        .hero-content { position: relative; z-index: 1; width: 100%; }
-        .hero-tagline {
-          font-family: var(--font-body, 'Manrope', sans-serif);
-          font-size: 19px; line-height: 1.42;
-          font-weight: 600;
-          letter-spacing: -0.02em;
-          color: rgba(255,255,255,0.9);
-          margin-top: 28px; text-align: left;
-          max-width: 440px;
-        }
-        .hero-features {
-          margin-top: 36px; display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 460px;
-        }
-        .hero-feature {
-          display: flex; align-items: center; gap: 14px;
+        /* ══════════════════════════════════════════════════
+           LEFT PANEL — real dark navy, NO glows, NO orbits
+           ══════════════════════════════════════════════════ */
+        .ln-left {
+          flex: 0 0 52%;
+          background: #0a1628;
+          display: flex;
+          flex-direction: column;
           padding: 0;
-          border-radius: 0;
-          background: transparent;
-          border: none;
-          backdrop-filter: none;
+          position: relative;
+          overflow: hidden;
         }
-        .hero-feature-icon {
-          width: 28px; height: 28px; border-radius: 0; flex-shrink: 0;
-          background: transparent;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 18px;
-        }
-        .hero-feature-text { display: none; }
-        .hero-feature-title { font-family: var(--font-display, 'Sora', sans-serif); font-weight: 700; color: white; font-size: 17px; letter-spacing: -0.025em; line-height: 1.12; }
 
-        /* ── Right panel — form ── */
-        .login-form-panel {
-          flex: 1 1 50%; display: flex; align-items: center; justify-content: center;
-          background: linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%); padding: 48px 24px;
+        /* Subtle dot-grid texture — very faint, not glowing */
+        .ln-left::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px);
+          background-size: 28px 28px;
+          pointer-events: none;
         }
-        .login-form-card {
-          width: 100%; max-width: 440px;
-          background: rgba(255,255,255,0.94); border-radius: 28px;
-          border: 1px solid rgba(226,232,240,0.9);
-          box-shadow: none;
-          backdrop-filter: blur(10px);
-          padding: 44px 40px 40px;
-          animation: slideUp 0.3s ease;
+
+        /* Single very soft blue tint — bottom right only */
+        .ln-left::after {
+          content: '';
+          position: absolute;
+          bottom: -120px;
+          right: -120px;
+          width: 480px;
+          height: 480px;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(37,99,235,0.09) 0%, transparent 65%);
+          pointer-events: none;
         }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
+
+        .ln-left-inner {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          padding: 52px 56px;
         }
-        .form-title {
-          font-family: var(--font-display, 'Sora', 'Inter', sans-serif);
-          font-size: clamp(2.25rem, 3.6vw, 2.55rem);
+
+        /* ── Logo area ── */
+        .ln-logo {
+          display: flex;
+          align-items: center;
+          gap: 13px;
+          margin-bottom: 72px;
+        }
+        .ln-logo-mark {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          background: #2563eb;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .ln-logo-name {
+          font-size: 18px;
+          font-weight: 700;
+          color: #ffffff;
+          letter-spacing: -0.03em;
+          line-height: 1;
+        }
+        .ln-logo-sub {
+          font-size: 11px;
+          color: rgba(255,255,255,0.35);
+          font-weight: 500;
+          letter-spacing: 0.04em;
+          margin-top: 3px;
+          text-transform: uppercase;
+        }
+
+        /* ── Hero copy ── */
+        .ln-hero-eyebrow {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: #60a5fa;
+          margin-bottom: 18px;
+        }
+        .ln-hero-h {
+          font-size: clamp(2rem, 2.8vw, 2.6rem);
           font-weight: 800;
-          color: #0b1220;
-          letter-spacing: -0.055em;
-          line-height: 1.02;
-          margin-bottom: 10px;
+          color: #ffffff;
+          line-height: 1.1;
+          letter-spacing: -0.04em;
+          margin-bottom: 18px;
         }
-        .form-sub {
-          font-size: 17px;
-          color: #667085;
-          margin-bottom: 32px;
+        .ln-hero-sub {
+          font-size: 15.5px;
+          color: rgba(255,255,255,0.52);
+          line-height: 1.65;
+          font-weight: 400;
+          max-width: 380px;
+          margin-bottom: 52px;
+        }
+
+        /* ── Features ── */
+        .ln-features {
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          margin-bottom: 56px;
+        }
+        .ln-feature {
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          padding: 18px 0;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        .ln-feature:last-child {
+          border-bottom: none;
+        }
+        .ln-feature-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          background: rgba(37,99,235,0.15);
+          border: 1px solid rgba(37,99,235,0.25);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          margin-top: 1px;
+        }
+        .ln-feature-title {
+          font-size: 14.5px;
+          font-weight: 700;
+          color: #ffffff;
+          margin-bottom: 4px;
+          letter-spacing: -0.02em;
+        }
+        .ln-feature-desc {
+          font-size: 13px;
+          color: rgba(255,255,255,0.45);
+          line-height: 1.55;
+          font-weight: 400;
+        }
+
+        /* ── Stats row ── */
+        .ln-stats {
+          display: flex;
+          gap: 0;
+          border-top: 1px solid rgba(255,255,255,0.08);
+          padding-top: 28px;
+          margin-top: auto;
+        }
+        .ln-stat {
+          flex: 1;
+          padding-right: 24px;
+          border-right: 1px solid rgba(255,255,255,0.08);
+          margin-right: 24px;
+        }
+        .ln-stat:last-child {
+          border-right: none;
+          margin-right: 0;
+          padding-right: 0;
+        }
+        .ln-stat-val {
+          font-size: 22px;
+          font-weight: 800;
+          color: #ffffff;
+          letter-spacing: -0.04em;
+          line-height: 1;
+          margin-bottom: 5px;
+        }
+        .ln-stat-label {
+          font-size: 11.5px;
+          color: rgba(255,255,255,0.38);
+          font-weight: 500;
+          line-height: 1.3;
+        }
+
+        /* ══════════════════════════════════════════════════
+           RIGHT PANEL — pure white form
+           ══════════════════════════════════════════════════ */
+        .ln-right {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #ffffff;
+          padding: 48px 40px;
+          overflow-y: auto;
+        }
+        .ln-form-wrap {
+          width: 100%;
+          max-width: 390px;
+          animation: ln-up 0.25s ease;
+        }
+        @keyframes ln-up {
+          from { opacity:0; transform:translateY(12px); }
+          to   { opacity:1; transform:translateY(0); }
+        }
+
+        .ln-form-title {
+          font-size: clamp(1.7rem,3vw,2.1rem);
+          font-weight: 800;
+          color: #0f172a;
+          letter-spacing: -0.04em;
+          line-height: 1.1;
+          margin-bottom: 6px;
+        }
+        .ln-form-sub {
+          font-size: 14.5px;
+          color: #64748b;
+          margin-bottom: 28px;
+          font-weight: 400;
+          line-height: 1.5;
+        }
+
+        /* Error */
+        .ln-err {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          padding: 11px 14px;
+          border-radius: 9px;
+          margin-bottom: 18px;
+          background: #fef2f2;
+          border: 1.5px solid #fecaca;
+          animation: ln-shake 0.25s ease;
+        }
+        @keyframes ln-shake {
+          0%,100% { transform:translateX(0); }
+          25%      { transform:translateX(-4px); }
+          75%      { transform:translateX(4px); }
+        }
+        .ln-err-text {
+          font-size: 13px;
+          color: #dc2626;
           line-height: 1.5;
           font-weight: 500;
         }
 
-        /* Error banner */
-        .form-error {
-          display: flex; align-items: flex-start; gap: 10px;
-          padding: 12px 14px; border-radius: 11px; margin-bottom: 20px;
-          background: #fef2f2; border: 1px solid #fecaca;
-          animation: slideDown 0.2s ease;
-        }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-        .form-error-text { font-size: 13.5px; color: #dc2626; line-height: 1.5; font-weight: 500; }
-
         /* Divider */
-        .form-divider {
-          display: flex; align-items: center; gap: 14px; margin: 28px 0 24px;
+        .ln-divider {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin: 18px 0;
         }
-        .form-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(226,232,240,0), #dbe3ee 18%, #dbe3ee 82%, rgba(226,232,240,0)); }
-        .form-divider-text { font-size: 12px; color: #98a2b3; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
+        .ln-divider-line { flex:1; height:1px; background:#e2e8f0; }
+        .ln-divider-text {
+          font-size: 12px;
+          color: #94a3b8;
+          font-weight: 600;
+          white-space: nowrap;
+        }
 
         /* Field */
-        .field-wrap { margin-bottom: 18px; }
-        .field-label {
-          display: block; font-size: 11px; font-weight: 600;
-          color: #667085; margin-bottom: 9px; text-transform: uppercase; letter-spacing: 0.18em;
+        .ln-field { margin-bottom: 14px; }
+        .ln-label {
+          display: block;
+          font-size: 12.5px;
+          font-weight: 600;
+          color: #374151;
+          margin-bottom: 6px;
+          letter-spacing: 0.01em;
         }
-        .field-input-wrap { position: relative; }
-        .field-icon {
-          position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
-          color: #98a2b3; pointer-events: none;
+        .ln-inp-w { position: relative; }
+        .ln-ico {
+          position: absolute;
+          left: 13px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #9ca3af;
+          pointer-events: none;
+          display: flex;
         }
-        .field-input {
-          width: 100%; height: 54px; padding: 0 16px 0 44px;
-          border-radius: 16px; border: 1.5px solid #e5e7eb;
-          font-size: 15px; color: #0f172a; outline: none;
-          background: #ffffff; font-family: inherit;
-          box-shadow: 0 1px 2px rgba(15,23,42,0.03);
-          transition: all 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        .ln-inp {
+          width: 100%;
+          height: 46px;
+          padding: 0 14px 0 42px;
+          border-radius: 10px;
+          border: 1.5px solid #e2e8f0;
+          font-size: 14px;
+          color: #0f172a;
+          outline: none;
+          background: #ffffff;
+          font-family: inherit;
+          transition: border-color 0.15s, box-shadow 0.15s;
         }
-        .field-input:focus { border-color: #4f6df5; background: #ffffff; box-shadow: 0 0 0 4px rgba(79,109,245,0.12), 0 10px 24px rgba(79,109,245,0.08); }
-        .field-input::placeholder { color: #9aa4b2; }
-        .field-eye {
-          position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer; color: #98a2b3;
-          padding: 2px; display: flex; align-items: center;
+        .ln-inp:focus {
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .ln-inp::placeholder { color: #9ca3af; }
+        .ln-eye {
+          position: absolute;
+          right: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #9ca3af;
+          padding: 2px;
+          display: flex;
           transition: color 0.15s;
         }
-        .field-eye:hover { color: #475569; }
+        .ln-eye:hover { color: #374151; }
 
-        /* Forgot link */
-        /* Submit button */
-        .btn-submit {
-          width: 100%; height: 56px; padding: 0 18px; border-radius: 16px; border: none;
-          background: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%);
-          color: white; font-size: 15px; font-weight: 700;
-          cursor: pointer; font-family: inherit;
-          box-shadow: 0 14px 30px rgba(79,70,229,0.26), 0 6px 16px rgba(37,99,235,0.18);
-          transition: all 0.18s ease; display: flex; align-items: center; justify-content: center; gap: 9px;
-          margin-bottom: 22px;
+        /* Forgot */
+        .ln-forgot-row {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: -4px;
+          margin-bottom: 14px;
         }
-        .btn-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(79,70,229,0.28), 0 8px 18px rgba(37,99,235,0.2); }
-        .btn-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none; }
+        .ln-forgot {
+          font-size: 13px;
+          color: #2563eb;
+          font-weight: 600;
+          text-decoration: none;
+        }
+        .ln-forgot:hover { text-decoration: underline; }
+
+        /* Submit */
+        .ln-btn {
+          width: 100%;
+          height: 48px;
+          border-radius: 10px;
+          border: none;
+          background: #1e3a5f;
+          color: white;
+          font-size: 15px;
+          font-weight: 700;
+          font-family: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          cursor: pointer;
+          margin-top: 6px;
+          transition: background 0.15s, transform 0.15s;
+          letter-spacing: 0.01em;
+        }
+        .ln-btn:hover:not(:disabled) {
+          background: #162d4a;
+          transform: translateY(-1px);
+        }
+        .ln-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
 
         /* Spinner */
-        .spin { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .ln-spin {
+          width: 15px;
+          height: 15px;
+          border: 2px solid rgba(255,255,255,0.35);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: ln-spin-a 0.7s linear infinite;
+        }
+        @keyframes ln-spin-a { to { transform: rotate(360deg); } }
 
-        /* Footer link */
-        .form-footer { text-align: center; font-size: 13.5px; color: #64748b; margin-top: 22px; }
-        .form-footer a { color: #2563eb; font-weight: 700; text-decoration: none; }
-        .form-footer a:hover { text-decoration: underline; }
+        /* Footer */
+        .ln-footer {
+          text-align: center;
+          font-size: 13.5px;
+          color: #64748b;
+          margin-top: 22px;
+        }
+        .ln-footer a {
+          color: #2563eb;
+          font-weight: 700;
+          text-decoration: none;
+        }
+        .ln-footer a:hover { text-decoration: underline; }
 
-        @media (max-width: 900px) {
-          .login-hero { display: none; }
-          .login-form-panel { padding: 24px 16px; background: white; }
-          .login-form-card { box-shadow: none; border: none; padding: 32px 20px; border-radius: 24px; }
+        @media (max-width: 960px) {
+          .ln-left { display: none; }
+          .ln-right { background: #f8fafc; padding: 32px 20px; }
         }
       `}</style>
 
-      <div className="login-root">
-        {/* ── Hero ── */}
-        <div className="login-hero">
-          <div className="hero-grid-fade" />
-          <div className="hero-orb" />
-          <div className="hero-content">
-            <AnimatedBrandLogo />
-            <p className="hero-tagline">
-              Sign in to continue with a cleaner, faster hiring workspace.
+      <div className="ln-root">
+
+        {/* ═══════════════════════════════════════
+            LEFT — dark navy, professional, clean
+            ═══════════════════════════════════════ */}
+        <div className="ln-left">
+          <div className="ln-left-inner">
+
+            {/* Logo */}
+            <div className="ln-logo">
+              <div className="ln-logo-mark">
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                  <path d="M11 2L19 7.5V14.5L11 20L3 14.5V7.5L11 2Z" fill="white" fillOpacity="0.2" stroke="white" strokeWidth="1.4" strokeLinejoin="round"/>
+                  <path d="M11 6L16 9.5V13.5L11 17L6 13.5V9.5L11 6Z" fill="white" fillOpacity="0.5" stroke="white" strokeWidth="0.8" strokeLinejoin="round"/>
+                  <circle cx="11" cy="11" r="2.5" fill="white"/>
+                </svg>
+              </div>
+              <div>
+                <p className="ln-logo-name">Umurava AI</p>
+                <p className="ln-logo-sub">Talent Screening</p>
+              </div>
+            </div>
+
+            {/* Hero copy */}
+            <p className="ln-hero-eyebrow">AI-Powered Recruitment</p>
+            <h1 className="ln-hero-h">
+              Hire Rwanda&apos;s best<br />talent, faster.
+            </h1>
+            <p className="ln-hero-sub">
+              Screen hundreds of candidates in minutes. Gemini AI ranks, scores, and shortlists — so your team decides, not drowns.
             </p>
-            <div className="hero-features">
-              {[
-                { icon: "📋", title: "Structured Reviews", text: "" },
-                { icon: "📊", title: "Clear Shortlists", text: "" },
-                { icon: "🤝", title: "Team Decision Flow", text: "" },
-              ].map((f) => (
-                <div key={f.title} className="hero-feature">
-                  <div className="hero-feature-icon">{f.icon}</div>
+
+            {/* Features */}
+            <div className="ln-features">
+              {LEFT_FEATURES.map((f) => (
+                <div key={f.title} className="ln-feature">
+                  <div className="ln-feature-icon">
+                    <f.icon size={17} color="#60a5fa" />
+                  </div>
                   <div>
-                    <p className="hero-feature-title">{f.title}</p>
-                    <p className="hero-feature-text">{f.text}</p>
+                    <p className="ln-feature-title">{f.title}</p>
+                    <p className="ln-feature-desc">{f.desc}</p>
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* Stats */}
+            <div className="ln-stats">
+              {LEFT_STATS.map((s) => (
+                <div key={s.label} className="ln-stat">
+                  <p className="ln-stat-val">{s.value}</p>
+                  <p className="ln-stat-label">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
           </div>
         </div>
 
-        {/* ── Form Panel ── */}
-        <div className="login-form-panel">
-          <div className="login-form-card">
-            <h1 className="form-title">Welcome back</h1>
-            <p className="form-sub">Sign in to your ScreenAI account</p>
+        {/* ═══════════════════════════════════════
+            RIGHT — pure white form
+            ═══════════════════════════════════════ */}
+        <div className="ln-right">
+          <div className="ln-form-wrap">
 
-            {/* Error */}
+            <h2 className="ln-form-title">Welcome back</h2>
+            <p className="ln-form-sub">Sign in to your Umurava AI workspace</p>
+
             {displayError && (
-              <div className="form-error">
-                <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }} />
-                <p className="form-error-text">{displayError}</p>
+              <div className="ln-err">
+                <AlertCircle size={15} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+                <p className="ln-err-text">{displayError}</p>
               </div>
             )}
 
-            {/* Google Sign-In */}
-            <GoogleSignInButton onCredential={handleGoogleCredential} loading={loading} />
+            <GoogleSignInButton
+              onCredential={handleGoogleCredential}
+              loading={loading}
+              text="signin_with"
+            />
 
-            <div className="form-divider">
-              <div className="form-divider-line" />
-              <span className="form-divider-text">or sign in with email</span>
-              <div className="form-divider-line" />
+            <div className="ln-divider">
+              <div className="ln-divider-line"/>
+              <span className="ln-divider-text">or continue with email</span>
+              <div className="ln-divider-line"/>
             </div>
 
-            {/* Email/Password Form */}
             <form onSubmit={handleSubmit}>
-              <div className="field-wrap">
-                <label className="field-label">Email address</label>
-                <div className="field-input-wrap">
-                  <Mail size={15} className="field-icon" />
+              <div className="ln-field">
+                <label className="ln-label">Email address</label>
+                <div className="ln-inp-w">
+                  <span className="ln-ico"><Mail size={15}/></span>
                   <input
-                    className="field-input"
+                    className="ln-inp"
                     type="email"
-                    placeholder="Enter your work email"
+                    placeholder="you@company.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={e => setEmail(e.target.value)}
                     autoComplete="email"
                     disabled={loading}
                   />
                 </div>
               </div>
 
-              <div className="field-wrap">
-                <label className="field-label">Password</label>
-                <div className="field-input-wrap">
-                  <Lock size={15} className="field-icon" />
+              <div className="ln-field">
+                <label className="ln-label">Password</label>
+                <div className="ln-inp-w">
+                  <span className="ln-ico"><Lock size={15}/></span>
                   <input
-                    className="field-input"
+                    className="ln-inp"
                     type={showPass ? "text" : "password"}
                     placeholder="Enter your password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={e => setPassword(e.target.value)}
                     autoComplete="current-password"
                     disabled={loading}
+                    style={{ paddingRight: 44 }}
                   />
                   <button
                     type="button"
-                    className="field-eye"
+                    className="ln-eye"
                     onClick={() => setShowPass(!showPass)}
                     tabIndex={-1}
                   >
-                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showPass ? <EyeOff size={15}/> : <Eye size={15}/>}
                   </button>
                 </div>
               </div>
 
-              <button type="submit" className="btn-submit" disabled={loading}>
-                {loading ? (
-                  <><div className="spin" /> Signing in…</>
-                ) : (
-                  <><Sparkles size={15} /> Sign in</>
-                )}
+              <div className="ln-forgot-row">
+                <a href="#" className="ln-forgot">Forgot password?</a>
+              </div>
+
+              <button type="submit" className="ln-btn" disabled={loading}>
+                {loading
+                  ? <><div className="ln-spin"/> Signing in…</>
+                  : <>Sign in <ArrowRight size={15}/></>
+                }
               </button>
             </form>
 
-            <p className="form-footer">
-              Don't have an account?{" "}
+            <p className="ln-footer">
+              Don&apos;t have an account?{" "}
               <Link href="/register">Create one free</Link>
             </p>
+
+            {/* Trust badge */}
+            <div style={{ marginTop: 32, padding: "12px 16px", borderRadius: 10, background: "#f8fafc", border: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={13} color="#16a34a" style={{ flexShrink: 0 }} />
+              <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+                Trusted by leading Rwandan companies · Powered by Gemini AI
+              </p>
+            </div>
           </div>
         </div>
+
       </div>
     </>
   );
