@@ -6,7 +6,10 @@ import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { registerUser, loginWithGoogle, clearError } from "../../store/slices/authSlice";
 import { AppDispatch, RootState } from "../../store";
-import { Eye, EyeOff, Mail, Lock, User, Building2, AlertCircle, ArrowRight, CheckCircle2, FileText, Brain, Layers } from "lucide-react";
+import {
+  Eye, EyeOff, Mail, Lock, User, Building2,
+  AlertCircle, ArrowRight, CheckCircle2, FileText, Brain, Layers,
+} from "lucide-react";
 
 type GoogleCredentialResponse = { credential?: string };
 declare global {
@@ -16,18 +19,21 @@ declare global {
         id: {
           initialize: (cfg: any) => void;
           renderButton: (el: HTMLElement, opts: any) => void;
+          disableAutoSelect: () => void;
         };
       };
     };
   }
 }
 
-// Shared with login page — same module-level guard
-let _gsiReady = false;
-
-// ✅ Uses renderButton() — zero FedCM errors, zero "called multiple times" warnings
+// ─────────────────────────────────────────────────────────────────────────────
+// GoogleSignInButton — fixed for Vercel / production
+// See login/page.tsx for full explanation of the fixes.
+// ─────────────────────────────────────────────────────────────────────────────
 function GoogleSignInButton({
-  onCredential, loading, text = "signup_with",
+  onCredential,
+  loading,
+  text = "signup_with",
 }: {
   onCredential: (credential: string) => void;
   loading: boolean;
@@ -36,47 +42,67 @@ function GoogleSignInButton({
   const clientId    = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const btnRef      = useRef<HTMLDivElement>(null);
   const callbackRef = useRef<(r: GoogleCredentialResponse) => void>(() => {});
+  const initialized = useRef(false);
+
   callbackRef.current = (r: GoogleCredentialResponse) => {
     if (r?.credential) onCredential(r.credential);
   };
 
-  const initAndRender = useCallback(() => {
-    if (!window.google?.accounts?.id || !clientId || !btnRef.current) return;
-    if (!_gsiReady) {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: (r: GoogleCredentialResponse) => callbackRef.current(r),
-      });
-      _gsiReady = true;
-    }
+  const renderBtn = useCallback(() => {
+    if (!window.google?.accounts?.id || !btnRef.current) return;
+    window.google.accounts.id.initialize({
+      client_id:             clientId,
+      callback:              (r: GoogleCredentialResponse) => callbackRef.current(r),
+      auto_select:           false,
+      cancel_on_tap_outside: true,
+      use_fedcm_for_prompt:  false,
+    });
+    initialized.current = true;
     window.google.accounts.id.renderButton(btnRef.current, {
       type: "standard", theme: "outline", size: "large",
-      text: text, width: btnRef.current.offsetWidth || 360, logo_alignment: "left",
+      text, width: btnRef.current.offsetWidth || 360, logo_alignment: "left",
     });
   }, [clientId, text]);
 
   useEffect(() => {
     if (!clientId) return;
-    if (window.google?.accounts?.id) { initAndRender(); return; }
+    if (window.google?.accounts?.id) { renderBtn(); return; }
     const existing = document.getElementById("google-gsi-script") as HTMLScriptElement | null;
-    if (existing) { existing.addEventListener("load", initAndRender, { once: true }); return; }
-    const s = document.createElement("script");
-    s.id = "google-gsi-script"; s.src = "https://accounts.google.com/gsi/client";
-    s.async = true; s.defer = true;
-    s.addEventListener("load", initAndRender, { once: true });
+    if (existing) { existing.addEventListener("load", renderBtn, { once: true }); return; }
+    const s    = document.createElement("script");
+    s.id       = "google-gsi-script";
+    s.src      = "https://accounts.google.com/gsi/client";
+    s.async    = true;
+    s.defer    = true;
+    s.addEventListener("load", renderBtn, { once: true });
     document.head.appendChild(s);
-  }, [clientId, initAndRender]);
+    return () => { initialized.current = false; };
+  }, [clientId, renderBtn]);
+
+  useEffect(() => {
+    if (!btnRef.current || !clientId) return;
+    const ro = new ResizeObserver(() => {
+      if (window.google?.accounts?.id && btnRef.current) {
+        window.google.accounts.id.renderButton(btnRef.current, {
+          type: "standard", theme: "outline", size: "large",
+          text, width: btnRef.current.offsetWidth || 360, logo_alignment: "left",
+        });
+      }
+    });
+    ro.observe(btnRef.current);
+    return () => ro.disconnect();
+  }, [clientId, text]);
 
   if (!clientId) {
     return (
-      <div style={{ width:"100%", height:44, borderRadius:10, border:"1.5px solid #e2e8f0", background:"#f9fafb", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, color:"#94a3b8" }}>
+      <div style={{ width: "100%", height: 44, borderRadius: 10, border: "1.5px solid #e2e8f0", background: "#f9fafb", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#94a3b8" }}>
         Google sign-in not configured
       </div>
     );
   }
   return (
-    <div style={{ width:"100%", minHeight:44, opacity:loading ? 0.6 : 1, pointerEvents:loading ? "none" : "auto", transition:"opacity 0.15s" }}>
-      <div ref={btnRef} style={{ width:"100%" }} />
+    <div style={{ width: "100%", minHeight: 44, opacity: loading ? 0.6 : 1, pointerEvents: loading ? "none" : "auto", transition: "opacity 0.15s" }}>
+      <div ref={btnRef} style={{ width: "100%" }} />
     </div>
   );
 }
@@ -84,17 +110,17 @@ function GoogleSignInButton({
 function passwordStrength(p: string): { score: number; label: string; color: string } {
   if (!p) return { score: 0, label: "", color: "#e2e8f0" };
   let score = 0;
-  if (p.length >= 8) score++;
-  if (p.length >= 12) score++;
-  if (/[A-Z]/.test(p)) score++;
-  if (/[0-9]/.test(p)) score++;
+  if (p.length >= 8)          score++;
+  if (p.length >= 12)         score++;
+  if (/[A-Z]/.test(p))        score++;
+  if (/[0-9]/.test(p))        score++;
   if (/[^A-Za-z0-9]/.test(p)) score++;
   const map = [
-    { score:1, label:"Very weak", color:"#ef4444" },
-    { score:2, label:"Weak",      color:"#f97316" },
-    { score:3, label:"Fair",      color:"#eab308" },
-    { score:4, label:"Good",      color:"#22c55e" },
-    { score:5, label:"Strong",    color:"#16a34a" },
+    { score: 1, label: "Very weak", color: "#ef4444" },
+    { score: 2, label: "Weak",      color: "#f97316" },
+    { score: 3, label: "Fair",      color: "#eab308" },
+    { score: 4, label: "Good",      color: "#22c55e" },
+    { score: 5, label: "Strong",    color: "#16a34a" },
   ];
   return map[score - 1] || { score: 0, label: "", color: "#e2e8f0" };
 }
@@ -118,7 +144,8 @@ export default function RegisterPage() {
   useEffect(() => { if (user) router.replace("/dashboard"); }, [user, router]);
   useEffect(() => () => { dispatch(clearError()); }, [dispatch]);
 
-  const strength = passwordStrength(form.password);
+  const strength    = passwordStrength(form.password);
+  const displayError = localErr || error;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,15 +168,13 @@ export default function RegisterPage() {
     } catch { /* error shown via Redux state */ }
   }, [dispatch, router, form.company]);
 
-  const displayError = localErr || error;
-
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        .rn-root { min-height: 100vh; display: flex; font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-        .rn-left { flex: 0 0 46%; background: #0a1628; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+        .rn-root  { min-height: 100vh; display: flex; font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+        .rn-left  { flex: 0 0 46%; background: #0a1628; display: flex; flex-direction: column; position: relative; overflow: hidden; }
         .rn-left::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(rgba(255,255,255,0.045) 1px, transparent 1px); background-size: 28px 28px; pointer-events: none; }
         .rn-left::after  { content: ''; position: absolute; bottom: -100px; right: -100px; width: 420px; height: 420px; border-radius: 50%; background: radial-gradient(circle, rgba(37,99,235,0.09) 0%, transparent 65%); pointer-events: none; }
         .rn-left-inner { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100%; padding: 48px 52px; }
@@ -229,13 +254,13 @@ export default function RegisterPage() {
             <h1 className="rn-hero-h">Your smarter<br/>hiring workspace.</h1>
             <p className="rn-hero-sub">Create a free account and start screening candidates with AI. No setup fees, no limits on your first jobs.</p>
             <div className="rn-steps">
-              {HOW_STEPS.map(s => (
+              {HOW_STEPS.map((s) => (
                 <div key={s.num} className="rn-step">
                   <div className="rn-step-left">
                     <div className="rn-step-icon"><s.icon size={16} color="#60a5fa"/></div>
                     <span className="rn-step-num">{s.num}</span>
                   </div>
-                  <div style={{ paddingTop:2 }}>
+                  <div style={{ paddingTop: 2 }}>
                     <p className="rn-step-title">{s.title}</p>
                     <p className="rn-step-desc">{s.desc}</p>
                   </div>
@@ -243,7 +268,7 @@ export default function RegisterPage() {
               ))}
             </div>
             <div className="rn-badges">
-              {LEFT_BADGES.map(b => (
+              {LEFT_BADGES.map((b) => (
                 <div key={b} className="rn-badge"><span className="rn-badge-dot"/>{b}</div>
               ))}
             </div>
@@ -257,7 +282,7 @@ export default function RegisterPage() {
 
             {displayError && (
               <div className="rn-err">
-                <AlertCircle size={15} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+                <AlertCircle size={15} color="#dc2626" style={{ flexShrink: 0, marginTop: 1 }}/>
                 <p className="rn-err-text">{displayError}</p>
               </div>
             )}
@@ -276,14 +301,14 @@ export default function RegisterPage() {
                   <label className="rn-label">Full name</label>
                   <div className="rn-inp-w">
                     <span className="rn-ico"><User size={14}/></span>
-                    <input className="rn-inp" type="text" placeholder="Your full name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} autoComplete="name" disabled={loading}/>
+                    <input className="rn-inp" type="text" placeholder="Your full name" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} autoComplete="name" disabled={loading}/>
                   </div>
                 </div>
                 <div className="rn-field">
                   <label className="rn-label">Company</label>
                   <div className="rn-inp-w">
                     <span className="rn-ico"><Building2 size={14}/></span>
-                    <input className="rn-inp" type="text" placeholder="Company name" value={form.company} onChange={e => setForm({...form, company:e.target.value})} autoComplete="organization" disabled={loading}/>
+                    <input className="rn-inp" type="text" placeholder="Company name" value={form.company} onChange={(e) => setForm({...form, company: e.target.value})} autoComplete="organization" disabled={loading}/>
                   </div>
                 </div>
               </div>
@@ -292,7 +317,7 @@ export default function RegisterPage() {
                 <label className="rn-label">Email address</label>
                 <div className="rn-inp-w">
                   <span className="rn-ico"><Mail size={14}/></span>
-                  <input className="rn-inp" type="email" placeholder="you@company.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})} autoComplete="email" disabled={loading}/>
+                  <input className="rn-inp" type="email" placeholder="you@company.com" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} autoComplete="email" disabled={loading}/>
                 </div>
               </div>
 
@@ -300,7 +325,7 @@ export default function RegisterPage() {
                 <label className="rn-label">Password</label>
                 <div className="rn-inp-w">
                   <span className="rn-ico"><Lock size={14}/></span>
-                  <input className="rn-inp" type={showPass ? "text" : "password"} placeholder="Min 6 characters" value={form.password} onChange={e => setForm({...form, password:e.target.value})} autoComplete="new-password" disabled={loading} style={{ paddingRight:40 }}/>
+                  <input className="rn-inp" type={showPass ? "text" : "password"} placeholder="Min 6 characters" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} autoComplete="new-password" disabled={loading} style={{ paddingRight: 40 }}/>
                   <button type="button" className="rn-eye" onClick={() => setShowPass(!showPass)} tabIndex={-1}>
                     {showPass ? <EyeOff size={14}/> : <Eye size={14}/>}
                   </button>
@@ -308,9 +333,9 @@ export default function RegisterPage() {
                 {form.password && (
                   <div className="rn-strength-wrap">
                     <div className="rn-strength-bar">
-                      <div className="rn-strength-fill" style={{ width:`${(strength.score/5)*100}%`, background:strength.color }}/>
+                      <div className="rn-strength-fill" style={{ width: `${(strength.score / 5) * 100}%`, background: strength.color }}/>
                     </div>
-                    <p className="rn-strength-lbl" style={{ color:strength.color }}>{strength.label}</p>
+                    <p className="rn-strength-lbl" style={{ color: strength.color }}>{strength.label}</p>
                   </div>
                 )}
               </div>
@@ -321,7 +346,10 @@ export default function RegisterPage() {
               </p>
 
               <button type="submit" className="rn-btn" disabled={loading}>
-                {loading ? <><div className="rn-spin"/> Creating account…</> : <>Create account <ArrowRight size={15}/></>}
+                {loading
+                  ? <><div className="rn-spin"/> Creating account…</>
+                  : <>Create account <ArrowRight size={15}/></>
+                }
               </button>
             </form>
 
@@ -330,9 +358,9 @@ export default function RegisterPage() {
               <Link href="/login">Sign in</Link>
             </p>
 
-            <div style={{ marginTop:24, padding:"12px 16px", borderRadius:10, background:"#f8fafc", border:"1px solid #f1f5f9", display:"flex", alignItems:"center", gap:8 }}>
-              <CheckCircle2 size={13} color="#16a34a" style={{ flexShrink:0 }}/>
-              <p style={{ fontSize:12, color:"#64748b", lineHeight:1.5 }}>Free to start · No card required · Powered by Gemini AI</p>
+            <div style={{ marginTop: 24, padding: "12px 16px", borderRadius: 10, background: "#f8fafc", border: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle2 size={13} color="#16a34a" style={{ flexShrink: 0 }}/>
+              <p style={{ fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>Free to start · No card required · Powered by Gemini AI</p>
             </div>
           </div>
         </div>

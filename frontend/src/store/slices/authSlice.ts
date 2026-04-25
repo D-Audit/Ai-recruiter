@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { login, register, getMe, googleAuth } from "../../services/authService";
 
-// ── Restore user from token on app load ──
+// ── Restore user from token on app load ──────────────────────────────────────
 export const restoreUser = createAsyncThunk(
   "auth/restoreUser",
   async (_, { rejectWithValue }) => {
@@ -27,9 +27,7 @@ export const loginUser = createAsyncThunk(
   ) => {
     try {
       const data = await login(email, password);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("token", data.token);
-      }
+      if (typeof window !== "undefined") localStorage.setItem("token", data.token);
       return data;
     } catch (error: any) {
       return rejectWithValue(
@@ -47,9 +45,7 @@ export const registerUser = createAsyncThunk(
   ) => {
     try {
       const data = await register(name, email, password, company);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("token", data.token);
-      }
+      if (typeof window !== "undefined") localStorage.setItem("token", data.token);
       return data;
     } catch (error: any) {
       return rejectWithValue(
@@ -59,7 +55,7 @@ export const registerUser = createAsyncThunk(
   }
 );
 
-// ── Google OAuth login ──
+// ── Google OAuth login ────────────────────────────────────────────────────────
 export const loginWithGoogle = createAsyncThunk(
   "auth/googleLogin",
   async (
@@ -68,14 +64,16 @@ export const loginWithGoogle = createAsyncThunk(
   ) => {
     try {
       const data = await googleAuth(credential, company);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("token", data.token);
-      }
+      if (typeof window !== "undefined") localStorage.setItem("token", data.token);
       return data;
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message || "Google sign-in failed. Please try again."
-      );
+      // Surface the exact backend message so the user knows what went wrong
+      const msg =
+        error.response?.data?.message ||
+        (error.message?.includes("Network Error")
+          ? "Cannot reach the server. Check that NEXT_PUBLIC_API_URL is set in Vercel environment variables."
+          : "Google sign-in failed. Please try again.");
+      return rejectWithValue(msg);
     }
   }
 );
@@ -83,78 +81,69 @@ export const loginWithGoogle = createAsyncThunk(
 const authSlice = createSlice({
   name: "auth",
   initialState: {
-    user: null as any,
-    token: null as string | null,
-    loading: false,
+    user:      null as any,
+    token:     null as string | null,
+    loading:   false,
     restoring: true,
-    error: null as string | null,
+    error:     null as string | null,
   },
   reducers: {
     logout: (state) => {
-      state.user     = null;
-      state.token    = null;
-      state.restoring = false;
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("token");
-      }
+      state.user  = null;
+      state.token = null;
+      if (typeof window !== "undefined") localStorage.removeItem("token");
     },
-    clearError: (state) => {
-      state.error = null;
-    },
-    updateProfileFields: (
-      state,
-      action: PayloadAction<{ name?: string; company?: string }>
-    ) => {
-      if (state.user) {
-        state.user = { ...state.user, ...action.payload };
-      }
-    },
+    clearError: (state) => { state.error = null; },
+    setUser: (state, action: PayloadAction<any>) => { state.user = action.payload; },
   },
   extraReducers: (builder) => {
+    // ── restoreUser ──
     builder
-      // ── restoreUser ──────────────────────────────────────────────
-      .addCase(restoreUser.pending,   (state) => { state.restoring = true; })
+      .addCase(restoreUser.pending, (state) => { state.restoring = true; })
       .addCase(restoreUser.fulfilled, (state, action) => {
-        state.restoring = false;
         state.user      = action.payload.user;
         state.token     = action.payload.token;
+        state.restoring = false;
       })
       .addCase(restoreUser.rejected, (state) => {
         state.restoring = false;
-        state.user  = null;
-        state.token = null;
-      })
-      // ── loginUser ────────────────────────────────────────────────
-      .addCase(loginUser.pending,   (state) => { state.loading = true; state.error = null; })
+        state.user      = null;
+        state.token     = null;
+      });
+
+    // ── loginUser ──
+    builder
+      .addCase(loginUser.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(loginUser.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
         state.error   = action.payload as string;
-      })
-      // ── registerUser ─────────────────────────────────────────────
-      .addCase(registerUser.pending,   (state) => { state.loading = true; state.error = null; })
+      });
+
+    // ── registerUser ──
+    builder
+      .addCase(registerUser.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(registerUser.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
         state.error   = action.payload as string;
-      })
-      // ── loginWithGoogle ──────────────────────────────────────────
-      .addCase(loginWithGoogle.pending,   (state) => { state.loading = true; state.error = null; })
+      });
+
+    // ── loginWithGoogle ──
+    builder
+      .addCase(loginWithGoogle.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(loginWithGoogle.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
       })
       .addCase(loginWithGoogle.rejected, (state, action) => {
         state.loading = false;
@@ -163,5 +152,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError, updateProfileFields } = authSlice.actions;
+export const { logout, clearError, setUser } = authSlice.actions;
 export default authSlice.reducer;

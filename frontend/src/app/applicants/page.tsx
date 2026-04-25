@@ -8,7 +8,8 @@ import Sidebar from "../../components/Sidebar";
 import AppHeader from "../../components/AppHeader";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import {
-  uploadCSV, uploadResumeFile, uploadFromURL,
+  uploadCSV, uploadResumeFile, uploadResumeFiles, uploadZipFile,
+  pollQueueStatus, uploadFromURL,
   getUmuravaProfiles, selectUmuravaProfiles,
   submitManualApplicant, getApplicants, removeApplicantFromJob,
 } from "../../services/applicantService";
@@ -22,11 +23,12 @@ import {
   Briefcase, GraduationCap, Award, Globe,
   CheckCircle2, Users, Trash2, Search,
   ChevronRight, AlertTriangle, FileSpreadsheet, Eye,
-  Sparkles, Brain, RefreshCw, Info, Layers,
+  Sparkles, Brain, RefreshCw, Info, Layers, Archive,
 } from "lucide-react";
 
 const MAX_RESUME_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_CSV_SIZE_BYTES    = 5  * 1024 * 1024;
+const MAX_ZIP_SIZE_BYTES    = 200 * 1024 * 1024;
 
 const inp: React.CSSProperties = {
   width: "100%", padding: "10px 14px", borderRadius: "10px",
@@ -70,6 +72,18 @@ type ResumeResult = {
   skillsCount: number; expCount: number; projectCount: number;
   eduCount: number; certCount: number; location: string;
   headline: string; isExisting: boolean;
+};
+
+// Queue polling state
+type QueueState = {
+  queueId: string;
+  total: number;
+  done: number;
+  succeeded: number;
+  duplicates: number;
+  failed: number;
+  status: "pending" | "processing" | "done" | "error";
+  results: ResumeResult[];
 };
 
 function parseCSVPreview(file: File): Promise<CSVPreview> {
@@ -163,6 +177,96 @@ function UploadDoneBanner({
   );
 }
 
+// ── Queue Progress Panel — shown while ZIP/batch is being processed ──
+function QueueProgressPanel({
+  queue, onDone,
+}: {
+  queue: QueueState;
+  onDone: (results: ResumeResult[], succeeded: number) => void;
+}) {
+  const isDone   = queue.status === "done" || queue.status === "error";
+  const pct      = queue.total > 0 ? Math.round((queue.done / queue.total) * 100) : 0;
+
+  useEffect(() => {
+    if (isDone) onDone(queue.results, queue.succeeded);
+  }, [isDone]);
+
+  return (
+    <div style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: "20px 24px", boxShadow: "var(--shadow-card)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(124,58,237,0.1)", border: "1.5px solid rgba(124,58,237,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {isDone
+            ? <CheckCircle2 size={20} color="#15803d" />
+            : <RefreshCw size={20} color="#7c3aed" style={{ animation: "spin 1.2s linear infinite" }} />}
+        </div>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontWeight: 700, fontSize: 14.5, color: "var(--text-primary)", marginBottom: 3 }}>
+            {isDone
+              ? `Batch complete — ${queue.succeeded} added, ${queue.duplicates} already existed`
+              : `Processing ${queue.total} resumes… ${queue.done}/${queue.total} done`}
+          </p>
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)" }}>
+            {isDone
+              ? `${queue.failed > 0 ? `${queue.failed} failed · ` : ""}Used batch Gemini parsing (${Math.ceil(queue.total / 8)} API calls instead of ${queue.total})`
+              : "Gemini is batch-parsing resumes in the background — this page stays responsive"}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>
+            {isDone ? "Complete" : "AI batch parsing…"}
+          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed" }}>{pct}%</span>
+        </div>
+        <ProgressBar pct={pct} color={isDone ? "#15803d" : "linear-gradient(90deg,#7c3aed,#2563eb)"} />
+      </div>
+
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {[
+          { label: "Total", val: queue.total, color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+          { label: "Done",  val: queue.done,  color: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+          { label: "New",   val: queue.succeeded, color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
+          { label: "Dups",  val: queue.duplicates, color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+          ...(queue.failed > 0 ? [{ label: "Failed", val: queue.failed, color: "#dc2626", bg: "#fef2f2", border: "#fecaca" }] : []),
+        ].map(s => (
+          <div key={s.label} style={{ padding: "5px 12px", borderRadius: 8, background: s.bg, border: `1px solid ${s.border}`, fontSize: 12, fontWeight: 700, color: s.color }}>
+            {s.val} {s.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Individual results (shown when done) */}
+      {isDone && queue.results.length > 0 && (
+        <div style={{ marginTop: 16, maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+          {queue.results.slice(0, 20).map((r, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "var(--surface-hover)", borderRadius: 9, border: "1px solid var(--border-muted)" }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: r.isExisting ? "#fef9c3" : "linear-gradient(135deg,#2563eb,#7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: r.isExisting ? "#92400e" : "white" }}>
+                  {(r.candidateName || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)}
+                </span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.candidateName || r.fileName}</p>
+                <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.email || "No email"}{r.skillsCount > 0 ? ` · ${r.skillsCount} skills` : ""}</p>
+              </div>
+              {r.isExisting && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: "#fef9c3", color: "#92400e", border: "1px solid #fde68a", flexShrink: 0 }}>Existing</span>}
+            </div>
+          ))}
+          {queue.results.length > 20 && (
+            <p style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "center", padding: "6px 0" }}>
+              +{queue.results.length - 20} more — view in candidate list
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResumeResultCard({ r }: { r: ResumeResult }) {
   const initials = r.candidateName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
   return (
@@ -192,7 +296,7 @@ function ApplicantsPageContent() {
   const bannerRef    = useRef<HTMLDivElement>(null);
 
   const [activeTab,   setActiveTab]   = useState<"list" | "umurava" | "external" | "manual">("list");
-  const [fileSubTab,  setFileSubTab]  = useState<"csv" | "resume" | "url">("csv");
+  const [fileSubTab,  setFileSubTab]  = useState<"csv" | "resume" | "zip" | "url">("csv");
   const [jobs,        setJobs]        = useState<any[]>([]);
   const [selectedJob, setSelectedJob] = useState("");
   const [profiles,    setProfiles]    = useState<any[]>([]);
@@ -213,6 +317,15 @@ function ApplicantsPageContent() {
   const [resumeUploaded,       setResumeUploaded]       = useState(false);
   const [resumeUploadedCount,  setResumeUploadedCount]  = useState(0);
   const [resumeHadDuplicates,  setResumeHadDuplicates]  = useState(false);
+
+  // ── ZIP state ──────────────────────────────────────────────────────────────
+  const [stagedZip,      setStagedZip]      = useState<File | null>(null);
+  const [zipUploading,   setZipUploading]   = useState(false);
+  const [zipUploadPct,   setZipUploadPct]   = useState(0);
+  const [zipQueue,       setZipQueue]       = useState<QueueState | null>(null);
+  const [zipDone,        setZipDone]        = useState(false);
+  const [zipDoneCount,   setZipDoneCount]   = useState(0);
+  const zipPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [importUrl,    setImportUrl]    = useState("");
   const [importingUrl, setImportingUrl] = useState(false);
@@ -242,10 +355,15 @@ function ApplicantsPageContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if ((resumeUploaded || csvUploaded || urlUploaded || profilesAddedShown) && bannerRef.current) {
+    if ((resumeUploaded || csvUploaded || urlUploaded || profilesAddedShown || zipDone) && bannerRef.current) {
       setTimeout(() => { bannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }, 150);
     }
-  }, [resumeUploaded, csvUploaded, urlUploaded, profilesAddedShown]);
+  }, [resumeUploaded, csvUploaded, urlUploaded, profilesAddedShown, zipDone]);
+
+  // Cleanup ZIP polling on unmount
+  useEffect(() => {
+    return () => { if (zipPollRef.current) clearInterval(zipPollRef.current); };
+  }, []);
 
   const handleJobChange = (jobId: string) => {
     setSelectedJob(jobId);
@@ -254,6 +372,7 @@ function ApplicantsPageContent() {
     setStagedFiles([]); setFileProgresses([]);
     setResumeResults([]); setResumeUploaded(false); setResumeHadDuplicates(false);
     setUrlUploaded(false); setProfilesAddedShown(false);
+    setStagedZip(null); setZipQueue(null); setZipDone(false);
     if (jobId) router.replace(`/applicants?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
     else router.replace("/applicants", { scroll: false });
   };
@@ -272,7 +391,6 @@ function ApplicantsPageContent() {
     finally { setCandidatesLoading(false); }
   }, [selectedJob]);
 
-  // ── FIXED: handleRemoveCandidate — syncs real count from backend ──
   const handleRemoveCandidate = async () => {
     if (!deleteTarget || !selectedJob) return;
     setDeleting(true);
@@ -313,12 +431,11 @@ function ApplicantsPageContent() {
     });
   };
 
-  // ── FIXED: handleRunScreening — adds &autoload=1 ──
   const handleRunScreening = async (topN: 10 | 20 | "all") => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     setScreeningRunning(true);
     try {
-      await (dispatch as any)(triggerScreening({jobId: selectedJob, topN })).unwrap();
+      await (dispatch as any)(triggerScreening({ jobId: selectedJob, topN })).unwrap();
       toast.success("AI screening complete! Loading results…");
       router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}&autoload=1`);
     } catch (e: unknown) {
@@ -339,7 +456,6 @@ function ApplicantsPageContent() {
     finally { setCsvPreviewLoading(false); }
   }, [selectedJob]);
 
-  // ── FIXED: handleConfirmIngest — auto-reload list + switch tab ──
   const handleConfirmIngest = async () => {
     if (!csvPreview || !selectedJob) return;
     setUploading(true);
@@ -392,7 +508,6 @@ function ApplicantsPageContent() {
     setStagedFiles(prev => prev.filter(s => s.id !== id));
   };
 
-  // ── FIXED: handleConfirmResumeUpload — auto-reload list + switch tab ──
   const handleConfirmResumeUpload = async () => {
     if (!stagedFiles.length || !selectedJob) return;
     const progresses: FileProgress[] = stagedFiles.map(s => ({ name: s.file.name, pct: 0, status: "uploading" }));
@@ -474,6 +589,95 @@ function ApplicantsPageContent() {
     }
   };
 
+  // ── ZIP upload + queue polling ─────────────────────────────────────────────
+  const onDropZip = useCallback((files: File[]) => {
+    if (!selectedJob) { toast.error("Select a job first"); return; }
+    const file = files[0];
+    if (!file) return;
+    if (file.size > MAX_ZIP_SIZE_BYTES) { toast.error("Max 200 MB for ZIP files."); return; }
+    setStagedZip(file);
+    setZipQueue(null);
+    setZipDone(false);
+    setZipUploadPct(0);
+  }, [selectedJob]);
+
+  const handleConfirmZipUpload = async () => {
+    if (!stagedZip || !selectedJob) return;
+    setZipUploading(true);
+    setZipUploadPct(5);
+    const ticker = setInterval(() => { setZipUploadPct(p => p < 75 ? p + 3 : p); }, 400);
+
+    try {
+      const res = await uploadZipFile(selectedJob, stagedZip, (pct) => setZipUploadPct(Math.min(pct, 78)));
+      clearInterval(ticker);
+      setZipUploadPct(85);
+      setStagedZip(null);
+
+      if (res.queued && res.queueId) {
+        // Start polling every 2 seconds
+        const initialQueue: QueueState = {
+          queueId:    res.queueId,
+          total:      res.total || 0,
+          done:       0,
+          succeeded:  0,
+          duplicates: 0,
+          failed:     0,
+          status:     "pending",
+          results:    [],
+        };
+        setZipQueue(initialQueue);
+        setZipUploadPct(100);
+
+        zipPollRef.current = setInterval(async () => {
+          try {
+            const poll = await pollQueueStatus(res.queueId);
+            setZipQueue({
+              queueId:    res.queueId,
+              total:      poll.total || 0,
+              done:       poll.done || 0,
+              succeeded:  poll.succeeded || 0,
+              duplicates: poll.duplicates || 0,
+              failed:     poll.failed || 0,
+              status:     poll.status,
+              results:    poll.results || [],
+            });
+            if (poll.status === "done" || poll.status === "error") {
+              if (zipPollRef.current) clearInterval(zipPollRef.current);
+            }
+          } catch { /* non-fatal polling error */ }
+        }, 2000);
+      } else {
+        toast.success(res.message || "ZIP processed");
+      }
+    } catch (err: any) {
+      clearInterval(ticker);
+      setZipUploadPct(0);
+      toast.error(err?.response?.data?.message || "ZIP upload failed");
+    } finally {
+      setZipUploading(false);
+    }
+  };
+
+  const handleZipQueueDone = useCallback(async (results: ResumeResult[], succeeded: number) => {
+    if (zipPollRef.current) clearInterval(zipPollRef.current);
+    setZipDoneCount(succeeded);
+    setZipDone(true);
+
+    // Sync counts and reload candidate list
+    if (selectedJob) {
+      try {
+        const data = await getApplicants(selectedJob);
+        setCandidates(data.applicants || []);
+        setCandidatesLoaded(true);
+        if (data.applicants?.length != null) {
+          dispatch(syncJobCount({ jobId: selectedJob, count: data.applicants.length }));
+        }
+      } catch { /* non-fatal */ }
+      setActiveTab("list");
+    }
+    toast.success(`ZIP done — ${succeeded} new candidates added!`);
+  }, [selectedJob, dispatch]);
+
   const { getRootProps: getCSVRootProps, getInputProps: getCSVInputProps, isDragActive: isCSVDrag } = useDropzone({
     onDrop: onDropCSV,
     accept: { "text/csv": [".csv"], "application/vnd.ms-excel": [".xls"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
@@ -483,6 +687,11 @@ function ApplicantsPageContent() {
     onDrop: onDropResume,
     accept: { "application/pdf": [".pdf"], "application/msword": [".doc"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"], "text/plain": [".txt"] },
     multiple: true,
+  });
+  const { getRootProps: getZipRootProps, getInputProps: getZipInputProps, isDragActive: isZipDrag } = useDropzone({
+    onDrop: onDropZip,
+    accept: { "application/zip": [".zip"], "application/x-zip-compressed": [".zip"], "application/octet-stream": [".zip"] },
+    multiple: false,
   });
 
   const handleImportUrl = async () => {
@@ -518,7 +727,6 @@ function ApplicantsPageContent() {
     } finally { setImportingUrl(false); }
   };
 
-  // ── FIXED: handleAddUmurava — auto-reload list + switch tab ──
   const handleAddUmurava = async () => {
     if (!selectedJob || selectedProfiles.length === 0) { toast.error("Select profiles and a job first"); return; }
     setUploading(true);
@@ -548,7 +756,6 @@ function ApplicantsPageContent() {
     finally { setUploading(false); }
   };
 
-  // ── FIXED: handleSubmitManual — auto-reload list + switch tab ──
   const handleSubmitManual = async () => {
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) { toast.error("First name, last name, and email are required"); return; }
     const validSkills = form.skills.filter(s => s.name.trim());
@@ -775,6 +982,16 @@ function ApplicantsPageContent() {
                   />
                 </div>
               )}
+              {zipDone && selectedJob && (
+                <div style={{ marginBottom: 20 }}>
+                  <UploadDoneBanner
+                    count={zipDoneCount} jobId={selectedJob}
+                    label={`candidate${zipDoneCount !== 1 ? "s" : ""} added from ZIP — ready for AI screening!`}
+                    onReset={() => { setZipDone(false); setZipQueue(null); setZipDoneCount(0); }}
+                    onRunScreening={handleRunScreening} running={screeningRunning} variant="success"
+                  />
+                </div>
+              )}
               {urlUploaded && selectedJob && (
                 <div style={{ marginBottom: 20 }}>
                   <UploadDoneBanner
@@ -925,14 +1142,22 @@ function ApplicantsPageContent() {
             {activeTab === "external" && (
               <div>
                 {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16 }}>Select a job first to upload files.</p>}
+
+                {/* Sub-tabs — now includes ZIP */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-                  {(["csv", "resume", "url"] as const).map((t) => (
-                    <button key={t} onClick={() => setFileSubTab(t)} style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid var(--border-soft)", background: fileSubTab === t ? "var(--brand-gradient)" : "var(--surface-card)", color: fileSubTab === t ? "white" : "var(--text-secondary)", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                      {t === "csv" ? "CSV / Excel" : t === "resume" ? "Resume PDF" : "Import URL"}
+                  {([
+                    { id: "csv",    label: "CSV / Excel",  icon: <FileSpreadsheet size={13} /> },
+                    { id: "resume", label: "Resume PDF",   icon: <FileText size={13} /> },
+                    { id: "zip",    label: "ZIP (Bulk)",   icon: <Archive size={13} /> },
+                    { id: "url",    label: "Import URL",   icon: <Upload size={13} /> },
+                  ] as const).map((t) => (
+                    <button key={t.id} onClick={() => setFileSubTab(t.id)} style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid var(--border-soft)", background: fileSubTab === t.id ? "var(--brand-gradient)" : "var(--surface-card)", color: fileSubTab === t.id ? "white" : "var(--text-secondary)", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
+                      {t.icon}{t.label}
                     </button>
                   ))}
                 </div>
 
+                {/* CSV sub-tab */}
                 {fileSubTab === "csv" && (
                   <div>
                     <div {...getCSVRootProps()} className={`ap-dropzone${isCSVDrag ? " drag" : ""}`}>
@@ -993,6 +1218,7 @@ function ApplicantsPageContent() {
                   </div>
                 )}
 
+                {/* Resume PDF sub-tab */}
                 {fileSubTab === "resume" && (
                   <div>
                     <div {...getResumeRootProps()} className={`ap-dropzone${isResumeDrag ? " drag" : ""}`}>
@@ -1082,6 +1308,80 @@ function ApplicantsPageContent() {
                   </div>
                 )}
 
+                {/* ── ZIP sub-tab — NEW ── */}
+                {fileSubTab === "zip" && (
+                  <div>
+                    <div style={{ background: "rgba(124,58,237,0.05)", border: "1.5px solid rgba(124,58,237,0.15)", borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <Archive size={16} color="#7c3aed" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "#7c3aed", marginBottom: 3 }}>Bulk ZIP upload — Batch AI parsing</p>
+                        <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                          Upload a ZIP containing up to 200+ PDF/DOCX resumes. Processing runs in the background — <strong>50 resumes = 7 Gemini calls</strong> instead of 50. You can navigate away and check back.
+                        </p>
+                      </div>
+                    </div>
+
+                    {!stagedZip && !zipQueue && (
+                      <div {...getZipRootProps()} className={`ap-dropzone${isZipDrag ? " drag" : ""}`}>
+                        <input {...getZipInputProps()} />
+                        <div className="ap-dropzone-icon" style={{ background: "rgba(124,58,237,0.08)" }}><Archive size={22} color="#7c3aed" /></div>
+                        <p className="ap-dropzone-title">Drop a ZIP file here</p>
+                        <p className="ap-dropzone-sub">ZIP containing PDF, DOCX, DOC or TXT resumes · Max 200 MB</p>
+                      </div>
+                    )}
+
+                    {stagedZip && !zipQueue && (
+                      <div style={{ marginTop: 16, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: 20, boxShadow: "var(--shadow-card)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(124,58,237,0.1)", border: "1.5px solid rgba(124,58,237,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <Archive size={22} color="#7c3aed" />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{stagedZip.name}</p>
+                            <p style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 2 }}>{(stagedZip.size / (1024 * 1024)).toFixed(1)} MB · Click below to start batch parsing</p>
+                          </div>
+                          <button onClick={() => setStagedZip(null)} style={{ width: 28, height: 28, borderRadius: 8, border: "1px solid var(--border-soft)", background: "var(--surface-hover)", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <X size={13} />
+                          </button>
+                        </div>
+
+                        {zipUploading && zipUploadPct > 0 && (
+                          <div style={{ marginBottom: 16 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                              <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontWeight: 600 }}>Uploading ZIP…</span>
+                              <span style={{ fontSize: 12.5, color: "#7c3aed", fontWeight: 700 }}>{zipUploadPct}%</span>
+                            </div>
+                            <ProgressBar pct={zipUploadPct} color="linear-gradient(90deg,#7c3aed,#2563eb)" />
+                          </div>
+                        )}
+
+                        <button
+                          className="ap-confirm-btn"
+                          onClick={handleConfirmZipUpload}
+                          disabled={zipUploading || !selectedJob}
+                        >
+                          {zipUploading
+                            ? <><RefreshCw size={15} style={{ animation: "spin 1s linear infinite" }} /> Uploading &amp; Extracting…</>
+                            : <><Archive size={15} /> Upload &amp; Batch Parse All Resumes</>}
+                        </button>
+                        {!selectedJob && <p style={{ fontSize: 12, color: "#dc2626", marginTop: 8 }}>Select a job first</p>}
+                      </div>
+                    )}
+
+                    {zipQueue && (
+                      <div style={{ marginTop: 16 }}>
+                        <QueueProgressPanel queue={zipQueue} onDone={handleZipQueueDone} />
+                        {zipQueue.status !== "done" && zipQueue.status !== "error" && (
+                          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10, textAlign: "center" }}>
+                            You can navigate away — processing continues in the background.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* URL sub-tab */}
                 {fileSubTab === "url" && (
                   <div>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
@@ -1207,7 +1507,7 @@ function ApplicantsPageContent() {
                   {form.languages.map((lang,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 160px 28px",gap:8,marginBottom:8,alignItems:"end"}}>
                       <div>{i===0&&<label style={lbl}>Language</label>}<input style={inp} type="text" placeholder="English, Kinyarwanda" value={lang.name} onChange={(e)=>setForm(f=>({...f,languages:f.languages.map((x,xi)=>xi===i?{...x,name:e.target.value}:x)}))} /></div>
-                      <div>{i===0&&<label style={lbl}>Proficiency</label>}<select className="ap-manual-select" value={lang.proficiency} onChange={(e)=>setForm(f=>({...f,languages:f.languages.map((x,xi)=>xi===i?{...x,proficiency:e.target.value}:x)}))}>{["Basic","Conversational","Fluent","Native"].map(p=><option key={p}>{p}</option>)}</select></div>
+                      <div>{i===0&&<label style={lbl}>Proficiency</label>}<select className="ap-manual-select" value={lang.proficiency} onChange={(e)=>setForm(f=>({...f,languages:f.languages.map((x,xi)=>xi===i?{...x,proficiency:e.target.value}:x)}))}>{["Basic","Conversational","Fluent","Native","Proficient","Bilingual"].map(p=><option key={p}>{p}</option>)}</select></div>
                       <button className="ap-row-remove" onClick={()=>removeLang(i)} style={{marginTop:i===0?20:0}}><X size={13}/></button>
                     </div>
                   ))}
@@ -1236,7 +1536,7 @@ function ApplicantsPageContent() {
                   <p style={sectionTitle}><CheckCircle size={13}/> Availability &amp; Links</p>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
                     <div><label style={lbl}>Status</label><select className="ap-manual-select" value={form.availability.status} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,status:e.target.value}}))}>{["Available","Open to Opportunities","Not Available"].map(s=><option key={s}>{s}</option>)}</select></div>
-                    <div><label style={lbl}>Type</label><select className="ap-manual-select" value={form.availability.type} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,type:e.target.value}}))}>{["Full-time","Part-time","Contract"].map(t=><option key={t}>{t}</option>)}</select></div>
+                    <div><label style={lbl}>Type</label><select className="ap-manual-select" value={form.availability.type} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,type:e.target.value}}))}>{["Full-time","Part-time","Contract","Freelance","Internship"].map(t=><option key={t}>{t}</option>)}</select></div>
                     <div><label style={lbl}>Available From</label><input style={inp} type="text" placeholder="Immediately" value={form.availability.startDate} onChange={(e)=>setForm(f=>({...f,availability:{...f.availability,startDate:e.target.value}}))} /></div>
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
