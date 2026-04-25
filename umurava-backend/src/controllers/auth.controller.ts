@@ -1,9 +1,15 @@
 // umurava-backend/src/controllers/auth.controller.ts
+// Fixed: Google login now uses google-auth-library OAuth2Client.verifyIdToken()
+// instead of the tokeninfo HTTP endpoint, which was causing "forbidden" / 403 errors
+// in some environments and was slower.
+//
+// Install dep if not already: npm install google-auth-library
 
 import { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import User from "../models/User.model";
+import { OAuth2Client } from "google-auth-library";
 
 const generateToken = (id: string, email: string, name: string): string => {
   return jwt.sign(
@@ -85,8 +91,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/auth/google
 // Accepts a Google ID token from the frontend (Google Sign-In SDK).
-// Verifies it with Google's tokeninfo endpoint, finds or creates the user,
-// returns our own JWT — same shape as email login.
+// Uses google-auth-library to verify it server-side — avoids the "forbidden"
+// errors that the tokeninfo HTTP endpoint sometimes returns.
 // ─────────────────────────────────────────────────────────────────────────────
 export const googleLogin = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -97,42 +103,46 @@ export const googleLogin = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    // Verify the Google ID token against Google's public endpoint
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      console.error("❌ GOOGLE_CLIENT_ID is not set in environment variables");
+      res.status(500).json({
+        success: false,
+        message: "Google sign-in is not configured on the server. Please contact support.",
+      });
+      return;
+    }
+
+    // ── Verify the ID token using google-auth-library ──────────────────────
+    const oauthClient = new OAuth2Client(clientId);
     let googlePayload: any;
     try {
-      const response = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${credential}`
-      );
-      if (!response.ok) {
-        res.status(401).json({ success: false, message: "Invalid Google token. Please try again." });
-        return;
-      }
-      googlePayload = await response.json();
-    } catch {
-      res.status(401).json({ success: false, message: "Failed to verify Google token. Please try again." });
+      const ticket = await oauthClient.verifyIdToken({
+        idToken:  credential,
+        audience: clientId,
+      });
+      googlePayload = ticket.getPayload();
+    } catch (verifyErr: any) {
+      console.error("❌ Google token verification failed:", verifyErr.message);
+      res.status(401).json({
+        success: false,
+        message: "Invalid or expired Google token. Please try signing in again.",
+      });
       return;
     }
 
-    // Validate the token audience matches our app
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    if (clientId && googlePayload.aud !== clientId) {
-      res.status(401).json({ success: false, message: "Google token audience mismatch." });
-      return;
-    }
-
-    if (!googlePayload.email) {
+    if (!googlePayload || !googlePayload.email) {
       res.status(400).json({ success: false, message: "Could not retrieve email from Google account." });
       return;
     }
 
     const email = googlePayload.email.toLowerCase();
-    const name  = googlePayload.name || googlePayload.email.split("@")[0];
+    const name  = googlePayload.name || email.split("@")[0];
 
     // Find existing user or create a new one
     let user = await User.findOne({ email });
 
     if (!user) {
-      // Google users get a random password they can never use directly
       const randomPassword = crypto.randomBytes(32).toString("hex");
       user = await User.create({
         name,
@@ -205,7 +215,6 @@ export const updateProfile = async (req: any, res: Response): Promise<void> => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUT /api/auth/password
-// Used by settings/page.tsx to change password
 // ─────────────────────────────────────────────────────────────────────────────
 export const changePassword = async (req: any, res: Response): Promise<void> => {
   try {
@@ -234,7 +243,7 @@ export const changePassword = async (req: any, res: Response): Promise<void> => 
     }
 
     user.password = newPassword;
-    await user.save(); // triggers pre-save hash in User model
+    await user.save();
     console.log(`✅ Password changed for user: ${user.email}`);
 
     res.json({ success: true, message: "Password updated successfully" });

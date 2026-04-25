@@ -38,7 +38,8 @@ export default function JobDetailPage() {
   const [topN, setTopN] = useState<10 | 20 | "all">(20);
   const [editForm, setEditForm] = useState<Partial<JobRow>>({});
 
-  const jobId = id as string;
+  // ── FIX: jobId must be a non-empty string before any dispatch
+  const jobId = (id as string) || "";
 
   const loadJob = () => {
     if (!jobId) return;
@@ -49,11 +50,14 @@ export default function JobDetailPage() {
   };
 
   useEffect(() => { loadJob(); }, [jobId]);
+
   useEffect(() => {
+    // ── FIX: only fetch results when jobId is a valid non-empty string
     if (!jobId) return;
     dispatch(clearResults());
     dispatch(fetchResults(jobId)).unwrap().catch(() => {});
   }, [jobId, dispatch]);
+
   useEffect(() => {
     if (job) {
       setEditForm({
@@ -65,26 +69,37 @@ export default function JobDetailPage() {
   }, [job, editOpen]);
 
   const statusMap: Record<string, { bg: string; color: string; label: string }> = {
-    open: { bg: "#dcfce7", color: "#16a34a", label: "Active" },
+    open:      { bg: "#dcfce7", color: "#16a34a", label: "Active" },
     screening: { bg: "#dbeafe", color: "#2563eb", label: "Screening" },
-    closed: { bg: "#f1f5f9", color: "#64748b", label: "Closed" },
+    closed:    { bg: "#f1f5f9", color: "#64748b", label: "Closed" },
   };
 
+  // ── FIX: pass object { jobId } instead of plain string ──────────────────
   const runScreen = async () => {
+    if (!jobId) { toast.error("Job ID is missing"); return; }
     try {
-      await dispatch(triggerScreening(jobId)).unwrap();
+      await dispatch(triggerScreening({ jobId })).unwrap();
       toast.success("Screening complete");
       loadJob();
-      router.push(`/screenings/${jobId}`);
+      router.push(`/screenings?jobId=${encodeURIComponent(jobId)}`);
     } catch (e: unknown) {
-      toast.error(typeof e === "string" ? e : "Screening failed");
+      toast.error(typeof e === "string" ? e : "Screening failed. Make sure candidates have been uploaded.");
     }
   };
 
   const saveEdit = async () => {
     if (!job) return;
     try {
-      await dispatch(saveJob({ id: job._id, data: { title: editForm.title, description: editForm.description, location: editForm.location, jobType: editForm.jobType, yearsOfExperience: editForm.yearsOfExperience, educationLevel: editForm.educationLevel, requiredSkills: editForm.requiredSkills } })).unwrap();
+      await dispatch(saveJob({
+        id: job._id,
+        data: {
+          title: editForm.title, description: editForm.description,
+          location: editForm.location, jobType: editForm.jobType,
+          yearsOfExperience: editForm.yearsOfExperience,
+          educationLevel: editForm.educationLevel,
+          requiredSkills: editForm.requiredSkills,
+        },
+      })).unwrap();
       toast.success("Job updated");
       setEditOpen(false);
       loadJob();
@@ -97,7 +112,7 @@ export default function JobDetailPage() {
 
   // Workflow banner logic
   const hasApplicants = (job?.applicantsCount ?? 0) > 0;
-  const hasResults = !!results;
+  const hasResults    = !!results;
   const workflowBanner = !hasApplicants
     ? { message: "Job created! Next step: upload candidates for this position.", linkText: "Upload Candidates", linkHref: `/applicants?jobId=${jobId}` }
     : !hasResults
@@ -124,6 +139,11 @@ export default function JobDetailPage() {
         .jd-meta-l { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
         .jd-meta-v { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-top: 5px; display: flex; align-items: center; gap: 6px; }
 
+        .jd-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .jd-btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border-radius: 10px; font-size: 13.5px; font-weight: 600; font-family: var(--font-body); cursor: pointer; transition: all var(--transition-fast); text-decoration: none; white-space: nowrap; }
+        .jd-btn-outline { background: var(--surface-card); border: 1.5px solid var(--border-soft); color: var(--text-secondary); }
+        .jd-btn-outline:hover { border-color: var(--brand-primary); color: var(--brand-primary); background: rgba(37,99,235,0.05); }
+
         /* FLOW 3D: Prominent screening CTA */
         .jd-screen-cta {
           width: 100%; padding: 18px 24px; border-radius: 16px; border: none;
@@ -144,58 +164,48 @@ export default function JobDetailPage() {
           animation: shimmer 2.5s infinite;
         }
         .jd-screen-cta:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(124,58,237,0.5); }
-        .jd-screen-cta:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: 0 4px 12px rgba(124,58,237,0.2); }
-        .jd-screen-cta:disabled::before { animation: none; }
+        .jd-screen-cta:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
 
-        .jd-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-        .jd-btn {
-          display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px;
-          border-radius: 11px; font-weight: 700; font-size: 13px; cursor: pointer;
-          transition: all var(--transition-fast);
+        /* Workflow banner */
+        .jd-banner {
+          display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+          padding: 14px 18px; border-radius: 12px; margin-bottom: 20px;
+          background: rgba(37,99,235,0.06); border: 1.5px solid rgba(37,99,235,0.15);
+          font-size: 13.5px; color: var(--text-secondary);
         }
-        .jd-btn-outline {
-          background: var(--surface-card); border: 1.5px solid var(--border-soft);
-          color: var(--text-secondary); text-decoration: none;
-        }
-        .jd-btn-outline:hover { border-color: #bfdbfe; color: var(--brand-primary); background: rgba(37,99,235,0.04); }
+        .jd-banner a { color: #2563eb; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+        .jd-banner a:hover { text-decoration: underline; }
 
-        /* Chat */
-.jd-msg-user { background: rgba(37,99,235,0.08); color: var(--text-primary); padding: 10px 14px; border-radius: 12px 12px 4px 12px; font-size: 13.5px; align-self: flex-end; max-width: 85%; }
-        .jd-msg-ai { background: var(--surface-hover); color: var(--text-primary); padding: 10px 14px; border-radius: 12px 12px 12px 4px; font-size: 13.5px; align-self: flex-start; max-width: 85%; line-height: 1.5; }
-        .jd-chip { padding: 6px 12px; border-radius: 20px; border: 1.5px solid var(--border-soft); background: var(--surface-card); font-size: 12px; font-weight: 600; color: var(--text-secondary); cursor: pointer; transition: all var(--transition-fast); }
-        .jd-chip:hover { border-color: #bfdbfe; color: var(--brand-primary); }
-
-        /* Edit modal */
-        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn 0.15s ease; }
-        .modal-inner { background: var(--surface-card); border: 1.5px solid var(--border-soft); border-radius: 20px; padding: 28px; max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.2); animation: scaleIn 0.15s ease; }
+        /* Modal */
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .modal-inner { background: var(--surface-card); border-radius: 18px; padding: 28px; width: 100%; max-width: 520px; border: 1.5px solid var(--border-soft); box-shadow: 0 24px 60px rgba(0,0,0,0.2); animation: scaleIn 0.18s ease; }
         .modal-title { font-size: 18px; font-weight: 800; color: var(--text-primary); margin-bottom: 20px; }
-        .modal-label { display: block; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
-        .modal-input { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--border-input); background: var(--surface-input); color: var(--text-primary); font-size: 14px; font-family: var(--font-body); outline: none; transition: border-color var(--transition-fast); }
-        .modal-input:focus { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
-        .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
-        .modal-cancel { flex: 1; padding: 11px; border-radius: 10px; border: 1.5px solid var(--border-soft); background: var(--surface-card); color: var(--text-secondary); font-weight: 600; cursor: pointer; font-family: var(--font-body); }
-        .modal-save { flex: 1; padding: 11px; border-radius: 10px; border: none; background: var(--brand-gradient); color: white; font-weight: 700; cursor: pointer; font-family: var(--font-body); }
+        .modal-label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
+        .modal-input { width: 100%; padding: 10px 14px; border-radius: 10px; border: 1.5px solid var(--border-input); background: var(--surface-input); color: var(--text-primary); font-size: 14px; font-family: var(--font-body); outline: none; transition: border-color 0.15s; }
+        .modal-input:focus { border-color: var(--brand-primary); }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+        .modal-cancel { padding: 10px 20px; border-radius: 9px; border: 1.5px solid var(--border-soft); background: var(--surface-card); color: var(--text-secondary); font-weight: 600; font-size: 14px; cursor: pointer; font-family: var(--font-body); }
+        .modal-save   { padding: 10px 22px; border-radius: 9px; border: none; background: linear-gradient(135deg,#2563eb,#7c3aed); color: white; font-weight: 700; font-size: 14px; cursor: pointer; font-family: var(--font-body); }
 
-        @media (max-width: 768px) { .jd-main { margin-left: 0; } .jd-body { padding: 20px 16px 80px; } }
+        @keyframes fadeIn    { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes scaleIn   { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+        @keyframes shimmer   { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes spin      { to { transform: rotate(360deg); } }
+        @media (max-width: 768px) { .jd-main { margin-left: 0; } .jd-body { padding: 18px 14px 100px; } }
       `}</style>
 
       <div className="jd-root">
         <Sidebar />
         <div className="jd-main">
-          <AppHeader
-            title={job?.title || "Job"}
-            subtitle={job ? `${job.jobType || ""} · ${job.location || ""}` : ""}
-            workflowBanner={!loading && job ? workflowBanner : undefined}
-          />
+          <AppHeader title="Job Details" subtitle="View and manage this position" />
           <div className="jd-body">
-            <button type="button" className="jd-back" onClick={() => router.push("/jobs")}>
-              <ArrowLeft size={15} /> Back to Jobs
+            <button className="jd-back" onClick={() => router.push("/jobs")}>
+              <ArrowLeft size={14} /> Back to Jobs
             </button>
 
             {loading ? (
-              <div style={{ color: "var(--text-muted)", padding: 48, textAlign: "center" }}>
-                <div style={{ width: 36, height: 36, border: "3px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", animation: "spin 0.75s linear infinite", margin: "0 auto 12px" }} />
-                Loading job…
+              <div style={{ padding: "60px 0", textAlign: "center", color: "var(--text-muted)" }}>
+                Loading…
               </div>
             ) : !job ? (
               <div className="empty-state">
@@ -205,6 +215,16 @@ export default function JobDetailPage() {
               </div>
             ) : (
               <>
+                {/* Workflow banner */}
+                {workflowBanner && (
+                  <div className="jd-banner">
+                    <span>{workflowBanner.message}</span>
+                    <Link href={workflowBanner.linkHref}>
+                      {workflowBanner.linkText} <ChevronRight size={13} />
+                    </Link>
+                  </div>
+                )}
+
                 {/* Job card */}
                 <div className="jd-card">
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
@@ -239,10 +259,10 @@ export default function JobDetailPage() {
 
                   <div className="jd-meta">
                     {[
-                      { label: "Location", value: job.location || "—", icon: <MapPin size={13} color="var(--text-muted)" /> },
+                      { label: "Location",   value: job.location || "—",              icon: <MapPin size={13} color="var(--text-muted)" /> },
                       { label: "Experience", value: `${job.yearsOfExperience ?? 0}+ years`, icon: <Clock size={13} color="var(--text-muted)" /> },
-                      { label: "Education", value: job.educationLevel || "Any", icon: <GraduationCap size={13} color="var(--text-muted)" /> },
-                      { label: "Candidates", value: String(job.applicantsCount ?? 0), icon: <Users size={13} color="var(--text-muted)" /> },
+                      { label: "Education",  value: job.educationLevel || "Any",       icon: <GraduationCap size={13} color="var(--text-muted)" /> },
+                      { label: "Candidates", value: String(job.applicantsCount ?? 0),  icon: <Users size={13} color="var(--text-muted)" /> },
                     ].map((m) => (
                       <div key={m.label} className="jd-meta-cell">
                         <p className="jd-meta-l">{m.label}</p>
@@ -265,7 +285,7 @@ export default function JobDetailPage() {
                   )}
                 </div>
 
-                {/* FLOW 3D: Prominent AI Screening CTA — shown when there are candidates */}
+                {/* AI Screening CTA — shown when there are candidates */}
                 {(job.applicantsCount ?? 0) > 0 && (
                   <button
                     type="button"
@@ -304,16 +324,23 @@ export default function JobDetailPage() {
                           <option value={20}>20</option>
                           <option value="all">All</option>
                         </select>
-                        <Link href={`/screenings/${job._id}`} style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Link href={`/screenings?jobId=${job._id}`} style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
                           Full view <ChevronRight size={13} />
                         </Link>
                       </div>
                     </div>
-                    <ScreeningResults jobId={jobId} results={results} fromCache={fromCache ?? false} displayTopN={topN} showRunButton onRunScreening={runScreen} loadingRun={screeningLoading} />
+                    <ScreeningResults
+                      jobId={jobId}
+                      results={results}
+                      fromCache={fromCache ?? false}
+                      displayTopN={topN}
+                      showRunButton
+                      onRunScreening={runScreen}
+                      loadingRun={screeningLoading}
+                    />
                   </div>
                 )}
-
-</>
+              </>
             )}
           </div>
         </div>
@@ -325,17 +352,28 @@ export default function JobDetailPage() {
           <div className="modal-inner" onClick={(e) => e.stopPropagation()}>
             <p className="modal-title">Edit Job</p>
             {[
-              { label: "Title", key: "title", type: "text" },
+              { label: "Title",    key: "title",    type: "text" },
               { label: "Location", key: "location", type: "text" },
             ].map((f) => (
               <div key={f.key} style={{ marginBottom: 14 }}>
                 <label className="modal-label">{f.label}</label>
-                <input className="modal-input" type={f.type} value={(editForm as any)[f.key] || ""} onChange={(e) => setEditForm({ ...editForm, [f.key]: e.target.value })} />
+                <input
+                  className="modal-input"
+                  type={f.type}
+                  value={(editForm as any)[f.key] || ""}
+                  onChange={(e) => setEditForm({ ...editForm, [f.key]: e.target.value })}
+                />
               </div>
             ))}
             <div style={{ marginBottom: 14 }}>
               <label className="modal-label">Description</label>
-              <textarea className="modal-input" rows={4} value={editForm.description || ""} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} style={{ resize: "vertical" }} />
+              <textarea
+                className="modal-input"
+                rows={4}
+                value={editForm.description || ""}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                style={{ resize: "vertical" }}
+              />
             </div>
             <div className="modal-actions">
               <button className="modal-cancel" onClick={() => setEditOpen(false)}>Cancel</button>

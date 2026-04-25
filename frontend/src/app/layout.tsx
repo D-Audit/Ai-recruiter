@@ -30,6 +30,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta name="theme-color" content="#06101f" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+        {/* ── Theme init (runs before paint to avoid flash) ── */}
         <script suppressHydrationWarning dangerouslySetInnerHTML={{ __html: `
           (function() {
             try {
@@ -41,6 +43,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             } catch(e) {}
           })();
         ` }} />
+
+        {/*
+          ── Google Identity Services script — loaded here in layout so it is
+             ready the moment the login/register page renders.
+             Without this, the button has to wait for the script to download
+             (~150 KB) every time the user lands on /login or /register.
+             Loading it here means it downloads once in the background while
+             the user is still looking at any other page.
+        ──────────────────────────────────────────────────────────────────── */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script
+          id="google-gsi-script"
+          src="https://accounts.google.com/gsi/client"
+          async
+          defer
+        />
       </head>
       <body>
         <Providers>
