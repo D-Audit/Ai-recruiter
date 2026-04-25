@@ -67,11 +67,10 @@ export const loginWithGoogle = createAsyncThunk(
       if (typeof window !== "undefined") localStorage.setItem("token", data.token);
       return data;
     } catch (error: any) {
-      // Surface the exact backend message so the user knows what went wrong
       const msg =
         error.response?.data?.message ||
         (error.message?.includes("Network Error")
-          ? "Cannot reach the server. Check that NEXT_PUBLIC_API_URL is set in Vercel environment variables."
+          ? "Cannot reach the server. Check that NEXT_PUBLIC_API_URL is set correctly in Vercel."
           : "Google sign-in failed. Please try again.");
       return rejectWithValue(msg);
     }
@@ -89,21 +88,39 @@ const authSlice = createSlice({
   },
   reducers: {
     logout: (state) => {
-      state.user  = null;
-      state.token = null;
+      state.user      = null;
+      state.token     = null;
+      state.restoring = false;
       if (typeof window !== "undefined") localStorage.removeItem("token");
     },
-    clearError: (state) => { state.error = null; },
-    setUser: (state, action: PayloadAction<any>) => { state.user = action.payload; },
+
+    clearError: (state) => {
+      state.error = null;
+    },
+
+    // Used by profile/page.tsx to update name/company in Redux after a save
+    updateProfileFields: (
+      state,
+      action: PayloadAction<{ name?: string; company?: string }>
+    ) => {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+      }
+    },
+
+    // Generic user setter (used by some pages after auth restore)
+    setUser: (state, action: PayloadAction<any>) => {
+      state.user = action.payload;
+    },
   },
   extraReducers: (builder) => {
     // ── restoreUser ──
     builder
-      .addCase(restoreUser.pending, (state) => { state.restoring = true; })
+      .addCase(restoreUser.pending,   (state) => { state.restoring = true; })
       .addCase(restoreUser.fulfilled, (state, action) => {
+        state.restoring = false;
         state.user      = action.payload.user;
         state.token     = action.payload.token;
-        state.restoring = false;
       })
       .addCase(restoreUser.rejected, (state) => {
         state.restoring = false;
@@ -115,9 +132,10 @@ const authSlice = createSlice({
     builder
       .addCase(loginUser.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(loginUser.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user    = action.payload.user;
-        state.token   = action.payload.token;
+        state.loading   = false;
+        state.restoring = false;
+        state.user      = action.payload.user;
+        state.token     = action.payload.token;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
@@ -128,9 +146,10 @@ const authSlice = createSlice({
     builder
       .addCase(registerUser.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(registerUser.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user    = action.payload.user;
-        state.token   = action.payload.token;
+        state.loading   = false;
+        state.restoring = false;
+        state.user      = action.payload.user;
+        state.token     = action.payload.token;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
@@ -141,9 +160,10 @@ const authSlice = createSlice({
     builder
       .addCase(loginWithGoogle.pending,   (state) => { state.loading = true;  state.error = null; })
       .addCase(loginWithGoogle.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user    = action.payload.user;
-        state.token   = action.payload.token;
+        state.loading   = false;
+        state.restoring = false;
+        state.user      = action.payload.user;
+        state.token     = action.payload.token;
       })
       .addCase(loginWithGoogle.rejected, (state, action) => {
         state.loading = false;
@@ -152,5 +172,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError, setUser } = authSlice.actions;
+export const { logout, clearError, updateProfileFields, setUser } = authSlice.actions;
 export default authSlice.reducer;
