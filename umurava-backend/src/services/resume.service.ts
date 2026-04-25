@@ -8,6 +8,8 @@
 // ✅ Retry with exponential backoff — handles 503/429/network errors
 // ✅ Cloudinary upload before cleanup
 // ✅ Scanned PDFs handled gracefully
+// ✅ parseWithGemini now uses the same 3-layer JSON repair as ai.parser.ts
+//    (smart quotes, control chars, trailing commas) — matches screening robustness
 
 import fs from "fs";
 import path from "path";
@@ -234,18 +236,144 @@ function sanitizeSkills(skills: any[]): any[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Robust JSON parser — same 3-layer repair used by ai.parser.ts for screening.
+// Handles: markdown fences, smart/curly quotes, bare newlines inside strings,
+// control characters, trailing commas before ] or }.
+// Previously parseWithGemini only used a plain JSON.parse — this makes it
+// just as resilient as the screening path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SMART_DOUBLE = new Set([0x201C, 0x201D, 0x201E, 0x201F, 0x2033, 0x2036]);
+const SMART_SINGLE = new Set([0x2018, 0x2019, 0x201A, 0x201B, 0x2032, 0x2035]);
+
+function peekNext(s: string, from: number): string {
+  for (let j = from; j < s.length; j++) {
+    const c = s[j];
+    if (c !== " " && c !== "\t" && c !== "\n" && c !== "\r") return c;
+  }
+  return "";
+}
+
+function isStructural(ch: string): boolean {
+  return ch === "," || ch === "}" || ch === "]" || ch === ":";
+}
+
+function onePassFix(s: string): string {
+  let fixed    = "";
+  let inString = false;
+  let i        = 0;
+
+  while (i < s.length) {
+    const ch   = s[i];
+    const code = s.charCodeAt(i);
+
+    // Already-escaped pair — copy verbatim
+    if (ch === "\\" && inString) {
+      fixed += ch + (s[i + 1] ?? "");
+      i += 2;
+      continue;
+    }
+
+    // Straight double-quote
+    if (ch === '"') {
+      if (inString) {
+        const next = peekNext(s, i + 1);
+        if (next && !isStructural(next)) {
+          fixed += '\\"';
+          i++;
+          continue;
+        }
+      }
+      inString = !inString;
+      fixed += ch;
+      i++;
+      continue;
+    }
+
+    // Smart / curly DOUBLE quote
+    if (SMART_DOUBLE.has(code)) {
+      fixed += inString ? '\\"' : '"';
+      if (!inString) inString = true;
+      i++;
+      continue;
+    }
+
+    // Smart / curly SINGLE quote → plain apostrophe
+    if (SMART_SINGLE.has(code)) {
+      fixed += "'";
+      i++;
+      continue;
+    }
+
+    // Inside a string: escape bare whitespace, strip control chars
+    if (inString) {
+      if (ch === "\n") { fixed += "\\n"; i++; continue; }
+      if (ch === "\r") { fixed += "\\r"; i++; continue; }
+      if (ch === "\t") { fixed += "\\t"; i++; continue; }
+      if (code <= 0x1F || code === 0x7F) { i++; continue; }
+    }
+
+    fixed += ch;
+    i++;
+  }
+
+  return fixed;
+}
+
+function parseJsonSafeObject(raw: string): any {
+  // Strip markdown fences and JS comments
+  let s = raw
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .trim();
+
+  // Extract the outermost { ... }
+  const start = s.indexOf("{");
+  const end   = s.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    s = s.substring(start, end + 1);
+  }
+
+  const fixed = onePassFix(s).replace(/,\s*([\]}])/g, "$1");
+
+  // Layer 1: fixed string
+  try { return JSON.parse(fixed); } catch (_) {}
+
+  // Layer 2: strip non-printable chars
+  try {
+    return JSON.parse(fixed.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, ""));
+  } catch (_) {}
+
+  // Layer 3: collapse newlines
+  try {
+    return JSON.parse(fixed.replace(/\n/g, " ").replace(/\r/g, ""));
+  } catch (lastErr) {
+    throw new Error(
+      `JSON parsing failed.\nLast error: ${(lastErr as Error).message}\nSnippet: ${fixed.slice(0, 400)}`
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — Parse with Gemini AI
+// Now uses parseJsonSafeObject (3-layer repair) instead of plain JSON.parse
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function parseWithGemini(text: string, filename: string): Promise<any | null> {
   try {
     const { callGeminiWithRetry } = await import("./ai.service");
     const raw = await callGeminiWithRetry(PARSE_PROMPT(text), 3);
-    const cleaned = raw
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/i, "")
-      .trim();
-    const parsed = JSON.parse(cleaned);
+
+    let parsed: any;
+    try {
+      parsed = parseJsonSafeObject(raw);
+    } catch (jsonErr: any) {
+      console.warn(`⚠️  JSON repair failed for ${filename}: ${jsonErr.message}`);
+      return null;
+    }
+
     if (!parsed.firstName && !parsed.lastName && !parsed.email) {
       console.warn(`⚠️  Gemini returned profile with no name/email for ${filename} — using regex fallback`);
       return null;
@@ -930,6 +1058,7 @@ export async function parseResumeFile(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC: parseResumeUrl
+// Also upgraded to use parseJsonSafeObject for consistency
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function parseResumeUrl(url: string, rawText: string): Promise<any> {
@@ -966,7 +1095,7 @@ ${rawText.slice(0, 14000)}`;
 
   try {
     const raw    = await callGeminiWithRetry(prompt, 3);
-    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+    const parsed = parseJsonSafeObject(raw);
     parsed.skills = sanitizeSkills(parsed.skills || []);
     return { ...parsed, source: "external", resumeUrl: url };
   } catch {

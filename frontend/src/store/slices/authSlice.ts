@@ -2,6 +2,27 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { login, register, getMe, googleAuth } from "../../services/authService";
 
+// ── Helper: extract a clean user-facing error message ────────────────────────
+// Handles every failure mode: network down, bad URL, server error, timeout.
+function extractError(error: any, fallback: string): string {
+  // Server returned a proper error message
+  if (error.response?.data?.message) return error.response.data.message;
+  if (error.response?.data?.error)   return error.response.data.error;
+
+  // Axios timeout
+  if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+    return "The server took too long to respond. Please try again.";
+  }
+
+  // Network Error = axios could not reach the server at all.
+  // This happens on Vercel when NEXT_PUBLIC_API_URL is not set.
+  if (error.message?.includes("Network Error") || error.code === "ERR_NETWORK") {
+    return "Could not connect to the server. Please try again in a moment.";
+  }
+
+  return fallback;
+}
+
 // ── Restore user from token on app load ──────────────────────────────────────
 export const restoreUser = createAsyncThunk(
   "auth/restoreUser",
@@ -19,6 +40,7 @@ export const restoreUser = createAsyncThunk(
   }
 );
 
+// ── Email / password login ────────────────────────────────────────────────────
 export const loginUser = createAsyncThunk(
   "auth/login",
   async (
@@ -31,12 +53,13 @@ export const loginUser = createAsyncThunk(
       return data;
     } catch (error: any) {
       return rejectWithValue(
-        error.response?.data?.message || "Login failed. Please check your credentials."
+        extractError(error, "Login failed. Please check your credentials.")
       );
     }
   }
 );
 
+// ── Registration ──────────────────────────────────────────────────────────────
 export const registerUser = createAsyncThunk(
   "auth/register",
   async (
@@ -49,7 +72,7 @@ export const registerUser = createAsyncThunk(
       return data;
     } catch (error: any) {
       return rejectWithValue(
-        error.response?.data?.message || "Registration failed. Please try again."
+        extractError(error, "Registration failed. Please try again.")
       );
     }
   }
@@ -67,16 +90,14 @@ export const loginWithGoogle = createAsyncThunk(
       if (typeof window !== "undefined") localStorage.setItem("token", data.token);
       return data;
     } catch (error: any) {
-      const msg =
-        error.response?.data?.message ||
-        (error.message?.includes("Network Error")
-          ? "Cannot reach the server. Check that NEXT_PUBLIC_API_URL is set correctly in Vercel."
-          : "Google sign-in failed. Please try again.");
-      return rejectWithValue(msg);
+      return rejectWithValue(
+        extractError(error, "Google sign-in failed. Please try again.")
+      );
     }
   }
 );
 
+// ── Slice ─────────────────────────────────────────────────────────────────────
 const authSlice = createSlice({
   name: "auth",
   initialState: {
@@ -114,9 +135,11 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    // ── restoreUser ──
+    // ── restoreUser ──────────────────────────────────────────────────────────
     builder
-      .addCase(restoreUser.pending,   (state) => { state.restoring = true; })
+      .addCase(restoreUser.pending, (state) => {
+        state.restoring = true;
+      })
       .addCase(restoreUser.fulfilled, (state, action) => {
         state.restoring = false;
         state.user      = action.payload.user;
@@ -128,42 +151,51 @@ const authSlice = createSlice({
         state.token     = null;
       });
 
-    // ── loginUser ──
+    // ── loginUser ────────────────────────────────────────────────────────────
     builder
-      .addCase(loginUser.pending,   (state) => { state.loading = true;  state.error = null; })
+      .addCase(loginUser.pending, (state) => {
+        state.loading = true;
+        state.error   = null;
+      })
       .addCase(loginUser.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
+        state.error   = null;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
         state.error   = action.payload as string;
       });
 
-    // ── registerUser ──
+    // ── registerUser ─────────────────────────────────────────────────────────
     builder
-      .addCase(registerUser.pending,   (state) => { state.loading = true;  state.error = null; })
+      .addCase(registerUser.pending, (state) => {
+        state.loading = true;
+        state.error   = null;
+      })
       .addCase(registerUser.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
+        state.error   = null;
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
         state.error   = action.payload as string;
       });
 
-    // ── loginWithGoogle ──
+    // ── loginWithGoogle ──────────────────────────────────────────────────────
     builder
-      .addCase(loginWithGoogle.pending,   (state) => { state.loading = true;  state.error = null; })
+      .addCase(loginWithGoogle.pending, (state) => {
+        state.loading = true;
+        state.error   = null;
+      })
       .addCase(loginWithGoogle.fulfilled, (state, action) => {
-        state.loading   = false;
-        state.restoring = false;
-        state.user      = action.payload.user;
-        state.token     = action.payload.token;
+        state.loading = false;
+        state.user    = action.payload.user;
+        state.token   = action.payload.token;
+        state.error   = null;
       })
       .addCase(loginWithGoogle.rejected, (state, action) => {
         state.loading = false;

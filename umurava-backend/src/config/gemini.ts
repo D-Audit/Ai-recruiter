@@ -1,10 +1,11 @@
 // umurava-backend/src/config/gemini.ts
 //
-// ✅ FIXED: Model name changed from "gemini-2.5-flash-lite" (does not exist)
-//           to "gemini-2.0-flash" (stable, fast, free-tier friendly).
+// Model: "gemini-2.5-flash-lite" — confirmed working, fast, free-tier friendly.
+// This is a valid and stable Gemini model.
 //
-// If you want the absolute latest: use "gemini-2.5-flash-preview-05-20"
-// but "gemini-2.0-flash" is the safest stable choice right now.
+// Alternative options:
+//   "gemini-2.0-flash"                  — stable, slightly older
+//   "gemini-2.5-flash-preview-05-20"    — latest preview (may change)
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";

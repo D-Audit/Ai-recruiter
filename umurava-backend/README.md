@@ -12,7 +12,7 @@ Built by **Debug Thugs** · Umurava AI Hackathon 2026 · Kigali, Rwanda
 | | URL |
 |--|--|
 | 🌐 Frontend (Vercel) | https://ai-umurava.vercel.app |
-| ⚙️ Backend API (Railway) | https://ai-recruiter-production-c6b5.up.railway.app/ |
+| ⚙️ Backend API (Railway) | https://ai-recruiter-production-c6b5.up.railway.app |
 | 📁 GitHub | https://github.com/D-Audit/ai-recruiter |
 
 ---
@@ -40,87 +40,97 @@ Built by **Debug Thugs** · Umurava AI Hackathon 2026 · Kigali, Rwanda
 Rwandan recruiters face two critical challenges every hiring cycle:
 
 1. **Volume** — Hundreds of CVs to review manually for every job posting
-2. **Consistency** — No structured way to compare candidates objectively across diverse backgrounds
+2. **Consistency** — No structured way to compare candidates objectively across diverse backgrounds and formats
 
 ### What We Built
 
 Umurava AI is a full-stack recruiter platform that lets hiring teams:
 
-- Post job listings with required skills, experience levels, and education
-- Ingest candidates from multiple sources in any format
-- Run Google Gemini AI to automatically score every candidate 0–100
-- View a ranked Top 10 shortlist with detailed AI explanations per candidate
-- Compare 2–3 finalists side-by-side with an AI verdict
-- Chat with an AI assistant about any candidate at any time
-- Always keep humans in control of final hiring decisions
+- Post job listings with required skills, experience levels, education requirements, and location
+- Ingest candidates from **five different sources** in any format (Umurava pool, CSV, Excel, PDF/DOCX resumes, manual form entry, URL import)
+- Run **Google Gemini AI** to automatically score every candidate 0–100 on a transparent rubric
+- View a **ranked Top 10 or Top 20 shortlist** with detailed AI explanations per candidate
+- **Compare 2–3 finalists** side-by-side with an AI verdict and per-category reasoning
+- **Chat with an AI assistant** about any screening result at any time
+- Always keep **humans in control** of final hiring decisions — AI is decision-support only
 
 ### Hackathon Scenario Coverage
 
-| Scenario | Implementation |
-|----------|---------------|
-| Scenario 1: Umurava platform profiles | Select from seeded Umurava talent pool, official schema |
-| Scenario 2: External candidates | CSV upload, Excel (.xlsx), PDF resumes, DOCX, manual form entry |
-
-
+| Scenario | Status | Implementation |
+|----------|--------|----------------|
+| Scenario 1: Umurava platform profiles | ✅ Full | Select from seeded Umurava talent pool following official schema |
+| Scenario 2: External candidates — CSV/Excel | ✅ Full | Bulk upload, column auto-detection, duplicate skipping |
+| Scenario 2: External candidates — PDF/DOCX resumes | ✅ Full | Gemini AI parsing, staged upload with confirm button |
+| Scenario 2: External candidates — Manual entry | ✅ Full | Multi-section form (skills, experience, education, certs, projects) |
+| Scenario 2: External candidates — URL import | ✅ Full | Fetches and parses PDF/CSV/HTML at any URL |
+| AI ranked shortlist Top 10 / Top 20 | ✅ Full | Configurable, batch-processed, re-rankable |
+| AI explainability per candidate | ✅ Full | Strengths, gaps, upskilling paths, adjacent roles per result |
+| Side-by-side candidate comparison | ✅ Full | Up to 3 finalists, AI winner verdict with evidence |
+| Conversational AI assistant | ✅ Full | Ask anything about results in plain language |
+| Bias awareness | ✅ Full | Bias notice shown on every screening run |
+| Human-led decisions | ✅ Full | AI never auto-selects; recruiter controls all final decisions |
 
 ---
 
 ## 2. Architecture Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                     FRONTEND  (Next.js 14 · Vercel)                  │
-│                                                                        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐  │
-│  │ Landing  │ │Dashboard │ │  Jobs    │ │Screening │ │ Candidates │  │
-│  │  Page    │ │  Page    │ │  Pages   │ │  Pages   │ │   Pages    │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └────────────┘  │
-│                                                                        │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │           Redux Store (auth · jobs · applicants · screening)     │  │
-│  └──────────────────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────┐  │
-│  │           Axios HTTP Client + JWT Interceptor                    │  │
-│  └────────────────────────────┬─────────────────────────────────────┘  │
-└───────────────────────────────┼────────────────────────────────────────┘
-                                │  HTTPS + Bearer Token
-┌───────────────────────────────▼────────────────────────────────────────┐
-│                  BACKEND  (Node.js + Express · Railway)                 │
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     FRONTEND  (Next.js 16 · Vercel)                      │
+│                                                                           │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────┐  │
+│  │ Landing  │ │Dashboard │ │  Jobs    │ │Screening │ │   Candidates  │  │
+│  │  Page    │ │  Page    │ │  Pages   │ │  Pages   │ │     Pages     │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └───────────────┘  │
+│                                                                           │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │     Redux Store (auth · jobs · applicants · screening)           │    │
+│  │     screeningSlice → localStorage persistence per jobId         │    │
+│  └──────────────────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │     Axios HTTP Client + JWT Bearer Interceptor                   │    │
+│  └──────────────────────────┬─────────────────────────────────────┘     │
+└──────────────────────────────┼──────────────────────────────────────────┘
+                               │  HTTPS + Bearer Token
+┌──────────────────────────────▼──────────────────────────────────────────┐
+│                  BACKEND  (Node.js + Express · Railway)                  │
 │                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐   │
-│  │  Helmet  │  Rate Limiter (100/min global · 20/min AI)            │   │
-│  │  CORS    │  Morgan Logger  │  express.json()                      │   │
-│  └──────────────────────────────────────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │  Helmet  │  Rate Limiter (100/min global · 20/min AI)              │  │
+│  │  CORS    │  Morgan Logger  │  express-rate-limit                    │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌─────────┐ ┌─────────┐ ┌────────────┐ ┌──────────────┐ ┌──────────┐  │
 │  │  /auth  │ │  /jobs  │ │/applicants │ │  /screening  │ │  /chat   │  │
-│  └─────────┘ └─────────┘ └────────────┘ └──────┬───────┘ └──────────┘  │
-│                                                  │                       │
-│  ┌───────────────────────────────────────────────▼────────────────────┐  │
+│  └─────────┘ └─────────┘ └────────────┘ └──────┬───────┘ └────┬─────┘  │
+│                                                 │              │        │
+│  ┌──────────────────────────────────────────────▼──────────────▼──────┐  │
 │  │                    AI Service Layer                                  │  │
 │  │  ai.service.ts → screening.prompt.ts → ai.parser.ts                │  │
 │  │                                      → ai.validator.ts             │  │
-│  │  Batch processing: 20 per Gemini call                               │  │
-│  │  Retry logic: 3 retries with 2s/4s/6s delays on 503                │  │
-│  └──────────────────────────────┬──────────────────────────────────────┘  │
-│                                  │                                        │
-│  ┌────────────┐ ┌──────────────┐ │  ┌──────────────────────────────────┐  │
-│  │csv.service │ │ pdf.service  │ │  │    cache.service (Semantic Cache) │  │
-│  │xlsx.service│ │resume.service│ │  │    SHA256 hash · 24h MongoDB TTL  │  │
-│  └────────────┘ └──────────────┘ │  └──────────────────────────────────┘  │
-└──────────────────────────────────┼────────────────────────────────────────┘
-                                   │
-          ┌────────────────────────┤
-          │                        │
-┌─────────▼──────────┐   ┌────────▼────────────────────┐
-│   MongoDB Atlas     │   │   Google Gemini AI          │
-│                     │   │   gemini-2.5-flash-lite     │
-│  users             │   │                             │
-│  jobs              │   │  Input:  Job + Candidates   │
-│  applicants        │   │  Output: Ranked JSON        │
-│  screeningresults  │   │  Temp:   0.3 (consistent)   │
-│  caches (TTL)      │   └─────────────────────────────┘
-└────────────────────┘
+│  │  Batch processing: 20 candidates per Gemini call                   │  │
+│  │  Retry logic: 3 retries · delays 2s / 4s / 6s on 503              │  │
+│  │  Semantic cache: SHA256(jobId+candidateIds+weights) · 24h TTL      │  │
+│  └────────────────────────────────────┬────────────────────────────────┘  │
+│                                       │                                  │
+│  ┌────────────────────────────────────┘                                  │
+│  │  File Parsing Services                                               │
+│  │  csv.service.ts  · xlsx.service.ts  · pdf.service.ts                │
+│  │  resume.service.ts (DOCX/TXT/URL) · Gemini-powered extraction       │
+│  └────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────┬──────────────────────────────────┘
+                                       │
+              ┌────────────────────────┤
+              │                        │
+┌─────────────▼──────────┐   ┌────────▼─────────────────────┐
+│   MongoDB Atlas         │   │   Google Gemini AI            │
+│                         │   │   gemini-2.5-flash-preview    │
+│  users                 │   │                               │
+│  jobs                  │   │  Input:  Job + Candidates     │
+│  applicants            │   │  Output: Ranked JSON          │
+│  screeningresults      │   │  Temp:   0.3 (consistent)     │
+│  caches (24h TTL)      │   └───────────────────────────────┘
+└────────────────────────┘
 ```
 
 ---
@@ -134,75 +144,77 @@ STEP 1  Recruiter posts a job
         → title, description, requiredSkills[], yearsOfExperience,
           educationLevel, location, jobType saved to MongoDB
 
-STEP 2  Recruiter adds candidates (any of these):
-        → Option A: Select from Umurava platform profiles
-        → Option B: Upload CSV / Excel spreadsheet
-        → Option C: Upload PDF / DOCX / TXT resume
+STEP 2  Recruiter adds candidates via any of 5 sources:
+        → Option A: Select from Umurava platform talent pool
+        → Option B: Upload CSV / Excel spreadsheet (bulk)
+        → Option C: Upload PDF / DOCX / TXT resumes (staged confirm flow)
         → Option D: Fill in manual profile form
-        → Option E: Paste a URL (LinkedIn / GitHub / Portfolio)
+        → Option E: Paste a URL (resume link / spreadsheet / profile page)
         All candidates saved to MongoDB applicants collection
-        with jobIds[] array linking them to the job
+        with jobIds[] array linking them to the job.
+        Real applicantsCount synced from Applicant.countDocuments()
+        — never from $inc to prevent negative counts.
 
-STEP 3  Recruiter clicks "Screen Candidates"
+STEP 3  Recruiter clicks "Run AI Screening"
         → POST /api/screening/run/:jobId
 
 STEP 4  Backend checks semantic cache
-        → Cache key = SHA256(jobId + sorted applicantIds + weights)
-        → Cache hit → return stored result immediately (no Gemini call)
-        → Cache miss → proceed to AI
+        → Cache key = SHA256(jobId + sorted applicantIds + scoring weights)
+        → Cache HIT  → return stored result immediately (0 Gemini calls)
+        → Cache MISS → proceed to Gemini
 
-STEP 5  Backend fetches job + applicants from MongoDB
+STEP 5  Backend fetches job + all applicants from MongoDB
 
-STEP 6  Candidates are split into batches of 20
+STEP 6  Candidates split into batches of 20
         → Each batch sent to Gemini separately
-        → 1-second delay between batches (rate limit protection)
-        → Retry logic: 503 errors retried 3× with 2s/4s/6s delays
+        → 1-second delay between batches (rate-limit protection)
+        → Retry: 503/429 errors retried 3× with 2s/4s/6s exponential delays
 
-STEP 7  For each batch, build Gemini prompt (screening.prompt.ts):
-        → Job details section
-        → Candidates as formatted readable text (not raw JSON)
-        → Scoring weights: skills 40%, experience 25%,
-          education 20%, location/languages/certs 15%
-        → Strict JSON-only output instruction
-        → Upskilling paths and adjacent roles requested
+STEP 7  Build Gemini prompt (screening.prompt.ts) for each batch:
+        → Job details section (title, skills, experience, education, location)
+        → Candidates as formatted readable text — NOT raw JSON
+        → Scoring weights: Skills 40% · Experience 25% · Education 20% · Extras 15%
+        → Scores spread instructions (force meaningful gaps, no ties)
+        → Strict JSON-only output instruction with schema definition
+        → Request upskilling paths and adjacent roles per candidate
+        → Bias awareness instruction
 
 STEP 8  Gemini returns ranked JSON for each batch
 
 STEP 9  Parse response (ai.parser.ts):
-        → Strip markdown code blocks
+        → Strip markdown code fences
         → Extract JSON array
         → Fallback: manual field extraction if JSON.parse fails
-        → Sanitize: strengths/gaps arrays joined to strings
+        → Sanitize: join array strengths/gaps to readable strings
 
 STEP 10 Validate response (ai.validator.ts):
-        → Check scores are 0-100 range
+        → Check all scores in 0–100 range
         → Normalise: round to whole numbers, enforce min/max
-        → Check candidate IDs exist in our database
+        → Verify candidate IDs exist in our database
 
-STEP 11 Combine all batch results
+STEP 11 Merge all batch results
         → Sort by score descending
-        → Take top 10 (or fewer if less than 10 candidates)
-        → Re-assign ranks 1 to N
+        → Take top 10 (configurable: 10, 20, or all)
+        → Re-assign sequential ranks 1 → N
 
-STEP 12 Save AI scores back to each applicant record
-        → aiScore field
-        → confidenceLevel field (High/Medium/Low)
+STEP 12 Persist AI scores to each applicant record
+        → applicant.aiScore field
+        → applicant.confidenceLevel field (High / Medium / Low)
 
 STEP 13 Upsert ScreeningResult document in MongoDB
-        (replaces previous result for this job)
+        (replaces any previous result for this job)
 
-STEP 14 Save result to semantic cache (24h TTL)
+STEP 14 Save full result to semantic cache (24h TTL)
 
-STEP 15 Return ranked results to frontend
-        → Each candidate has: rank, score, confidence, strengths,
-          gaps, recommendation, skillsMatched, skillsMissing,
-          upskillingPaths, adjacentRoles
+STEP 15 Return ranked results to frontend + persist to localStorage
+        (results survive page navigation without re-running screening)
 
-STEP 16 Human recruiter reviews, compares, and decides
+STEP 16 Human recruiter reviews, compares finalists, uses AI chat
         → AI does NOT make the final hiring decision
+        → Recruiter has full context + AI reasoning for each candidate
 ```
 
-### Scoring Weights
+### Scoring Rubric
 
 ```
 ╔═══════════════════════════════════════════════════════════╗
@@ -213,11 +225,14 @@ STEP 16 Human recruiter reviews, compares, and decides
 ║ Skills Match          ║ 40 pts   ║ Count + proficiency   ║
 ║ Work Experience       ║ 25 pts   ║ Years + relevance     ║
 ║ Education             ║ 20 pts   ║ Degree level + field  ║
-║ Location/Languages/   ║ 15 pts   ║ Match bonuses         ║
-║ Certifications        ║          ║                       ║
+║ Location + Languages  ║ 15 pts   ║ Match bonuses + certs ║
 ╠═══════════════════════╬══════════╬═══════════════════════╣
 ║ TOTAL                 ║ 100 pts  ║                       ║
 ╚═══════════════════════╩══════════╩═══════════════════════╝
+
+Shortlist   ≥ 70 pts
+Consider    50–69 pts
+Not Selected  < 50 pts
 ```
 
 ### AI Output Per Candidate
@@ -252,14 +267,14 @@ STEP 16 Human recruiter reviews, compares, and decides
 
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| Next.js | 14.x | React framework with App Router |
+| Next.js | 16.x | React framework with App Router |
 | TypeScript | 5.x | Type-safe development |
-| Redux Toolkit | 2.x | Global state management |
+| Redux Toolkit | 2.x | Global state management + localStorage persistence |
 | Tailwind CSS | 3.x | Utility-first styling |
 | Axios | 1.x | HTTP client with JWT interceptors |
 | Lucide React | 0.x | Icon library |
 | React Hot Toast | 2.x | Toast notifications |
-| React Dropzone | 14.x | Drag-and-drop file uploads |
+| React Dropzone | 14.x | Drag-and-drop file uploads with staged confirm flow |
 
 ### Backend
 
@@ -269,14 +284,15 @@ STEP 16 Human recruiter reviews, compares, and decides
 | TypeScript | 5.x | Type-safe development |
 | Express.js | 4.x | REST API framework |
 | MongoDB + Mongoose | 7.x + 8.x | Database and ODM |
-| Google Gemini API | gemini-2.5-flash-lite | AI screening engine  |
+| Google Gemini API | gemini-2.5-flash-preview | AI screening + resume parsing + chat |
 | JWT + Bcryptjs | 9.x + 3.x | Auth and password hashing |
-| Multer | 2.x | File upload handling |
+| Google OAuth 2.0 | GSI | Social sign-in (login/register with Google) |
+| Multer | 2.x | File upload handling (PDF, DOCX, CSV, XLSX) |
 | csv-parser | 3.x | CSV file processing |
 | pdf-parse | 2.x | PDF text extraction |
 | xlsx | 0.18.x | Excel file processing |
 | mammoth | 1.x | DOCX text extraction |
-| express-rate-limit | 8.x | API rate limiting |
+| express-rate-limit | 8.x | API rate limiting (100/min global, 20/min AI) |
 | helmet | 8.x | HTTP security headers |
 | morgan | 1.x | Request logging |
 | zod | 4.x | Runtime schema validation |
@@ -285,9 +301,9 @@ STEP 16 Human recruiter reviews, compares, and decides
 
 | Service | Purpose |
 |---------|---------|
-| Vercel | Frontend hosting and deployment |
-| Railway | Backend hosting and deployment |
-| MongoDB Atlas | Cloud database hosting |
+| Vercel | Frontend hosting with automatic CI/CD |
+| Railway | Backend hosting with environment variable management |
+| MongoDB Atlas | Cloud database with 24h TTL index for screening cache |
 
 ---
 
@@ -299,50 +315,48 @@ ai-recruiter/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx                      # Landing page
-│   │   │   ├── layout.tsx                    # Root HTML layout
-│   │   │   ├── globals.css                   # CSS design tokens + animations
+│   │   │   ├── page.tsx                      # Landing page (public)
+│   │   │   ├── layout.tsx                    # Root HTML layout + Google GSI preload
+│   │   │   ├── globals.css                   # CSS design tokens + dark mode + animations
 │   │   │   ├── providers.tsx                 # Redux + Toast providers
-│   │   │   ├── login/page.tsx                # Login page
-│   │   │   ├── register/page.tsx             # Register page
-│   │   │   ├── dashboard/page.tsx            # Main dashboard
+│   │   │   ├── login/page.tsx                # Login (email + Google OAuth)
+│   │   │   ├── register/page.tsx             # Register (email + Google OAuth)
+│   │   │   ├── dashboard/page.tsx            # Main dashboard with real-data charts
 │   │   │   ├── jobs/
 │   │   │   │   ├── page.tsx                  # Jobs list
 │   │   │   │   ├── create/page.tsx           # Create job form
-│   │   │   │   └── [id]/page.tsx             # Job hub (upload + screen)
+│   │   │   │   └── [id]/page.tsx             # Job detail hub
 │   │   │   ├── applicants/
-│   │   │   │   ├── page.tsx                  # Applicants list
-│   │   │   │   ├── upload/page.tsx           # Upload candidates (4 tabs)
-│   │   │   │   └── screenings/page.tsx       # Applicant screenings view
+│   │   │   │   ├── page.tsx                  # Upload candidates (5 methods, staged PDF)
+│   │   │   │   └── screenings/page.tsx       # Legacy redirect to /screenings
 │   │   │   ├── screenings/
-│   │   │   │   ├── page.tsx                  # All screenings list
-│   │   │   │   └── [jobId]/page.tsx          # Screening results for job
+│   │   │   │   └── page.tsx                  # Screenings list + results (auto-load)
 │   │   │   ├── candidates/
 │   │   │   │   ├── page.tsx                  # All candidates list
 │   │   │   │   ├── [id]/page.tsx             # Candidate detail profile
-│   │   │   │   └── compare/page.tsx          # Side-by-side comparison
-│   │   │   ├── profile/page.tsx              # Recruiter profile
-│   │   │   └── settings/page.tsx             # Settings + theme + password
+│   │   │   │   └── compare/page.tsx          # Side-by-side AI comparison
+│   │   │   ├── profile/page.tsx              # Recruiter profile (updateProfile)
+│   │   │   └── settings/page.tsx             # Settings + theme + changePassword
 │   │   ├── components/
-│   │   │   ├── Sidebar.tsx                   # Navigation + sign out modal
+│   │   │   ├── Sidebar.tsx                   # Navigation sidebar (dark navy)
 │   │   │   ├── AppHeader.tsx                 # Page header + user dropdown
 │   │   │   ├── FloatingAI.tsx                # Bottom-right AI chat bubble
-│   │   │   ├── ScreeningResults.tsx          # Ranked candidates component
-│   │   │   ├── LoadingSpinner.tsx            # Shared loading spinner
-│   │   │   └── UploadSuccessBanner.tsx       # Post-upload success banner
+│   │   │   ├── ScreeningResults.tsx          # Ranked candidates + compare UI
+│   │   │   ├── LoadingSpinner.tsx            # Shared loading component
+│   │   │   └── AnimatedLogo.tsx              # Animated brand logo component
 │   │   ├── store/
 │   │   │   ├── index.ts                      # Redux store
 │   │   │   └── slices/
-│   │   │       ├── authSlice.ts
-│   │   │       ├── jobSlice.ts
-│   │   │       ├── applicantSlice.ts
-│   │   │       └── screeningSlice.ts
+│   │   │       ├── authSlice.ts              # Auth (email + Google OAuth)
+│   │   │       ├── jobSlice.ts               # Jobs + syncJobCount (real DB count)
+│   │   │       ├── applicantSlice.ts         # Applicant state
+│   │   │       └── screeningSlice.ts         # Screening + localStorage persistence
 │   │   ├── services/
 │   │   │   ├── api.ts                        # Axios base + JWT interceptor
-│   │   │   ├── authService.ts
+│   │   │   ├── authService.ts                # login, register, updateProfile, changePassword
 │   │   │   ├── jobService.ts
 │   │   │   ├── applicantService.ts
-│   │   │   ├── screeningService.ts
+│   │   │   ├── screeningService.ts           # runScreening, getResults, compareApplicants
 │   │   │   └── chatService.ts
 │   │   ├── types/index.ts                    # TypeScript interfaces
 │   │   └── utils/screeningChatContext.ts     # AI chat context builder
@@ -362,30 +376,30 @@ ai-recruiter/
 │   │   ├── routes/
 │   │   │   ├── auth.routes.ts
 │   │   │   ├── job.routes.ts
-│   │   │   ├── applicant.routes.ts
+│   │   │   ├── applicant.routes.ts           # Fixed: uploadResume + uploadCSV only
 │   │   │   ├── screening.routes.ts
 │   │   │   └── chat.routes.ts
 │   │   ├── controllers/
-│   │   │   ├── auth.controller.ts
+│   │   │   ├── auth.controller.ts            # email auth + Google OAuth JWT
 │   │   │   ├── job.controller.ts
-│   │   │   ├── applicant.controller.ts
-│   │   │   ├── screening.controller.ts       # Includes semantic cache logic
+│   │   │   ├── applicant.controller.ts       # syncApplicantsCount — never negative
+│   │   │   ├── screening.controller.ts       # Semantic cache + batch AI
 │   │   │   └── chat.controller.ts
 │   │   ├── services/
 │   │   │   ├── ai.service.ts                 # Core Gemini AI + batch + retry
-│   │   │   ├── cache.service.ts              # Semantic SHA256 cache (24h TTL)
-│   │   │   ├── csv.service.ts
-│   │   │   ├── pdf.service.ts
-│   │   │   ├── xlsx.service.ts
-│   │   │   └── resume.service.ts             # DOCX + TXT + URL extraction
+│   │   │   ├── cache.service.ts              # SHA256 semantic cache (24h TTL)
+│   │   │   ├── csv.service.ts                # CSV + XLSX parsing
+│   │   │   ├── pdf.service.ts                # PDF text extraction
+│   │   │   ├── xlsx.service.ts               # Excel parsing
+│   │   │   └── resume.service.ts             # DOCX + TXT + URL + Gemini extraction
 │   │   ├── middleware/
-│   │   │   ├── auth.middleware.ts            # JWT protect
+│   │   │   ├── auth.middleware.ts            # JWT protect middleware
 │   │   │   └── upload.middleware.ts          # Multer (CSV/PDF/XLSX/DOCX/TXT)
 │   │   ├── prompts/
-│   │   │   └── screening.prompt.ts           # Gemini prompt engineering
+│   │   │   └── screening.prompt.ts           # Gemini prompt engineering (documented)
 │   │   ├── types/index.ts
 │   │   ├── utils/
-│   │   │   ├── ai.parser.ts                  # JSON extraction + sanitizer
+│   │   │   ├── ai.parser.ts                  # JSON extraction + fallback + sanitizer
 │   │   │   ├── ai.validator.ts               # Score validation + normalisation
 │   │   │   └── ai.test.ts                    # 4-test AI verification suite
 │   │   ├── seed/seedData.ts                  # 5 Umurava-schema test profiles
@@ -394,7 +408,7 @@ ai-recruiter/
 │   ├── .env                                  # Backend environment variables
 │   └── package.json
 │
-└── README.md                                 # This file
+└── README.md                                 # This file (root)
 ```
 
 ---
@@ -405,12 +419,13 @@ ai-recruiter/
 
 - Node.js 18 or higher
 - MongoDB running locally OR a MongoDB Atlas account
-- Google Gemini API key from Google AI Studio (free)
+- Google Gemini API key (free) from https://aistudio.google.com/apikey
+- Google OAuth Client ID (optional, for Google sign-in) from https://console.cloud.google.com
 
 ### Step 1 — Clone
 
 ```bash
-git clone https://D-Audit/ai-recruiter.git
+git clone https://github.com/D-Audit/ai-recruiter.git
 cd ai-recruiter
 ```
 
@@ -421,7 +436,7 @@ cd umurava-backend
 npm install
 ```
 
-Create `.env` file (see Section 7 for all variables):
+Create `.env` file:
 
 ```bash
 # Windows
@@ -431,13 +446,13 @@ copy nul .env
 touch .env
 ```
 
-Fill in the `.env` values (see Section 7).
+Fill in the values from Section 7 below, then:
 
 ```bash
-# Seed database with 5 Umurava test profiles
+# Seed database with 5 Umurava-schema test profiles
 npm run seed
 
-# Test Gemini AI connection (optional but recommended)
+# (Optional) Test Gemini AI connection
 npm run test:ai
 
 # Start development server
@@ -446,7 +461,7 @@ npm run dev
 
 Backend runs at: `http://localhost:5000`
 
-Health check: `http://localhost:5000/` → should return `{ "status": "ok" }`
+Health check: `GET http://localhost:5000/` → `{ "status": "ok" }`
 
 ### Step 3 — Frontend Setup
 
@@ -459,8 +474,9 @@ npm install
 
 Create `.env.local`:
 
-```bash
+```env
 NEXT_PUBLIC_API_URL=http://localhost:5000/api
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id_here
 ```
 
 ```bash
@@ -469,20 +485,21 @@ npm run dev
 
 Frontend runs at: `http://localhost:3000`
 
-### Step 4 — Test the full flow
+### Step 4 — Test the Full Flow
 
 ```
 1. Go to http://localhost:3000
 2. Click "Get started free" → Register an account
-3. Login with your account
-4. Dashboard → "Post a Job"
-5. Fill in job details and required skills
-6. Go to the job → "Upload Applicants"
-7. Select Umurava profiles tab → Select all 5 seeded profiles
-8. Click "Screen Candidates"
-9. View ranked shortlist
-10. Select 2 candidates → Click "Compare Side-by-Side"
-11. Use the AI chat to ask about candidates
+3. Login (email or Google)
+4. Dashboard → "Post a Job" → fill in job + required skills
+5. Go to Applicants → Upload File tab
+   - CSV tab: upload a candidate spreadsheet
+   - PDF tab: drop resumes → staged list → click "Upload X Files"
+6. Umurava Talent tab: select seeded profiles
+7. Click "Run AI Screening"
+8. View ranked shortlist with scores and explanations
+9. Select 2–3 candidates → "Compare Side-by-Side" → view AI verdict
+10. Use "Assistant AI" chat bubble → ask about results in plain language
 ```
 
 ---
@@ -497,47 +514,43 @@ PORT=5000
 NODE_ENV=development
 
 # ── Database ─────────────────────────────────────────────────
-# Local:
 MONGODB_URI=mongodb://localhost:27017/umurava_db
-# Atlas (use this for production):
+# Atlas (production):
 # MONGODB_URI=mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/umurava_db?retryWrites=true&w=majority
 
 # ── Authentication ────────────────────────────────────────────
-# Must be at least 32 characters for security
-JWT_SECRET=debugthugs_umurava_ai_hackathon_2026_secret_key_very_long
+JWT_SECRET=debugthugs_umurava_ai_hackathon_2026_secret_key_very_long_random
 
 # ── Google Gemini AI ──────────────────────────────────────────
-# Get free key from: https://aistudio.google.com/apikey
+# Free key from: https://aistudio.google.com/apikey
 GEMINI_API_KEY=AIzaSy_your_key_here
 
+# ── Google OAuth (optional — enables Google sign-in) ─────────
+GOOGLE_CLIENT_ID=your_google_client_id_here
+
 # ── CORS (required for production) ───────────────────────────
-# Set to your Vercel URL when deployed
 FRONTEND_URL=http://localhost:3000
-```
-
-| Variable | Description | Required | Where to Get |
-|----------|-------------|----------|--------------|
-| PORT | Server port (default 5000) | Yes | Set to 5000 |
-| NODE_ENV | Environment mode | Yes | development or production |
-| MONGODB_URI | MongoDB connection string | Yes | MongoDB Atlas or local |
-| JWT_SECRET | Secret for signing tokens | Yes | Any long random string (32+ chars) |
-| GEMINI_API_KEY | Google Gemini AI key | Yes | https://aistudio.google.com/apikey |
-| FRONTEND_URL | Allowed frontend origin | Yes in production | Your Vercel URL |
-
-### Frontend — `frontend/.env.local`
-
-```env
-# ── API ──────────────────────────────────────────────────────
-# Local development:
-NEXT_PUBLIC_API_URL=http://localhost:5000/api
-
-# Production (set this in Vercel dashboard):
-# NEXT_PUBLIC_API_URL=https://your-backend.up.railway.app/api
 ```
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| NEXT_PUBLIC_API_URL | Backend API base URL | Yes |
+| PORT | Server port (default 5000) | Yes |
+| NODE_ENV | `development` or `production` | Yes |
+| MONGODB_URI | MongoDB connection string | Yes |
+| JWT_SECRET | Token signing secret (32+ chars) | Yes |
+| GEMINI_API_KEY | Google Gemini AI key | Yes |
+| GOOGLE_CLIENT_ID | Google OAuth client ID | Optional |
+| FRONTEND_URL | Allowed CORS origin | Yes in production |
+
+### Frontend — `frontend/.env.local`
+
+```env
+# Backend API base URL
+NEXT_PUBLIC_API_URL=http://localhost:5000/api
+
+# Google OAuth client ID (same as backend)
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id_here
+```
 
 ---
 
@@ -550,17 +563,18 @@ All protected routes require: `Authorization: Bearer <token>`
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | POST | /api/auth/register | Create recruiter account | No |
-| POST | /api/auth/login | Login, get JWT token | No |
-| GET | /api/auth/me | Get current user info | Yes |
-| PUT | /api/auth/me | Update profile | Yes |
+| POST | /api/auth/login | Login, returns JWT | No |
+| POST | /api/auth/google | Google OAuth — verify credential, return JWT | No |
+| GET | /api/auth/me | Get current user | Yes |
+| PUT | /api/auth/me | Update profile (updateProfile) | Yes |
 | POST | /api/auth/change-password | Change password | Yes |
 
 ### Jobs
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| GET | /api/jobs | Get all jobs (owned by recruiter) | Yes |
-| POST | /api/jobs | Create new job posting | Yes |
+| GET | /api/jobs | All jobs for this recruiter | Yes |
+| POST | /api/jobs | Create job posting | Yes |
 | GET | /api/jobs/:id | Get one job | Yes |
 | PUT | /api/jobs/:id | Update job | Yes |
 | DELETE | /api/jobs/:id | Delete job | Yes |
@@ -569,82 +583,102 @@ All protected routes require: `Authorization: Bearer <token>`
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| GET | /api/applicants/umurava | Get all Umurava platform profiles | Yes |
-| GET | /api/applicants/:jobId | Get applicants for a specific job | Yes |
-| POST | /api/applicants/select | Select Umurava profiles for a job | Yes |
-| POST | /api/applicants/manual | Add applicant manually | Yes |
-| POST | /api/applicants/upload/csv | Upload CSV / Excel file | Yes |
-| POST | /api/applicants/upload/resume | Upload PDF / DOCX / TXT resume | Yes |
-| POST | /api/applicants/upload/url | Import from URL | Yes |
+| GET | /api/applicants/umurava | Umurava talent pool profiles | Yes |
+| GET | /api/applicants/profile/:id | Single applicant by ID | Yes |
+| GET | /api/applicants/:jobId | All applicants for a job | Yes |
+| POST | /api/applicants/select | Add Umurava profiles to job | Yes |
+| POST | /api/applicants/manual | Add candidate manually | Yes |
+| POST | /api/applicants/upload/csv | Upload CSV or Excel file | Yes |
+| POST | /api/applicants/upload/pdf | Upload PDF (maps to uploadResume) | Yes |
+| POST | /api/applicants/upload/xlsx | Upload XLSX (maps to uploadCSV) | Yes |
+| POST | /api/applicants/upload/resume | Upload PDF/DOCX/DOC/TXT (multi) | Yes |
+| POST | /api/applicants/upload/url | Import candidate from URL | Yes |
+| DELETE | /api/applicants/:jobId/applicant/:applicantId | Remove from job (syncs real count) | Yes |
 
 ### Screening
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
 | POST | /api/screening/run/:jobId | Run AI screening | Yes |
-| GET | /api/screening/results/:jobId | Get latest screening results | Yes |
+| GET | /api/screening/results/:jobId | Get latest results | Yes |
 | POST | /api/screening/compare | Compare 2–3 candidates | Yes |
-| GET | /api/screening/all | Get all screenings for recruiter | Yes |
+| GET | /api/screening/all | All screenings for recruiter | Yes |
 
 ### Chat
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| POST | /api/chat | Ask AI about candidates | Yes |
+| POST | /api/chat | Ask AI about screening results | Yes |
 
-### Example Request — Run Screening
+---
 
-```bash
-curl -X POST https://umurava-backend.up.railway.app/api/screening/run/JOB_ID_HERE \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json"
-```
+## 9. Deployment Guide
 
-### Example Request — AI Chat
+### Frontend (Vercel)
 
 ```bash
-curl -X POST https://umurava-backend.up.railway.app/api/chat \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Who is the best candidate for React work?", "context": {}}'
+# From project root
+cd frontend
+vercel --prod
 ```
+
+Set these environment variables in the Vercel dashboard:
+```
+NEXT_PUBLIC_API_URL=https://your-backend.up.railway.app/api
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id
+```
+
+### Backend (Railway)
+
+1. Push code to GitHub
+2. Connect Railway project to your GitHub repo
+3. Set root directory to `umurava-backend`
+4. Add environment variables in Railway dashboard (all from Section 7)
+5. Deploy
+
+### Database (MongoDB Atlas)
+
+1. Create free cluster at https://cloud.mongodb.com
+2. Create database user and whitelist Railway IP (`0.0.0.0/0` for simplicity)
+3. Copy connection string to `MONGODB_URI` env var in Railway
+
 ---
 
 ## 10. Assumptions and Limitations
 
 ### Assumptions
 
-1. **Candidate data quality** — AI scoring accuracy depends on completeness of profiles. Incomplete profiles receive lower scores not because the candidate is unqualified but because there is insufficient structured data to evaluate.
+1. **Data quality** — AI scoring accuracy depends on profile completeness. Sparse profiles score lower because there is less structured data to evaluate — not because the candidate is unqualified.
 
-2. **Self-reported skills** — The system trusts that candidates accurately list their skills. There is no skill verification mechanism.
+2. **Self-reported skills** — The system trusts candidate-provided skills. No external skill-verification mechanism exists.
 
-3. **Umurava schema** — The applicant model follows the official Umurava Talent Profile Schema specification provided for the hackathon. Core fields are not modified.
+3. **Umurava schema** — The Applicant model follows the official Umurava Talent Profile Schema. Core fields are not modified.
 
-4. **Internet connectivity** — Gemini API requires an active internet connection. Screening fails without connectivity to Google's servers.
+4. **Internet connectivity** — Gemini API requires active internet. Screening fails without connectivity to Google's servers.
 
-5. **English language** — The AI prompt is optimised for English. Non-English profiles may produce lower-accuracy scoring.
+5. **English-optimised** — The AI prompt is optimised for English. Non-English profiles may produce lower-accuracy scoring.
 
-6. **Single recruiter per account** — The current system is designed for individual recruiter accounts. Multi-user organisation access is not implemented.
+6. **Single recruiter accounts** — Designed for individual recruiter accounts. Multi-user organisation access is not implemented.
 
 ### Limitations
 
-1. **Soft skills** — AI cannot assess communication ability, attitude, creativity, or cultural fit. These require human evaluation.
+1. **Soft skills** — AI cannot assess communication ability, attitude, creativity, or cultural fit. Human evaluation required.
 
-2. **PDF parsing** — The parser extracts raw text. Heavily designed PDFs, multi-column layouts, or image-based scanned resumes may not parse correctly.
+2. **PDF parsing** — Heavily designed PDFs, multi-column layouts, or image-based scanned resumes may not parse perfectly. Gemini fallback parser handles most edge cases.
 
-3. **Gemini API rate limits** — The free tier has request quotas. Screening many jobs repeatedly in a short time period may trigger temporary limits (model: gemini-2.5-flash-lite).
+3. **Gemini API rate limits** — Free tier has request quotas. Very high-volume screening in short intervals may trigger temporary rate limits. The system retries automatically.
 
-4. **Potential AI bias** — Language models may reflect biases present in training data. Every screening result includes a bias notice.
+4. **Potential AI bias** — Language models may reflect biases present in training data. Every screening result includes a visible bias notice.
 
-5. **Score variance** — Despite using temperature 0.3, Gemini responses may vary slightly between identical requests due to the probabilistic nature of large language models.
+5. **Score variance** — Despite temperature 0.3, Gemini responses may vary slightly between identical requests due to the probabilistic nature of LLMs.
 
 6. **No credential verification** — The system cannot verify claimed degrees, job titles, or certifications.
 
-7. **Top 10 limit** — The system shortlists up to 10 candidates or 20. For jobs with more applicants, only the highest-scoring 10 or 20 are displayed.
+7. **Shortlist limit** — Configurable at 10, 20, or all candidates. Very large batches (100+) increase Gemini processing time.
 
 ### Ethical Statement
 
-> ⚠️ This AI screening tool is a **decision-support system only**.
+> ⚠️ **This AI screening tool is a decision-support system only.**
 > Final hiring decisions must **always** be made by qualified human recruiters.
 > AI may not capture soft skills, cultural fit, or personal context.
 > Never use AI scores as the sole basis for rejecting a candidate.
@@ -658,35 +692,34 @@ Built with ❤️ for the Umurava AI Hackathon 2026 · Kigali, Rwanda
 
 | Member | Role | Responsibility |
 |--------|------|----------------|
-| KAYIRANGA Don Jesus | Team Lead · AI + Backend | Gemini AI integration, backend APIs, database architecture |
-| IMPANO Umuhoza Hope | Frontend Developer | UI/UX, dashboard, screening results pages |
-| SANGWA Marius | Backend Developer | Routes, data processing, file upload services |
-| UTUJE Cadeau Isabelle | Full Stack Support | Integration testing, deployment, documentation |
+| KAYIRANGA Don Jesus | Team Lead · AI + Backend | Gemini AI integration, backend APIs, screening logic, database architecture |
+| IMPANO Umuhoza Hope | Frontend Developer | UI/UX, dashboard, screening results, candidate comparison pages |
+| SANGWA Marius | Backend Developer | REST routes, data processing, file upload services, applicant management |
+| UTUJE Cadeau Isabelle | Full Stack Support | Integration testing, deployment, documentation, QA |
 
 ---
 
 ## Scripts Reference
 
-### Backend Scripts
+### Backend
 
-```bash
-npm run dev       # Start with hot reload (development)
-npm run build     # Compile TypeScript to dist/
-npm start         # Run compiled production build
-npm run seed      # Seed 5 Umurava test profiles into database
-npm run test:ai   # Run 4-test AI connection and screening suite
-```
+| Script | Command | Description |
+|--------|---------|-------------|
+| Development | `npm run dev` | Start with hot reload (ts-node-dev) |
+| Build | `npm run build` | Compile TypeScript |
+| Production | `npm start` | Run compiled JS |
+| Seed DB | `npm run seed` | Insert 5 Umurava test profiles |
+| Test AI | `npm run test:ai` | Run 4-test Gemini verification suite |
 
-### Frontend Scripts
+### Frontend
 
-```bash
-npm run dev       # Start development server at localhost:3000
-npm run build     # Build for production (required before deploy)
-npm start         # Run production build
-npm run lint      # Run ESLint type checks
-```
+| Script | Command | Description |
+|--------|---------|-------------|
+| Development | `npm run dev` | Start Next.js dev server |
+| Build | `npm run build` | Production build |
+| Production | `npm start` | Serve production build |
+| Lint | `npm run lint` | ESLint check |
 
 ---
 
-*© 2026 Umurava AI — Debug Thugs — Kigali, Rwanda*
-*Powered by Google Gemini AI · Built on the Umurava Talent Platform*
+*Last updated: April 2026 · Debug Thugs · Umurava AI Hackathon*

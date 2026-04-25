@@ -17,12 +17,12 @@ const storage = multer.diskStorage({
   },
 });
 
-// CSV / XLSX filter
+// CSV / XLSX filter — spreadsheet formats only, no PDF
 const fileFilter = (_req: any, file: any, cb: any) => {
   const ext = path.extname(file.originalname).toLowerCase();
-  [".csv", ".pdf", ".xlsx"].includes(ext)
+  [".csv", ".xlsx"].includes(ext)
     ? cb(null, true)
-    : cb(new Error("Only CSV, PDF and Excel files allowed"), false);
+    : cb(new Error("Only CSV and Excel (.xlsx) files are allowed"), false);
 };
 
 // Resume filter — PDF, DOCX, DOC, TXT, ODT
@@ -33,11 +33,12 @@ const resumeFileFilter = (_req: any, file: any, cb: any) => {
     : cb(new Error(`File type "${ext}" is not allowed. Upload PDF, DOCX, DOC, TXT or ODT.`), false);
 };
 
-// ZIP filter
+// ZIP filter — accepts all common ZIP MIME types browsers may send
 const zipFileFilter = (_req: any, file: any, cb: any) => {
-  const ext = path.extname(file.originalname).toLowerCase();
+  const ext  = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype;
-  const ok = ext === ".zip" ||
+  const ok =
+    ext === ".zip" ||
     mime === "application/zip" ||
     mime === "application/x-zip-compressed" ||
     mime === "application/octet-stream";
@@ -46,21 +47,21 @@ const zipFileFilter = (_req: any, file: any, cb: any) => {
     : cb(new Error("Only ZIP files are allowed for bulk upload"), false);
 };
 
-// Standard uploader (CSV/XLSX)
+// Standard uploader (CSV / XLSX) — max 15 MB
 export const upload = multer({
   storage,
   fileFilter,
   limits: { fileSize: 15 * 1024 * 1024, files: 20 },
 });
 
-// Resume uploader (PDF/DOCX etc.)
+// Resume uploader (PDF / DOCX / DOC / TXT / ODT) — max 20 MB, up to 20 files
 export const resumeUpload = multer({
   storage,
   fileFilter: resumeFileFilter,
   limits: { fileSize: 20 * 1024 * 1024, files: 20 },
 });
 
-// ZIP uploader — up to 200 MB for large batches
+// ZIP uploader — up to 200 MB for large batches of CVs
 export const zipUpload = multer({
   storage,
   fileFilter: zipFileFilter,
