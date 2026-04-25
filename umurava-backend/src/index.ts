@@ -19,45 +19,48 @@ const PORT = process.env.PORT || 5000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CORS
-// FIX 1: The Vercel deployment URL must be whitelisted here AND in
-//         Google Cloud Console → Authorised JavaScript Origins.
-//
-// Add every URL your frontend runs on.  Trailing slashes break matching —
-// never include them.  The regex catches preview deployments like
-// umurava-xyz-team.vercel.app automatically.
 // ─────────────────────────────────────────────────────────────────────────────
 const ALLOWED_ORIGINS: (string | RegExp)[] = [
   "http://localhost:3000",
   "http://localhost:3001",
-  // ✅ Replace this with your EXACT Vercel production URL (no trailing slash):
   "https://ai-umurava.vercel.app",
-  // Catches all Vercel preview URLs for your project automatically:
   /^https:\/\/.*\.vercel\.app$/,
+  // If you have a custom domain add it here too, e.g.:
+  // "https://www.umurava.ai",
 ];
+
+// Handle pre-flight OPTIONS for every route BEFORE any other middleware
+app.options("*", (req, res) => {
+  const origin = req.headers.origin || "";
+  const allowed = ALLOWED_ORIGINS.some((o) =>
+    typeof o === "string" ? o === origin : o.test(origin)
+  );
+  if (allowed) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS,PATCH");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  res.sendStatus(204);
+});
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow server-to-server requests (no origin) and whitelisted origins
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // server-to-server / same origin
       const allowed = ALLOWED_ORIGINS.some((o) =>
         typeof o === "string" ? o === origin : o.test(origin)
       );
       if (allowed) return callback(null, true);
-      console.warn(`🚫 CORS blocked: ${origin}`);
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
+      console.warn(`🚫 CORS blocked origin: ${origin}`);
+      callback(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    // Explicitly handle pre-flight on every route
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   })
 );
-
-// Handle OPTIONS pre-flight for all routes
-app.options("*", cors());
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -65,22 +68,32 @@ app.use(morgan("dev"));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helmet
-// FIX 2: Default helmet blocks the Google GSI script and iframe.
-//         We must explicitly allow accounts.google.com in CSP.
+//
+// FIX: Default helmet() sets:
+//   Cross-Origin-Opener-Policy: same-origin
+//
+// That header is what the screenshot shows causing "would block the
+// window.postMessage call" — Google Sign-In uses a popup and postMessage
+// to deliver the credential. We must set COOP to "same-origin-allow-popups".
+//
+// Also default CSP blocks accounts.google.com scripts from loading.
 // ─────────────────────────────────────────────────────────────────────────────
 app.use(
   helmet({
+    // CRITICAL: allow Google popup + postMessage
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+
     contentSecurityPolicy: {
       directives: {
         defaultSrc:  ["'self'"],
-        scriptSrc:   ["'self'", "'unsafe-inline'", "https://accounts.google.com"],
+        scriptSrc:   ["'self'", "'unsafe-inline'", "https://accounts.google.com", "https://apis.google.com"],
         frameSrc:    ["'self'", "https://accounts.google.com"],
-        connectSrc:  ["'self'", "https://accounts.google.com", "https://oauth2.googleapis.com"],
+        connectSrc:  ["'self'", "https://accounts.google.com", "https://oauth2.googleapis.com", "https://openidconnect.googleapis.com"],
         imgSrc:      ["'self'", "data:", "https://lh3.googleusercontent.com"],
         styleSrc:    ["'self'", "'unsafe-inline'"],
+        fontSrc:     ["'self'", "https://fonts.gstatic.com"],
       },
     },
-    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, // Required for Google popup
   })
 );
 
@@ -89,7 +102,7 @@ app.use(
 // ─────────────────────────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
-  max: 200,                    // raised from 100 — Vercel cold-starts can spike
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: "Too many requests. Please try again later." },
@@ -97,7 +110,7 @@ const globalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,                     // raised from 10 — Google sign-in can hit this fast
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: "Too many login attempts. Try again later." },
@@ -111,10 +124,10 @@ const aiLimiter = rateLimit({
   message: { success: false, message: "Too many AI requests. Please slow down." },
 });
 
-app.use("/api/",             globalLimiter);
-app.use("/api/auth/login",   authLimiter);
-app.use("/api/auth/google",  authLimiter);   // FIX 3: rate-limit Google endpoint too
-app.use("/api/screening",    aiLimiter);
+app.use("/api/",            globalLimiter);
+app.use("/api/auth/login",  authLimiter);
+app.use("/api/auth/google", authLimiter);
+app.use("/api/screening",   aiLimiter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Routes
