@@ -1,5 +1,5 @@
 "use client";
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useDropzone } from "react-dropzone";
@@ -28,7 +28,7 @@ import {
 const MAX_RESUME_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_CSV_SIZE_BYTES    = 5  * 1024 * 1024;
 
-// ── Shared style objects ───────────────────────────────────────────────────────
+// ── Shared style objects ────────────────────────────────────────────────────
 const inp: React.CSSProperties = {
   width: "100%", padding: "10px 14px", borderRadius: "10px",
   border: "1.5px solid var(--border-input)", fontSize: "14px", outline: "none",
@@ -63,12 +63,18 @@ const emptyForm = () => ({
   socialLinks:    { linkedin: "", github: "", portfolio: "" },
 });
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ───────────────────────────────────────────────────────────────────
 type FileProgress = { name: string; pct: number; status: "idle" | "uploading" | "done" | "error"; count?: number };
 type CSVPreview   = { file: File; totalCandidates: number; columnsDetected: number; sampleRows: string[][]; headers: string[] };
+type ResumeResult = { fileName: string; candidateName: string; email: string; skillsCount: number; hasExp: boolean; isExisting?: boolean };
 
-// ── Parsed resume result staged before confirm ────────────────────────────────
-type ResumeResult = { fileName: string; candidateName: string; email: string; skillsCount: number; hasExp: boolean };
+// ── NEW: Staged file (held locally before user clicks "Upload") ─────────────
+type StagedFile = { id: string; file: File };
+
+function formatBytes(b: number) {
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function parseCSVPreview(file: File): Promise<CSVPreview> {
   return new Promise((resolve, reject) => {
@@ -96,24 +102,19 @@ function ScoreBadge({ pts, label }: { pts: string; label: string }) {
   );
 }
 
-// ── Animated progress bar ──────────────────────────────────────────────────────
 function ProgressBar({ pct, color = "#2563eb" }: { pct: number; color?: string }) {
   return (
     <div style={{ height: 6, background: "var(--border-muted)", borderRadius: 99, overflow: "hidden", flex: 1 }}>
-      <div style={{
-        height: "100%", width: `${pct}%`, borderRadius: 99,
-        background: color,
-        transition: "width 0.4s cubic-bezier(0.4,0,0.2,1)",
-      }} />
+      <div style={{ height: "100%", width: `${pct}%`, borderRadius: 99, background: color, transition: "width 0.4s cubic-bezier(0.4,0,0.2,1)" }} />
     </div>
   );
 }
 
-// ── Upload confirmation banner (green) ────────────────────────────────────────
+// ── GREEN SUCCESS BANNER with topN + Run AI Screening ──────────────────────
 function UploadDoneBanner({
-  count, jobId, label, onReset, onRunScreening, running,
+  count, label, onReset, onRunScreening, running,
 }: {
-  count: number; jobId: string; label: string;
+  count: number; label: string;
   onReset: () => void;
   onRunScreening: (topN: 10 | 20 | "all") => void;
   running: boolean;
@@ -121,38 +122,42 @@ function UploadDoneBanner({
   const [topN, setTopN] = useState<10 | 20 | "all">(10);
   return (
     <div style={{
-      background: "linear-gradient(135deg,rgba(240,253,244,0.95),rgba(239,246,255,0.95))",
+      background: "linear-gradient(135deg,rgba(240,253,244,0.98),rgba(239,246,255,0.98))",
       border: "1.5px solid #bbf7d0", borderRadius: 16, padding: "20px 24px",
-      animation: "slideUp 0.28s ease",
+      animation: "apSlideUp 0.3s ease", marginTop: 20,
     }}>
-      <style>{`@keyframes slideUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }`}</style>
-
-      {/* Top row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-        <div style={{ width: 44, height: 44, borderRadius: 13, background: "#dcfce7", border: "1.5px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <CheckCircle2 size={22} color="#15803d" />
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+        <div style={{ width: 46, height: 46, borderRadius: 13, background: "#dcfce7", border: "1.5px solid #86efac", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <CheckCircle2 size={24} color="#15803d" />
         </div>
         <div style={{ flex: 1 }}>
-          <p style={{ fontWeight: 800, fontSize: 15, color: "#14532d", marginBottom: 3 }}>
-            {count} {label}
+          <p style={{ fontWeight: 800, fontSize: 15, color: "#14532d", marginBottom: 4 }}>
+            ✅ {count} {label}
           </p>
-          <p style={{ fontSize: 13, color: "#16a34a", lineHeight: 1.5 }}>
-            Candidates are ready. Choose how many to rank, then trigger AI screening.
+          <p style={{ fontSize: 13, color: "#16a34a", lineHeight: 1.55 }}>
+            Candidates are saved and ready. Select how many to rank, then run AI screening.
           </p>
         </div>
-        <button onClick={onReset} style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #86efac", background: "white", color: "#15803d", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <button
+          onClick={onReset}
+          style={{ width: 28, height: 28, borderRadius: 8, border: "1.5px solid #86efac", background: "white", color: "#15803d", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          title="Dismiss"
+        >
           <X size={14} />
         </button>
       </div>
 
-      {/* Bottom row: topN + Run button */}
+      {/* Top-N selector + Run button */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "6px 12px" }}>
-          <span style={{ fontSize: 12.5, color: "#15803d", fontWeight: 700, whiteSpace: "nowrap" }}>Rank top</span>
+        {/* topN selector */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "white", border: "1.5px solid #bbf7d0", borderRadius: 10, padding: "8px 14px" }}>
+          <Brain size={15} color="#15803d" />
+          <span style={{ fontSize: 13, color: "#15803d", fontWeight: 700, whiteSpace: "nowrap" }}>Rank top</span>
           <select
             value={topN}
             onChange={(e) => setTopN(e.target.value as any)}
-            style={{ border: "none", background: "transparent", fontSize: 13, fontWeight: 700, color: "#14532d", outline: "none", cursor: "pointer", fontFamily: "inherit" }}
+            style={{ border: "none", background: "transparent", fontSize: 13.5, fontWeight: 800, color: "#14532d", outline: "none", cursor: "pointer", fontFamily: "inherit" }}
           >
             <option value={10}>10 candidates</option>
             <option value={20}>20 candidates</option>
@@ -160,37 +165,71 @@ function UploadDoneBanner({
           </select>
         </div>
 
+        {/* Run screening button */}
         <button
           onClick={() => onRunScreening(topN)}
           disabled={running}
           style={{
             display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 22px", borderRadius: 11, border: "none",
+            padding: "10px 24px", borderRadius: 11, border: "none",
             background: running ? "#94a3b8" : "linear-gradient(135deg,#2563eb,#7c3aed)",
-            color: "white", fontWeight: 700, fontSize: 13.5, cursor: running ? "not-allowed" : "pointer",
-            fontFamily: "inherit", boxShadow: running ? "none" : "0 4px 14px rgba(37,99,235,0.28)",
+            color: "white", fontWeight: 700, fontSize: 14,
+            cursor: running ? "not-allowed" : "pointer",
+            fontFamily: "inherit",
+            boxShadow: running ? "none" : "0 4px 16px rgba(37,99,235,0.32)",
             transition: "all 0.15s", whiteSpace: "nowrap",
           }}
         >
           {running
-            ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Screening…</>
+            ? <><RefreshCw size={15} style={{ animation: "apSpin 1s linear infinite" }} /> Running screening…</>
             : <><Brain size={15} /> Run AI Screening <ChevronRight size={14} /></>
           }
         </button>
 
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          {topN === "all" ? "All candidates will be ranked" : `Top ${topN} returned — you can change before running`}
+        <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
+          {topN === "all" ? "All uploaded candidates will be ranked" : `Top ${topN} will be returned`}
         </span>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
+// ── Staged file row (before upload) ────────────────────────────────────────
+function StagedFileRow({ sf, onRemove, disabled }: { sf: StagedFile; onRemove: () => void; disabled: boolean }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12,
+      padding: "11px 14px", background: "var(--surface-card)",
+      border: "1.5px solid var(--border-soft)", borderRadius: 12,
+    }}>
+      <div style={{ width: 36, height: 36, borderRadius: 9, background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <FileText size={17} color="#7c3aed" />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sf.file.name}</p>
+        <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(sf.file.size)}</p>
+      </div>
+      {!disabled && (
+        <button
+          onClick={onRemove}
+          style={{ width: 28, height: 28, borderRadius: 8, border: "none", background: "rgba(239,68,68,0.08)", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          title="Remove"
+        >
+          <X size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 function ApplicantsPageContent() {
   const dispatch     = useDispatch<AppDispatch>();
   const router       = useRouter();
   const searchParams = useSearchParams();
+
+  // scroll target for "Upload Files" button
+  const uploadBtnRef = useRef<HTMLDivElement>(null);
 
   const [activeTab,   setActiveTab]   = useState<"list" | "umurava" | "external" | "manual">("list");
   const [fileSubTab,  setFileSubTab]  = useState<"csv" | "resume" | "url">("csv");
@@ -202,39 +241,42 @@ function ApplicantsPageContent() {
   const [profileSearch, setProfileSearch] = useState("");
   const [form,        setForm]        = useState(emptyForm());
 
-  // ── CSV state ────────────────────────────────────────────────────────────
+  // ── CSV state ─────────────────────────────────────────────────────────
   const [csvPreview,        setCsvPreview]        = useState<CSVPreview | null>(null);
   const [csvPreviewLoading, setCsvPreviewLoading] = useState(false);
   const [csvUploaded,       setCsvUploaded]       = useState(false);
   const [csvUploadedCount,  setCsvUploadedCount]  = useState(0);
-  const [csvIngestPct,      setCsvIngestPct]      = useState(0); // progress during upload
+  const [csvIngestPct,      setCsvIngestPct]      = useState(0);
 
-  // ── Resume state ─────────────────────────────────────────────────────────
-  const [fileProgresses,    setFileProgresses]    = useState<FileProgress[]>([]);
-  const [resumeResults,     setResumeResults]     = useState<ResumeResult[]>([]); // staged results
-  const [resumeUploaded,    setResumeUploaded]    = useState(false); // show confirm banner
+  // ── Resume / PDF state ────────────────────────────────────────────────
+  // NEW: staged files held locally before upload
+  const [stagedFiles,    setStagedFiles]    = useState<StagedFile[]>([]);
+  const [pdfUploading,   setPdfUploading]   = useState(false);
+  const [fileProgresses, setFileProgresses] = useState<FileProgress[]>([]);
+  const [resumeResults,  setResumeResults]  = useState<ResumeResult[]>([]);
+  const [resumeUploaded, setResumeUploaded] = useState(false);
   const [resumeUploadedCount, setResumeUploadedCount] = useState(0);
 
-  // ── URL state ────────────────────────────────────────────────────────────
+  // ── URL state ─────────────────────────────────────────────────────────
   const [importUrl,    setImportUrl]    = useState("");
   const [importingUrl, setImportingUrl] = useState(false);
-  const [urlProgress,  setUrlProgress]  = useState(0);  // animated progress for URL
+  const [urlProgress,  setUrlProgress]  = useState(0);
   const [urlUploaded,  setUrlUploaded]  = useState(false);
   const [urlUploadedCount, setUrlUploadedCount] = useState(0);
 
-  // ── Candidate list state ─────────────────────────────────────────────────
-  const [candidates,      setCandidates]      = useState<any[]>([]);
+  // ── Candidate list state ──────────────────────────────────────────────
+  const [candidates,        setCandidates]        = useState<any[]>([]);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [candidatesLoaded,  setCandidatesLoaded]  = useState(false);
   const [candidateSearch,   setCandidateSearch]   = useState("");
   const [deleteTarget,      setDeleteTarget]      = useState<{ id: string; name: string } | null>(null);
   const [deleting,          setDeleting]          = useState(false);
 
-  // ── Profiles added (Umurava tab) ─────────────────────────────────────────
-  const [profilesAdded,     setProfilesAdded]     = useState(0);
+  // ── Umurava ───────────────────────────────────────────────────────────
+  const [profilesAdded,      setProfilesAdded]      = useState(0);
   const [profilesAddedShown, setProfilesAddedShown] = useState(false);
 
-  // ── Screening running flag ────────────────────────────────────────────────
+  // ── Screening ─────────────────────────────────────────────────────────
   const [screeningRunning, setScreeningRunning] = useState(false);
 
   useEffect(() => {
@@ -251,7 +293,7 @@ function ApplicantsPageContent() {
     setSelectedJob(jobId);
     setCandidates([]); setCandidatesLoaded(false);
     setCsvPreview(null); setCsvUploaded(false);
-    setResumeResults([]); setResumeUploaded(false);
+    setStagedFiles([]); setFileProgresses([]); setResumeResults([]); setResumeUploaded(false);
     setUrlUploaded(false); setProfilesAddedShown(false);
     if (jobId) router.replace(`/applicants?jobId=${encodeURIComponent(jobId)}`, { scroll: false });
     else router.replace("/applicants", { scroll: false });
@@ -304,12 +346,11 @@ function ApplicantsPageContent() {
     });
   };
 
-  // ── Run AI screening (called from any UploadDoneBanner) ──────────────────
+  // ── Run AI Screening ─────────────────────────────────────────────────
   const handleRunScreening = async (topN: 10 | 20 | "all") => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     setScreeningRunning(true);
     try {
-      const qs = topN !== "all" ? `?topN=${topN}` : "";
       await (dispatch as any)(triggerScreening({ jobId: selectedJob, forceRerun: false, topN })).unwrap();
       toast.success("AI screening complete! Redirecting to results…");
       router.push(`/screenings?jobId=${encodeURIComponent(selectedJob)}`);
@@ -320,7 +361,7 @@ function ApplicantsPageContent() {
     }
   };
 
-  // ── CSV: drop → preview ───────────────────────────────────────────────────
+  // ── CSV: drop → preview ──────────────────────────────────────────────
   const onDropCSV = useCallback(async (files: File[]) => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     const file = files[0];
@@ -334,15 +375,12 @@ function ApplicantsPageContent() {
     finally { setCsvPreviewLoading(false); }
   }, [selectedJob]);
 
-  // ── CSV: confirm → upload ─────────────────────────────────────────────────
+  // ── CSV: confirm → upload ────────────────────────────────────────────
   const handleConfirmIngest = async () => {
     if (!csvPreview || !selectedJob) return;
     setUploading(true);
     setCsvIngestPct(10);
-    // Animate progress smoothly while waiting for the server
-    const ticker = setInterval(() => {
-      setCsvIngestPct(p => p < 85 ? p + 5 : p);
-    }, 300);
+    const ticker = setInterval(() => { setCsvIngestPct(p => p < 85 ? p + 5 : p); }, 300);
     try {
       const res = await uploadCSV(selectedJob, csvPreview.file);
       clearInterval(ticker);
@@ -361,67 +399,89 @@ function ApplicantsPageContent() {
     } finally { setUploading(false); }
   };
 
-  // ── Resume: drop → upload each file individually with staged results ──────
-  const onDropResume = useCallback(async (files: File[]) => {
+  // ── PDF: drop → STAGE (do NOT upload yet) ───────────────────────────
+  const onDropResume = useCallback((files: File[]) => {
     if (!selectedJob) { toast.error("Select a job first"); return; }
     const tooBig = files.filter(f => f.size > MAX_RESUME_SIZE_BYTES);
-    if (tooBig.length) { toast.error(`${tooBig.map(f => f.name).join(", ")} exceeded 10 MB limit`); return; }
+    if (tooBig.length) {
+      toast.error(`${tooBig.map(f => f.name).join(", ")} exceeded 10 MB limit`);
+      return;
+    }
+    const valid = files.filter(f => f.size <= MAX_RESUME_SIZE_BYTES);
+    if (!valid.length) return;
 
-    // Reset previous
+    setStagedFiles(prev => {
+      const existingNames = new Set(prev.map(s => s.file.name));
+      const newOnes: StagedFile[] = valid
+        .filter(f => !existingNames.has(f.name))
+        .map(f => ({ id: `${f.name}-${f.size}-${Date.now()}`, file: f }));
+      if (newOnes.length === 0) {
+        toast("All selected files are already in the list", { icon: "ℹ️" });
+        return prev;
+      }
+      // Scroll to upload button after state update
+      setTimeout(() => {
+        uploadBtnRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 100);
+      return [...prev, ...newOnes];
+    });
+    // clear previous results whenever new files are staged
+    setResumeResults([]);
+    setResumeUploaded(false);
+    setFileProgresses([]);
+  }, [selectedJob]);
+
+  // ── PDF: "Upload Files" button → actually send to server ─────────────
+  const handleUploadStagedFiles = async () => {
+    if (!selectedJob || stagedFiles.length === 0) return;
+    setPdfUploading(true);
     setResumeUploaded(false);
     setResumeResults([]);
-    const progresses: FileProgress[] = files.map(f => ({ name: f.name, pct: 0, status: "uploading" }));
+
+    const progresses: FileProgress[] = stagedFiles.map(sf => ({ name: sf.file.name, pct: 0, status: "uploading" }));
     setFileProgresses(progresses);
 
     const staged: ResumeResult[] = [];
     let added = 0;
 
-    for (let i = 0; i < files.length; i++) {
-      // Animate 0 → 30 → 60 smoothly while waiting
-      setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 20, status: "uploading" } : p));
+    for (let i = 0; i < stagedFiles.length; i++) {
+      setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 15, status: "uploading" } : p));
       const animTick = setInterval(() => {
         setFileProgresses(prev => prev.map((p, pi) => {
           if (pi !== i || p.status !== "uploading") return p;
-          return { ...p, pct: p.pct < 80 ? p.pct + 10 : p.pct };
+          return { ...p, pct: p.pct < 80 ? p.pct + 8 : p.pct };
         }));
       }, 400);
 
       try {
-        const res = await uploadResumeFile(selectedJob, files[i]);
+        const res = await uploadResumeFile(selectedJob, stagedFiles[i].file);
         clearInterval(animTick);
 
-        // Support both response shapes:
-        // Old: { applicant: {...}, count: 1 }
-        // New: { applicant: {...}, results: [{ candidateName, skillsCount, ... }], count: 1 }
-        const applicant  = res?.applicant;
-        const fileResult = res?.results?.[0];
-        const isExisting = fileResult?.isExisting || res?.count === 0;
+        const applicant   = res?.applicant;
+        const fileResult  = res?.results?.[0];
+        const isExisting  = fileResult?.isExisting || res?.count === 0;
 
-        // Build staged card from whichever shape has the data
         const candidateName = applicant
           ? `${applicant.firstName || ""} ${applicant.lastName || ""}`.trim()
-          : fileResult?.candidateName || files[i].name;
+          : fileResult?.candidateName || stagedFiles[i].file.name;
         const email = applicant?.email && !applicant.email.includes("@review.pending")
           ? applicant.email
           : fileResult?.email || "—";
 
-        warnIfIncomplete(applicant, files[i].name);
+        warnIfIncomplete(applicant, stagedFiles[i].file.name);
 
         staged.push({
-          fileName:    files[i].name,
+          fileName:    stagedFiles[i].file.name,
           candidateName,
           email,
           skillsCount: applicant?.skills?.length ?? fileResult?.skillsCount ?? 0,
           hasExp:      (applicant?.experience?.length ?? fileResult?.expCount ?? 0) > 0,
+          isExisting,
         });
 
         const wasAdded = !isExisting && (res?.count > 0 || fileResult?.status === "created");
         if (wasAdded) {
-          if (typeof res?.applicantsCount === "number") {
-            dispatch(bumpJobApplicants({ jobId: selectedJob, delta: 1 }));
-          } else if (res?.count) {
-            dispatch(bumpJobApplicants({ jobId: selectedJob, delta: res.count }));
-          }
+          dispatch(bumpJobApplicants({ jobId: selectedJob, delta: 1 }));
           setCandidatesLoaded(false);
           added++;
         }
@@ -437,16 +497,17 @@ function ApplicantsPageContent() {
       } catch (err: any) {
         clearInterval(animTick);
         setFileProgresses(prev => prev.map((p, pi) => pi === i ? { ...p, pct: 0, status: "error" } : p));
-        toast.error(`${files[i].name}: ${err?.response?.data?.message || "Upload failed"}`);
+        toast.error(`${stagedFiles[i].file.name}: ${err?.response?.data?.message || "Upload failed"}`);
       }
     }
 
-    if (added > 0) {
-      setResumeResults(staged.filter(s => s.candidateName));
-      setResumeUploadedCount(added);
-      setResumeUploaded(true);
-    }
-  }, [selectedJob, dispatch]);
+    // ── Show success banner regardless (even re-linked counts as processed) ──
+    setResumeResults(staged.filter(s => s.candidateName));
+    setResumeUploadedCount(added > 0 ? added : staged.length);
+    setResumeUploaded(true);
+    setStagedFiles([]); // clear staged list after upload
+    setPdfUploading(false);
+  };
 
   const { getRootProps: getCSVRootProps, getInputProps: getCSVInputProps, isDragActive: isCSVDrag } = useDropzone({
     onDrop: onDropCSV,
@@ -457,17 +518,16 @@ function ApplicantsPageContent() {
     onDrop: onDropResume,
     accept: { "application/pdf": [".pdf"], "application/msword": [".doc"], "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"], "text/plain": [".txt"] },
     multiple: true,
+    disabled: pdfUploading,
   });
 
-  // ── URL import with animated progress ────────────────────────────────────
+  // ── URL import ────────────────────────────────────────────────────────
   const handleImportUrl = async () => {
     if (!selectedJob || !importUrl.trim()) { toast.error("Enter a URL and select a job"); return; }
     setImportingUrl(true);
     setUrlProgress(5);
     setUrlUploaded(false);
-    const ticker = setInterval(() => {
-      setUrlProgress(p => p < 80 ? p + 8 : p);
-    }, 500);
+    const ticker = setInterval(() => { setUrlProgress(p => p < 80 ? p + 8 : p); }, 500);
     try {
       const res = await uploadFromURL(selectedJob, importUrl.trim());
       clearInterval(ticker);
@@ -559,13 +619,15 @@ function ApplicantsPageContent() {
   const canSubmit = form.firstName.trim() && form.lastName.trim() && form.email.trim() &&
     form.skills.some(s => s.name.trim()) && form.experience.some(e => e.company.trim() && e.role.trim());
 
-  // ── RENDER ────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════
   return (
     <>
       <style>{`
         .ap-root { display:flex; font-family:var(--font-body,system-ui); }
         .ap-main { margin-left:var(--sidebar-width,260px); min-height:100vh; background:var(--surface-base); flex:1; display:flex; flex-direction:column; }
-        .ap-body { padding:24px 36px 100px; flex:1; animation:fadeIn 0.28s ease; }
+        .ap-body { padding:24px 36px 100px; flex:1; animation:apFadeIn 0.28s ease; }
 
         .ap-stepper { display:flex; align-items:center; gap:0; margin-bottom:24px; background:var(--surface-card); border-radius:14px; border:1.5px solid var(--border-soft); padding:18px 24px; box-shadow:var(--shadow-card); }
         .ap-step { display:flex; align-items:center; gap:10px; flex:1; }
@@ -593,19 +655,37 @@ function ApplicantsPageContent() {
 
         .ap-dropzone { border:2px dashed var(--border-soft); border-radius:14px; padding:36px 20px; text-align:center; cursor:pointer; transition:all 0.18s; background:var(--surface-card); }
         .ap-dropzone:hover,.ap-dropzone.drag { border-color:var(--brand-primary); background:rgba(37,99,235,0.04); }
+        .ap-dropzone.disabled { opacity:0.5; cursor:not-allowed; pointer-events:none; }
         .ap-dropzone-icon { width:52px; height:52px; border-radius:16px; background:rgba(37,99,235,0.08); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
         .ap-dropzone-title { font-size:15px; font-weight:700; color:var(--text-primary); margin-bottom:4px; }
         .ap-dropzone-sub { font-size:13px; color:var(--text-muted); }
 
-        /* File progress row */
+        /* Progress rows */
         .ap-fp-row { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
         .ap-fp-top  { display:flex; align-items:center; gap:10px; }
         .ap-fp-name { flex:1; font-size:13px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .ap-fp-pct  { font-size:12px; font-weight:700; min-width:36px; text-align:right; }
 
-        /* Staged resume results */
+        /* Parsed result rows */
         .ap-staged-row { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--surface-card); border:1.5px solid #bbf7d0; border-radius:12px; }
         .ap-staged-avatar { width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#2563eb,#7c3aed); display:flex; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:800; flex-shrink:0; }
+
+        /* Upload button */
+        .ap-upload-btn {
+          width:100%; display:flex; align-items:center; justify-content:space-between;
+          padding:16px 22px; border-radius:14px; border:none; cursor:pointer;
+          background:linear-gradient(135deg,#2563eb,#7c3aed);
+          color:white; font-family:inherit;
+          box-shadow:0 6px 24px rgba(37,99,235,0.35);
+          transition:transform 0.15s, box-shadow 0.15s;
+          animation: apPulse 2.2s ease-in-out 3;
+        }
+        .ap-upload-btn:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 10px 32px rgba(37,99,235,0.45); }
+        .ap-upload-btn:disabled { opacity:0.55; cursor:not-allowed; animation:none; }
+        @keyframes apPulse {
+          0%,100% { box-shadow:0 6px 24px rgba(37,99,235,0.35); }
+          50%      { box-shadow:0 8px 36px rgba(37,99,235,0.6), 0 0 0 6px rgba(37,99,235,0.1); }
+        }
 
         .ap-cand-card { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px; margin-bottom:10px; box-shadow:var(--shadow-card); transition:all var(--transition-fast); }
         .ap-cand-card:hover { transform:translateY(-1px); box-shadow:var(--shadow-card-hover); border-color:rgba(37,99,235,0.2); }
@@ -621,8 +701,8 @@ function ApplicantsPageContent() {
         .ap-profile-card.selected { border-color:var(--brand-primary); background:rgba(37,99,235,0.07); }
         .ap-profile-avatar { width:38px; height:38px; border-radius:50%; background:var(--brand-gradient); display:flex; align-items:center; justify-content:center; color:white; font-size:13px; font-weight:700; flex-shrink:0; }
 
-        .ap-del-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); z-index:400; display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn 0.15s ease; }
-        .ap-del-box { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:18px; padding:28px; max-width:360px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,0.2); animation:scaleIn 0.15s ease; }
+        .ap-del-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); backdrop-filter:blur(4px); z-index:400; display:flex; align-items:center; justify-content:center; padding:20px; animation:apFadeIn 0.15s ease; }
+        .ap-del-box { background:var(--surface-card); border:1.5px solid var(--border-soft); border-radius:18px; padding:28px; max-width:360px; width:100%; box-shadow:0 24px 60px rgba(0,0,0,0.2); animation:apScaleIn 0.15s ease; }
 
         .ap-row-remove { width:28px; height:28px; border-radius:7px; border:none; background:rgba(239,68,68,0.08); color:#ef4444; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background 0.15s; }
         .ap-row-remove:hover { background:rgba(239,68,68,0.18); }
@@ -630,7 +710,10 @@ function ApplicantsPageContent() {
         .ap-add-row:hover { border-color:var(--brand-primary); color:var(--brand-primary); background:rgba(37,99,235,0.04); }
         .ap-manual-select { width:100%; padding:9px 12px; border-radius:10px; border:1.5px solid var(--border-input); background:var(--surface-input); color:var(--text-primary); font-family:inherit; font-size:14px; outline:none; transition:border-color 0.15s; }
 
-        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes apSpin    { to { transform: rotate(360deg); } }
+        @keyframes apFadeIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes apScaleIn { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+        @keyframes apSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
         @media (max-width:768px) { .ap-main { margin-left:0; } .ap-body { padding:16px 12px 80px; } .ap-selector-row { flex-direction:column; align-items:stretch; } }
       `}</style>
 
@@ -657,7 +740,6 @@ function ApplicantsPageContent() {
                   </div>
                 );
               })}
-              {/* Step 3: only show link to screenings page (no run button here — that's in the banner) */}
               {step === 3 && (
                 <Link
                   href={selectedJob ? `/screenings?jobId=${selectedJob}` : "/screenings"}
@@ -680,7 +762,7 @@ function ApplicantsPageContent() {
                 </select>
                 <button className="ap-load-btn" onClick={handleLoadApplicants} disabled={!selectedJob || candidatesLoading}>
                   {candidatesLoading
-                    ? <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Loading…</>
+                    ? <><span style={{ width: 14, height: 14, border: "2px solid rgba(255,255,255,0.4)", borderTopColor: "white", borderRadius: "50%", display: "inline-block", animation: "apSpin 0.7s linear infinite" }} /> Loading…</>
                     : <><Users size={15} /> Load Applicants</>
                   }
                 </button>
@@ -690,69 +772,39 @@ function ApplicantsPageContent() {
                   <AlertTriangle size={13} /> Select a job above, then click <strong>Load Applicants</strong>.
                 </p>
               )}
-              {selectedJob && !candidatesLoaded && !candidatesLoading && (
-                <p style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
-                  <CheckCircle2 size={13} color="#16a34a" />
-                  <strong>{selectedJobObj?.title || "Job"}</strong> selected — click <strong>Load Applicants</strong> to view candidates.
-                </p>
-              )}
             </div>
 
-            {/* ── Upload Done Banners ── */}
+            {/* ── GLOBAL success banners (CSV, URL, Umurava) ── */}
             {csvUploaded && selectedJob && (
-              <div style={{ marginBottom: 20 }}>
-                <UploadDoneBanner
-                  count={csvUploadedCount}
-                  jobId={selectedJob}
-                  label={`candidate${csvUploadedCount !== 1 ? "s" : ""} uploaded from CSV — ready for AI screening!`}
-                  onReset={() => { setCsvUploaded(false); setCsvPreview(null); setCsvUploadedCount(0); setCsvIngestPct(0); }}
-                  onRunScreening={handleRunScreening}
-                  running={screeningRunning}
-                />
-              </div>
+              <UploadDoneBanner
+                count={csvUploadedCount}
+                label={`candidate${csvUploadedCount !== 1 ? "s" : ""} uploaded from CSV`}
+                onReset={() => { setCsvUploaded(false); setCsvPreview(null); setCsvUploadedCount(0); setCsvIngestPct(0); }}
+                onRunScreening={handleRunScreening}
+                running={screeningRunning}
+              />
             )}
-
-            {resumeUploaded && selectedJob && (
-              <div style={{ marginBottom: 20 }}>
-                <UploadDoneBanner
-                  count={resumeUploadedCount}
-                  jobId={selectedJob}
-                  label={`candidate${resumeUploadedCount !== 1 ? "s" : ""} added from resume${resumeUploadedCount !== 1 ? "s" : ""} — ready for AI screening!`}
-                  onReset={() => { setResumeUploaded(false); setResumeResults([]); setFileProgresses([]); setResumeUploadedCount(0); }}
-                  onRunScreening={handleRunScreening}
-                  running={screeningRunning}
-                />
-              </div>
-            )}
-
             {urlUploaded && selectedJob && (
-              <div style={{ marginBottom: 20 }}>
-                <UploadDoneBanner
-                  count={urlUploadedCount}
-                  jobId={selectedJob}
-                  label={`candidate${urlUploadedCount !== 1 ? "s" : ""} imported from URL — ready for AI screening!`}
-                  onReset={() => { setUrlUploaded(false); setUrlUploadedCount(0); setUrlProgress(0); }}
-                  onRunScreening={handleRunScreening}
-                  running={screeningRunning}
-                />
-              </div>
+              <UploadDoneBanner
+                count={urlUploadedCount}
+                label={`candidate${urlUploadedCount !== 1 ? "s" : ""} imported from URL`}
+                onReset={() => { setUrlUploaded(false); setUrlUploadedCount(0); setUrlProgress(0); }}
+                onRunScreening={handleRunScreening}
+                running={screeningRunning}
+              />
             )}
-
             {profilesAddedShown && selectedJob && (
-              <div style={{ marginBottom: 20 }}>
-                <UploadDoneBanner
-                  count={profilesAdded}
-                  jobId={selectedJob}
-                  label={`Umurava profile${profilesAdded !== 1 ? "s" : ""} added — ready for AI screening!`}
-                  onReset={() => setProfilesAddedShown(false)}
-                  onRunScreening={handleRunScreening}
-                  running={screeningRunning}
-                />
-              </div>
+              <UploadDoneBanner
+                count={profilesAdded}
+                label={`Umurava profile${profilesAdded !== 1 ? "s" : ""} added`}
+                onReset={() => setProfilesAddedShown(false)}
+                onRunScreening={handleRunScreening}
+                running={screeningRunning}
+              />
             )}
 
             {/* ── Tabs ── */}
-            <div className="ap-tabs">
+            <div className="ap-tabs" style={{ marginTop: (csvUploaded || urlUploaded || profilesAddedShown) ? 20 : 0 }}>
               {[
                 { id: "list",     label: "Candidate List" },
                 { id: "umurava",  label: "Umurava Profiles" },
@@ -765,7 +817,7 @@ function ApplicantsPageContent() {
               ))}
             </div>
 
-            {/* ── TAB: Candidate List ── */}
+            {/* ══════════════ TAB: Candidate List ══════════════ */}
             {activeTab === "list" && (
               <div>
                 {!candidatesLoaded ? (
@@ -833,7 +885,7 @@ function ApplicantsPageContent() {
               </div>
             )}
 
-            {/* ── TAB: Umurava Profiles ── */}
+            {/* ══════════════ TAB: Umurava Profiles ══════════════ */}
             {activeTab === "umurava" && (
               <div>
                 {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14 }}>Select a job first to add Umurava profiles.</p>}
@@ -875,7 +927,7 @@ function ApplicantsPageContent() {
               </div>
             )}
 
-            {/* ── TAB: Upload File ── */}
+            {/* ══════════════ TAB: Upload File ══════════════ */}
             {activeTab === "external" && (
               <div>
                 {!selectedJob && <p style={{ color: "var(--text-muted)", fontSize: 14, marginBottom: 16 }}>Select a job first to upload files.</p>}
@@ -883,13 +935,13 @@ function ApplicantsPageContent() {
                 {/* Sub-tab buttons */}
                 <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                   {(["csv", "resume", "url"] as const).map((t) => (
-                    <button key={t} onClick={() => setFileSubTab(t)} style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid var(--border-soft)", background: fileSubTab === t ? "var(--brand-gradient)" : "var(--surface-card)", color: fileSubTab === t ? "white" : "var(--text-secondary)", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                    <button key={t} onClick={() => setFileSubTab(t)} style={{ padding: "7px 16px", borderRadius: 9, border: "1.5px solid var(--border-soft)", background: fileSubTab === t ? "var(--brand-gradient)" : "var(--surface-card)", color: fileSubTab === t ? "white" : "var(--text-secondary)", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}>
                       {t === "csv" ? "CSV / Excel" : t === "resume" ? "Resume PDF" : "Import URL"}
                     </button>
                   ))}
                 </div>
 
-                {/* ── CSV sub-tab ── */}
+                {/* ──── CSV sub-tab ──── */}
                 {fileSubTab === "csv" && (
                   <div>
                     <div {...getCSVRootProps()} className={`ap-dropzone${isCSVDrag ? " drag" : ""}`}>
@@ -901,22 +953,20 @@ function ApplicantsPageContent() {
 
                     {csvPreviewLoading && (
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, color: "var(--text-muted)", fontSize: 13 }}>
-                        <span style={{ width: 14, height: 14, border: "2px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                        <span style={{ width: 14, height: 14, border: "2px solid var(--border-soft)", borderTopColor: "#2563eb", borderRadius: "50%", display: "inline-block", animation: "apSpin 0.7s linear infinite" }} />
                         Parsing file…
                       </div>
                     )}
 
-                    {/* CSV preview + confirm stage */}
                     {csvPreview && !csvUploaded && (
                       <div style={{ marginTop: 16, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 16, padding: 22, boxShadow: "var(--shadow-card)" }}>
-                        {/* Detection summary */}
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                           <div style={{ width: 40, height: 40, borderRadius: 11, background: "rgba(37,99,235,0.08)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                             <FileSpreadsheet size={20} color="#2563eb" />
                           </div>
                           <div>
                             <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{csvPreview.file.name}</p>
-                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{(csvPreview.file.size / 1024).toFixed(0)} KB</p>
+                            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{formatBytes(csvPreview.file.size)}</p>
                           </div>
                         </div>
 
@@ -931,22 +981,19 @@ function ApplicantsPageContent() {
                           </div>
                         </div>
 
-                        {/* Column names preview */}
-                        <p style={{ fontSize: 11.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Columns detected</p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
                           {csvPreview.headers.map((h) => (
                             <span key={h} style={{ padding: "3px 10px", borderRadius: 6, background: "var(--surface-hover)", border: "1px solid var(--border-muted)", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>{h}</span>
                           ))}
                         </div>
 
-                        {/* Upload progress bar */}
                         {uploading && (
                           <div style={{ marginBottom: 14 }}>
                             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                               <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontWeight: 600 }}>Uploading to server…</span>
                               <span style={{ fontSize: 12.5, color: "#2563eb", fontWeight: 700 }}>{csvIngestPct}%</span>
                             </div>
-                            <ProgressBar pct={csvIngestPct} color="linear-gradient(90deg,#2563eb,#7c3aed)" />
+                            <ProgressBar pct={csvIngestPct} />
                           </div>
                         )}
 
@@ -956,7 +1003,7 @@ function ApplicantsPageContent() {
                           style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "11px 24px", borderRadius: 11, background: uploading ? "var(--surface-hover)" : "linear-gradient(135deg,#2563eb,#7c3aed)", color: uploading ? "var(--text-muted)" : "white", border: "none", fontWeight: 700, fontSize: 14, cursor: uploading ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: uploading ? "none" : "0 4px 14px rgba(37,99,235,0.28)", transition: "all 0.15s" }}
                         >
                           {uploading
-                            ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</>
+                            ? <><RefreshCw size={14} style={{ animation: "apSpin 1s linear infinite" }} /> Uploading…</>
                             : <><Upload size={15} /> Upload {csvPreview.totalCandidates} candidates to system</>
                           }
                         </button>
@@ -965,71 +1012,172 @@ function ApplicantsPageContent() {
                   </div>
                 )}
 
-                {/* ── Resume sub-tab ── */}
+                {/* ──── Resume / PDF sub-tab ──── */}
                 {fileSubTab === "resume" && (
                   <div>
-                    <div {...getResumeRootProps()} className={`ap-dropzone${isResumeDrag ? " drag" : ""}`}>
-                      <input {...getResumeInputProps()} />
-                      <div className="ap-dropzone-icon" style={{ background: "rgba(124,58,237,0.08)" }}><FileText size={22} color="#7c3aed" /></div>
-                      <p className="ap-dropzone-title">Drop resume files here</p>
-                      <p className="ap-dropzone-sub">PDF, DOCX, DOC, TXT · Max 10 MB each · Multiple files OK</p>
+                    {/* Info box */}
+                    <div style={{ background: "rgba(124,58,237,0.06)", border: "1.5px solid rgba(124,58,237,0.18)", borderRadius: 12, padding: "13px 16px", marginBottom: 18, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <FileText size={16} color="#7c3aed" style={{ flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)", marginBottom: 3 }}>How PDF upload works</p>
+                        <p style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+                          Drop files below — they are <strong>staged locally</strong>. Review the list, then click the <strong>"Upload Files"</strong> button to send them to AI for parsing. No files are sent until you click that button.
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Per-file progress rows */}
-                    {fileProgresses.length > 0 && (
-                      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-                        {fileProgresses.map((fp, i) => {
-                          const pctColor = fp.status === "done" ? "#16a34a" : fp.status === "error" ? "#dc2626" : "#2563eb";
-                          return (
-                            <div key={i} className="ap-fp-row">
-                              <div className="ap-fp-top">
-                                <FileText size={15} color={pctColor} style={{ flexShrink: 0 }} />
-                                <span className="ap-fp-name">{fp.name}</span>
-                                <span className="ap-fp-pct" style={{ color: pctColor }}>
-                                  {fp.status === "done" ? "Done ✓" : fp.status === "error" ? "Error" : `${fp.pct}%`}
-                                </span>
-                              </div>
-                              {fp.status !== "error" && (
-                                <ProgressBar pct={fp.pct} color={pctColor} />
-                              )}
-                            </div>
-                          );
-                        })}
+                    {/* Drop zone — hidden while uploading */}
+                    {!pdfUploading && (
+                      <div
+                        {...getResumeRootProps()}
+                        className={`ap-dropzone${isResumeDrag ? " drag" : ""}${!selectedJob ? " disabled" : ""}`}
+                        style={{ borderColor: "rgba(124,58,237,0.35)", background: "rgba(124,58,237,0.03)" }}
+                      >
+                        <input {...getResumeInputProps()} />
+                        <div className="ap-dropzone-icon" style={{ background: "rgba(124,58,237,0.1)" }}>
+                          <FileText size={22} color="#7c3aed" />
+                        </div>
+                        <p className="ap-dropzone-title">
+                          {stagedFiles.length > 0 ? "Drop more files to add" : "Drop resume files here"}
+                        </p>
+                        <p className="ap-dropzone-sub">PDF, DOCX, DOC, TXT · Max 10 MB each · Multiple files OK</p>
                       </div>
                     )}
 
-                    {/* Staged results — shown while processing, before the green banner */}
-                    {resumeResults.length > 0 && !resumeUploaded && (
-                      <div style={{ marginTop: 14 }}>
-                        <p style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Parsed candidates</p>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {resumeResults.map((r, i) => {
-                            const initials = r.candidateName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+                    {/* ── Staged files list ── */}
+                    {stagedFiles.length > 0 && !pdfUploading && (
+                      <div style={{ marginTop: 18 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                          <p style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#7c3aed", display: "inline-block", animation: "apPulse 1.5s ease-in-out infinite" }} />
+                            {stagedFiles.length} file{stagedFiles.length !== 1 ? "s" : ""} staged — ready to upload
+                          </p>
+                          <button
+                            onClick={() => { setStagedFiles([]); setFileProgresses([]); setResumeResults([]); setResumeUploaded(false); }}
+                            style={{ padding: "4px 12px", borderRadius: 7, border: "1.5px solid var(--border-soft)", background: "transparent", color: "var(--text-muted)", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5 }}
+                          >
+                            <X size={12} /> Clear all
+                          </button>
+                        </div>
+
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                          {stagedFiles.map((sf) => (
+                            <StagedFileRow
+                              key={sf.id}
+                              sf={sf}
+                              onRemove={() => setStagedFiles(prev => prev.filter(s => s.id !== sf.id))}
+                              disabled={false}
+                            />
+                          ))}
+                        </div>
+
+                        {/* ── UPLOAD BUTTON ── */}
+                        <div ref={uploadBtnRef}>
+                          <button
+                            className="ap-upload-btn"
+                            onClick={handleUploadStagedFiles}
+                            disabled={!selectedJob || pdfUploading}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                              <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(255,255,255,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                <Upload size={22} color="white" />
+                              </div>
+                              <div style={{ textAlign: "left" }}>
+                                <p style={{ fontSize: 16, fontWeight: 900, color: "white", lineHeight: 1.2 }}>
+                                  Upload {stagedFiles.length} File{stagedFiles.length !== 1 ? "s" : ""} to AI
+                                </p>
+                                <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.7)", marginTop: 3 }}>
+                                  Gemini will extract each candidate's full profile
+                                </p>
+                              </div>
+                            </div>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,0.18)", border: "1.5px solid rgba(255,255,255,0.3)", padding: "8px 18px", borderRadius: 9, fontSize: 14, fontWeight: 800, color: "white", flexShrink: 0 }}>
+                              <Brain size={15} /> Start Upload
+                            </div>
+                          </button>
+                          {!selectedJob && (
+                            <p style={{ fontSize: 12.5, color: "#ef4444", marginTop: 8 }}>⚠️ Select a job above before uploading.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Uploading progress ── */}
+                    {pdfUploading && fileProgresses.length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                          <span style={{ width: 16, height: 16, border: "2.5px solid rgba(124,58,237,0.25)", borderTopColor: "#7c3aed", borderRadius: "50%", display: "inline-block", animation: "apSpin 0.8s linear infinite", flexShrink: 0 }} />
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                            Uploading and parsing {fileProgresses.length} file{fileProgresses.length !== 1 ? "s" : ""}…
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {fileProgresses.map((fp, i) => {
+                            const pctColor = fp.status === "done" ? "#16a34a" : fp.status === "error" ? "#dc2626" : "#7c3aed";
                             return (
-                              <div key={i} className="ap-staged-row">
-                                <div className="ap-staged-avatar">{initials}</div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)" }}>{r.candidateName}</p>
-                                  <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{r.email}</p>
+                              <div key={i} className="ap-fp-row">
+                                <div className="ap-fp-top">
+                                  <FileText size={15} color={pctColor} style={{ flexShrink: 0 }} />
+                                  <span className="ap-fp-name">{fp.name}</span>
+                                  <span className="ap-fp-pct" style={{ color: pctColor }}>
+                                    {fp.status === "done" ? "Done ✓" : fp.status === "error" ? "Error ✗" : `${fp.pct}%`}
+                                  </span>
                                 </div>
-                                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                                  {r.skillsCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>{r.skillsCount} skills</span>}
-                                  {r.hasExp && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}>Has exp</span>}
-                                </div>
+                                {fp.status !== "error" && <ProgressBar pct={fp.pct} color={pctColor} />}
                               </div>
                             );
                           })}
                         </div>
                       </div>
                     )}
+
+                    {/* ── SUCCESS BANNER + parsed results (shown right here in the tab) ── */}
+                    {resumeUploaded && resumeResults.length > 0 && (
+                      <>
+                        <UploadDoneBanner
+                          count={resumeUploadedCount}
+                          label={`candidate${resumeUploadedCount !== 1 ? "s" : ""} uploaded from PDF${resumeUploadedCount !== 1 ? "s" : ""} — ready for AI screening!`}
+                          onReset={() => { setResumeUploaded(false); setResumeResults([]); setFileProgresses([]); setResumeUploadedCount(0); }}
+                          onRunScreening={handleRunScreening}
+                          running={screeningRunning}
+                        />
+
+                        {/* Parsed candidates preview */}
+                        <div style={{ marginTop: 16, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--shadow-card)" }}>
+                          <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border-muted)", background: "var(--surface-hover)" }}>
+                            <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)" }}>Parsed candidates</p>
+                          </div>
+                          <div style={{ padding: "10px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                            {resumeResults.map((r, i) => {
+                              const initials = r.candidateName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) || "?";
+                              return (
+                                <div key={i} className="ap-staged-row" style={{ margin: "0 2px" }}>
+                                  <div className="ap-staged-avatar">{initials}</div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <p style={{ fontWeight: 700, fontSize: 13.5, color: "var(--text-primary)" }}>{r.candidateName}</p>
+                                    <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{r.email} · {r.fileName}</p>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+                                    {r.isExisting && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#fefce8", color: "#a16207", border: "1px solid #fde68a" }}>Re-linked</span>}
+                                    {r.skillsCount > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>{r.skillsCount} skills</span>}
+                                    {r.hasExp && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe" }}>Has exp</span>}
+                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0" }}>✓ Saved</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* ── URL sub-tab ── */}
+                {/* ──── URL sub-tab ──── */}
                 {fileSubTab === "url" && (
                   <div>
                     <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
-                      Import a LinkedIn profile, resume URL, or a direct link to a CSV / XLSX file.
+                      Import a resume URL or a direct link to a CSV / XLSX file.
                     </p>
                     <div style={{ display: "flex", gap: 10 }}>
                       <input
@@ -1046,20 +1194,19 @@ function ApplicantsPageContent() {
                         style={{ padding: "0 22px", height: 44, borderRadius: 10, background: importingUrl ? "var(--surface-hover)" : "var(--brand-primary)", color: importingUrl ? "var(--text-muted)" : "white", border: "none", fontWeight: 700, fontSize: 13.5, cursor: importingUrl ? "not-allowed" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 7, transition: "all 0.15s" }}
                       >
                         {importingUrl
-                          ? <><RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} /> Importing…</>
+                          ? <><RefreshCw size={14} style={{ animation: "apSpin 1s linear infinite" }} /> Importing…</>
                           : <><Upload size={14} /> Import</>
                         }
                       </button>
                     </div>
 
-                    {/* URL animated progress */}
                     {importingUrl && urlProgress > 0 && (
                       <div style={{ marginTop: 14, background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 12, padding: "14px 16px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                           <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>Fetching and parsing URL…</span>
                           <span style={{ fontSize: 13, color: "#2563eb", fontWeight: 700 }}>{urlProgress}%</span>
                         </div>
-                        <ProgressBar pct={urlProgress} color="linear-gradient(90deg,#2563eb,#7c3aed)" />
+                        <ProgressBar pct={urlProgress} />
                       </div>
                     )}
                   </div>
@@ -1067,7 +1214,7 @@ function ApplicantsPageContent() {
               </div>
             )}
 
-            {/* ── TAB: Manual Entry ── */}
+            {/* ══════════════ TAB: Manual Entry ══════════════ */}
             {activeTab === "manual" && (
               <div style={{ background: "var(--surface-card)", border: "1.5px solid var(--border-soft)", borderRadius: 18, padding: 28, boxShadow: "var(--shadow-card)" }}>
                 {!selectedJob && (
