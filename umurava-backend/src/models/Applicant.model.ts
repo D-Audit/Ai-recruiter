@@ -207,7 +207,5 @@ const ApplicantSchema = new Schema<IApplicant>(
   { timestamps: true }
 );
 
-// Enforce one document per unique email at the DB level
 ApplicantSchema.index({ email: 1 }, { unique: true });
-
 export default mongoose.model<IApplicant>("Applicant", ApplicantSchema);

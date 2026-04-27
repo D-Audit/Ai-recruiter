@@ -135,7 +135,7 @@ export async function enqueueResumeJob(
 
   jobs.set(id, job);
 
-  // Fire-and-forget — runs in background after HTTP response is sent
+  
   setImmediate(async () => {
     job.status = "processing";
     console.log(`🚀 Queue ${id}: processing ${filePaths.length} files for job ${mongoJobId}`);
@@ -160,11 +160,7 @@ export async function enqueueResumeJob(
   return id;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Core batch worker
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BATCH_SIZE = 8; // Files per Gemini call
+const BATCH_SIZE = 8; 
 
 async function runBatchQueue(
   job: QueueJob,
@@ -252,8 +248,6 @@ async function runBatchQueue(
     singleFiles.push(item);
   }
 
-  // Step 3: Batch parse remaining single-person files
-  // Send in groups of BATCH_SIZE to Gemini
   const batches: typeof singleFiles[] = [];
   for (let i = 0; i < singleFiles.length; i += BATCH_SIZE) {
     batches.push(singleFiles.slice(i, i + BATCH_SIZE));
@@ -360,9 +354,6 @@ async function runBatchQueue(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: save/link applicant to MongoDB (used by both multi-person + batch paths)
-// ─────────────────────────────────────────────────────────────────────────────
 async function linkApplicantToMongo(
   Applicant: any,
   Job: any,

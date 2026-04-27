@@ -8,11 +8,11 @@
 // ✅ Retry with exponential backoff — handles 503/429/network errors
 // ✅ Cloudinary upload before cleanup
 // ✅ Scanned PDFs handled gracefully
-// ✅ parseWithGemini now uses the same 3-layer JSON repair as ai.parser.ts
-//    (smart quotes, control chars, trailing commas) — matches screening robustness
 
 import fs from "fs";
 import path from "path";
+import { callGeminiWithRetry } from "./ai.service";
+import { uploadResumeToCloud } from "./cloudinary.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 1 — Extract raw text from file
@@ -236,144 +236,18 @@ function sanitizeSkills(skills: any[]): any[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Robust JSON parser — same 3-layer repair used by ai.parser.ts for screening.
-// Handles: markdown fences, smart/curly quotes, bare newlines inside strings,
-// control characters, trailing commas before ] or }.
-// Previously parseWithGemini only used a plain JSON.parse — this makes it
-// just as resilient as the screening path.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const SMART_DOUBLE = new Set([0x201C, 0x201D, 0x201E, 0x201F, 0x2033, 0x2036]);
-const SMART_SINGLE = new Set([0x2018, 0x2019, 0x201A, 0x201B, 0x2032, 0x2035]);
-
-function peekNext(s: string, from: number): string {
-  for (let j = from; j < s.length; j++) {
-    const c = s[j];
-    if (c !== " " && c !== "\t" && c !== "\n" && c !== "\r") return c;
-  }
-  return "";
-}
-
-function isStructural(ch: string): boolean {
-  return ch === "," || ch === "}" || ch === "]" || ch === ":";
-}
-
-function onePassFix(s: string): string {
-  let fixed    = "";
-  let inString = false;
-  let i        = 0;
-
-  while (i < s.length) {
-    const ch   = s[i];
-    const code = s.charCodeAt(i);
-
-    // Already-escaped pair — copy verbatim
-    if (ch === "\\" && inString) {
-      fixed += ch + (s[i + 1] ?? "");
-      i += 2;
-      continue;
-    }
-
-    // Straight double-quote
-    if (ch === '"') {
-      if (inString) {
-        const next = peekNext(s, i + 1);
-        if (next && !isStructural(next)) {
-          fixed += '\\"';
-          i++;
-          continue;
-        }
-      }
-      inString = !inString;
-      fixed += ch;
-      i++;
-      continue;
-    }
-
-    // Smart / curly DOUBLE quote
-    if (SMART_DOUBLE.has(code)) {
-      fixed += inString ? '\\"' : '"';
-      if (!inString) inString = true;
-      i++;
-      continue;
-    }
-
-    // Smart / curly SINGLE quote → plain apostrophe
-    if (SMART_SINGLE.has(code)) {
-      fixed += "'";
-      i++;
-      continue;
-    }
-
-    // Inside a string: escape bare whitespace, strip control chars
-    if (inString) {
-      if (ch === "\n") { fixed += "\\n"; i++; continue; }
-      if (ch === "\r") { fixed += "\\r"; i++; continue; }
-      if (ch === "\t") { fixed += "\\t"; i++; continue; }
-      if (code <= 0x1F || code === 0x7F) { i++; continue; }
-    }
-
-    fixed += ch;
-    i++;
-  }
-
-  return fixed;
-}
-
-function parseJsonSafeObject(raw: string): any {
-  // Strip markdown fences and JS comments
-  let s = raw
-    .replace(/```json\s*/gi, "")
-    .replace(/```\s*/g, "")
-    .replace(/\/\/[^\n]*/g, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .trim();
-
-  // Extract the outermost { ... }
-  const start = s.indexOf("{");
-  const end   = s.lastIndexOf("}");
-  if (start !== -1 && end !== -1 && end > start) {
-    s = s.substring(start, end + 1);
-  }
-
-  const fixed = onePassFix(s).replace(/,\s*([\]}])/g, "$1");
-
-  // Layer 1: fixed string
-  try { return JSON.parse(fixed); } catch (_) {}
-
-  // Layer 2: strip non-printable chars
-  try {
-    return JSON.parse(fixed.replace(/[^\x20-\x7E\u00A0-\uFFFF]/g, ""));
-  } catch (_) {}
-
-  // Layer 3: collapse newlines
-  try {
-    return JSON.parse(fixed.replace(/\n/g, " ").replace(/\r/g, ""));
-  } catch (lastErr) {
-    throw new Error(
-      `JSON parsing failed.\nLast error: ${(lastErr as Error).message}\nSnippet: ${fixed.slice(0, 400)}`
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — Parse with Gemini AI
-// Now uses parseJsonSafeObject (3-layer repair) instead of plain JSON.parse
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function parseWithGemini(text: string, filename: string): Promise<any | null> {
   try {
-    const { callGeminiWithRetry } = await import("./ai.service");
+    
     const raw = await callGeminiWithRetry(PARSE_PROMPT(text), 3);
-
-    let parsed: any;
-    try {
-      parsed = parseJsonSafeObject(raw);
-    } catch (jsonErr: any) {
-      console.warn(`⚠️  JSON repair failed for ${filename}: ${jsonErr.message}`);
-      return null;
-    }
-
+    const cleaned = raw
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+    const parsed = JSON.parse(cleaned);
     if (!parsed.firstName && !parsed.lastName && !parsed.email) {
       console.warn(`⚠️  Gemini returned profile with no name/email for ${filename} — using regex fallback`);
       return null;
@@ -962,15 +836,66 @@ function regexFallback(text: string, filename: string): any {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ── Adaptive rate limiter ────────────────────────────────────────────────────
+// Gemini free tier:  15 requests/minute  → min 4000ms between calls (safe = 4.5s)
+// Gemini paid tier:  1000 requests/minute → min 60ms between calls (safe = 500ms)
+//
+// We auto-detect tier from the env var GEMINI_TIER="paid" (default = free).
+// On a 429 response, callGeminiWithRetry already backs off 2s/4s/6s and retries.
+// This throttle prevents hitting 429 in the first place.
+//
+// Why a sliding window instead of just a fixed delay:
+//   If Gemini takes 3s to respond, we've already waited 3s — so we only need
+//   to add the remaining gap, not the full delay again.
+
+const IS_PAID_TIER = (process.env.GEMINI_TIER || "free").toLowerCase() === "paid";
+const MIN_INTERVAL_MS = IS_PAID_TIER ? 500 : 4500; // 4.5s = ~13 req/min on free (safe under 15)
+
 let lastGeminiCallAt = 0;
+let geminiCallsThisMinute = 0;
+let geminiMinuteWindowStart = 0;
 
 async function throttledGeminiParse(text: string, filename: string): Promise<any | null> {
-  const now = Date.now();
-  const timeSinceLast = now - lastGeminiCallAt;
-  if (timeSinceLast < 500) {
-    await delay(500 - timeSinceLast);
+  // Hard check: if no Gemini API key, skip straight to regex fallback
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn(`⚠️  GEMINI_API_KEY not set — using regex fallback for ${filename}`);
+    return null;
   }
+  const now = Date.now();
+
+  // Reset per-minute counter every 60 seconds
+  if (now - geminiMinuteWindowStart >= 60000) {
+    geminiCallsThisMinute = 0;
+    geminiMinuteWindowStart = now;
+  }
+
+  // Hard cap: if we've already made 13 calls this minute on free tier (buffer of 2),
+  // wait until the minute window resets before making another call
+  const hardCap = IS_PAID_TIER ? 950 : 13;
+  if (geminiCallsThisMinute >= hardCap) {
+    const waitUntilReset = 60000 - (now - geminiMinuteWindowStart);
+    if (waitUntilReset > 0) {
+      console.log(`⏳ Gemini rate cap reached (${geminiCallsThisMinute} calls). Waiting ${Math.ceil(waitUntilReset / 1000)}s before ${filename}…`);
+      await delay(waitUntilReset + 200); // +200ms buffer
+      // Reset after wait
+      geminiCallsThisMinute = 0;
+      geminiMinuteWindowStart = Date.now();
+    }
+  }
+
+  // Sliding-window minimum interval
+  const elapsed = Date.now() - lastGeminiCallAt;
+  if (elapsed < MIN_INTERVAL_MS) {
+    const wait = MIN_INTERVAL_MS - elapsed;
+    console.log(`⏱  Throttling Gemini for ${filename} — waiting ${wait}ms (${IS_PAID_TIER ? "paid" : "free"} tier)`);
+    await delay(wait);
+  }
+
   lastGeminiCallAt = Date.now();
+  geminiCallsThisMinute++;
+
+  console.log(`🤖 Gemini call ${geminiCallsThisMinute} this minute — parsing ${filename}`);
   return parseWithGemini(text, filename);
 }
 
@@ -1004,14 +929,18 @@ export async function parseResumeFile(
   }
 
   // 2. Upload to Cloudinary while the file still exists on disk
+  //    Cloudinary is optional — if not configured or fails, we continue without it.
+  //    The file is cleaned up inside uploadResumeToCloud after upload (success or fail).
+  //    If skipCloudinary=true we clean up here instead.
   let resumeUrl = "";
   if (!skipCloudinary) {
     try {
-      const { uploadResumeToCloud } = await import("./cloudinary.service");
       resumeUrl = await uploadResumeToCloud(filePath, filename);
+      // uploadResumeToCloud cleans up the file itself — do NOT call cleanupFile here
     } catch (cloudErr: any) {
-      console.warn(`⚠️  Cloudinary upload skipped for ${filename}:`, cloudErr.message);
-      cleanupFile(filePath);
+      // This catch is for unexpected errors — uploadResumeToCloud normally handles its own errors
+      console.warn(`⚠️  Cloudinary upload error for ${filename}:`, cloudErr.message);
+      cleanupFile(filePath); // only clean up here if uploadResumeToCloud threw before cleaning
     }
   } else {
     cleanupFile(filePath);
@@ -1058,11 +987,10 @@ export async function parseResumeFile(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC: parseResumeUrl
-// Also upgraded to use parseJsonSafeObject for consistency
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function parseResumeUrl(url: string, rawText: string): Promise<any> {
-  const { callGeminiWithRetry } = await import("./ai.service");
+  
 
   const prompt = `You are an expert resume parser.
 Extract a complete structured applicant profile from the text below.
@@ -1095,7 +1023,7 @@ ${rawText.slice(0, 14000)}`;
 
   try {
     const raw    = await callGeminiWithRetry(prompt, 3);
-    const parsed = parseJsonSafeObject(raw);
+    const parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
     parsed.skills = sanitizeSkills(parsed.skills || []);
     return { ...parsed, source: "external", resumeUrl: url };
   } catch {

@@ -1,9 +1,4 @@
 // umurava-backend/src/controllers/applicant.controller.ts
-//
-// ✅ ZIP: extract → batch Gemini (50 files = 7 calls, not 50)
-// ✅ Multi-person PDF: Gemini finds ALL CVs in one call
-// ✅ Single PDF: synchronous instant response
-// ✅ Duplicate detection: graceful per-file toast
 
 import { Response } from "express";
 import fs from "fs";
@@ -11,12 +6,12 @@ import path from "path";
 import Applicant from "../models/Applicant.model";
 import Job from "../models/Job.model";
 import ScreeningResult from "../models/ScreeningResult.model";
-import { parseCSVFile }  from "../services/csv.service";
-import { parseXLSXFile } from "../services/xlsx.service";
+import { parseCSVFile }          from "../services/csv.service";
+import { parseXLSXFile }         from "../services/xlsx.service";
 import { parseResumeFile, parseResumeUrl } from "../services/resume.service";
-import { extractZip }    from "../services/zip.service";
+import { extractZip }            from "../services/zip.service";
+import { splitMultiPersonPDF }   from "../services/pdf.splitter.service";
 import { enqueueResumeJob, getQueueJob, FileResult } from "../services/queue.service";
-import { parseMultiPersonPDF } from "../services/batch.resume.service";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -28,275 +23,614 @@ function cleanupFile(filePath?: string): void {
   }
 }
 
-const BLOCKED_DOMAINS = ["linkedin.com","instagram.com","facebook.com","twitter.com","x.com","tiktok.com"];
+const BLOCKED_DOMAINS = [
+  "linkedin.com", "instagram.com", "facebook.com",
+  "twitter.com", "x.com", "tiktok.com",
+];
 
 async function fetchUrl(url: string): Promise<{ buffer: Buffer; contentType: string }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const lib = parsedUrl.protocol === "https:" ? require("https") : require("http");
-    const req = lib.request({
-      hostname: parsedUrl.hostname, path: parsedUrl.pathname + parsedUrl.search,
-      method: "GET",
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; UmuravaAI/1.0)", "Accept": "text/html,application/pdf,*/*" },
-      timeout: 15000,
-    }, (response: any) => {
-      if ([301,302,307,308].includes(response.statusCode) && response.headers.location) {
-        return fetchUrl(response.headers.location).then(resolve).catch(reject);
+    const request = lib.request(
+      {
+        hostname: parsedUrl.hostname,
+        path:     parsedUrl.pathname + parsedUrl.search,
+        method:   "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; UmuravaAI/1.0; +https://umurava.ai)",
+          "Accept":     "text/html,application/pdf,text/plain,*/*",
+        },
+        timeout: 15000,
+      },
+      (response: any) => {
+        if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
+          return fetchUrl(response.headers.location).then(resolve).catch(reject);
+        }
+        if (response.statusCode !== 200) {
+          return reject(new Error(`URL returned HTTP ${response.statusCode}`));
+        }
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () =>
+          resolve({ buffer: Buffer.concat(chunks), contentType: response.headers["content-type"] || "" })
+        );
       }
-      if (response.statusCode !== 200) return reject(new Error(`URL returned HTTP ${response.statusCode}`));
-      const chunks: Buffer[] = [];
-      response.on("data", (c: Buffer) => chunks.push(c));
-      response.on("end", () => resolve({ buffer: Buffer.concat(chunks), contentType: response.headers["content-type"] || "" }));
-    });
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("Request timed out")); });
-    req.end();
+    );
+    request.on("error", reject);
+    request.on("timeout", () => { request.destroy(); reject(new Error("Request timed out after 15 seconds")); });
+    request.end();
   });
 }
 
 function htmlToText(html: string): string {
-  return html.replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&[a-z]+;/gi," ").replace(/\s+/g," ").trim();
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-type UrlKind = "csv"|"xlsx"|"xls"|"pdf"|"docx"|"text"|"html";
-function detectKind(ct: string, url: string): UrlKind {
-  const c = ct.toLowerCase(), ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
-  if (c.includes("text/csv") || ext==="csv") return "csv";
-  if (c.includes("vnd.ms-excel") || ext==="xls") return "xls";
-  if (c.includes("spreadsheetml") || ext==="xlsx") return "xlsx";
-  if (c.includes("application/pdf") || ext==="pdf") return "pdf";
-  if (c.includes("wordprocessingml") || ext==="docx") return "docx";
-  if (c.includes("text/plain") || ext==="txt") return "text";
+type UrlKind = "csv" | "xlsx" | "xls" | "pdf" | "docx" | "text" | "html";
+
+function detectKind(contentType: string, url: string): UrlKind {
+  const ct  = contentType.toLowerCase();
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  if (ct.includes("text/csv") || ext === "csv") return "csv";
+  if (ct.includes("application/vnd.ms-excel") || ext === "xls") return "xls";
+  if (ct.includes("spreadsheetml") || ct.includes("vnd.openxmlformats") || ext === "xlsx") return "xlsx";
+  if (ct.includes("application/pdf") || ext === "pdf") return "pdf";
+  if (ct.includes("application/vnd.openxmlformats") && ext === "docx") return "docx";
+  if (ct.includes("text/plain") || ext === "txt") return "text";
   return "html";
 }
 
-async function linkApplicantToJob(profile: any, jobId: string): Promise<{ applicant: any; isNew: boolean }> {
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: link an applicant to a job, handling duplicates gracefully
+// ─────────────────────────────────────────────────────────────────────────────
+async function linkApplicantToJob(
+  profile: any,
+  jobId: string
+): Promise<{ applicant: any; isNew: boolean }> {
   if (!profile.email || profile.email.trim() === "") {
-    profile = { ...profile, email: `candidate.${Date.now()}.${Math.random().toString(36).slice(2,7)}@review.pending`, _emailMissing: true };
+    const fallbackEmail = `candidate.${Date.now()}.${Math.random().toString(36).slice(2, 7)}@review.pending`;
+    profile = { ...profile, email: fallbackEmail, _emailMissing: true };
   }
+
   const existing = await Applicant.findOne({ email: profile.email.toLowerCase().trim() });
+
   if (existing) {
     const update: any = { $addToSet: { jobIds: jobId } };
-    if (profile.resumeUrl && profile.resumeUrl !== existing.resumeUrl) update.$set = { resumeUrl: profile.resumeUrl };
+    if (profile.resumeUrl && profile.resumeUrl !== existing.resumeUrl) {
+      update.$set = { resumeUrl: profile.resumeUrl };
+    }
     const updated = await Applicant.findByIdAndUpdate(existing._id, update, { new: true });
     return { applicant: updated || existing, isNew: false };
   }
-  const applicant = await Applicant.create({ ...profile, email: profile.email.toLowerCase().trim(), jobIds: [jobId] });
+
+  const applicant = await Applicant.create({
+    ...profile,
+    email: profile.email.toLowerCase().trim(),
+    jobIds: [jobId],
+  });
   return { applicant, isNew: true };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Single-file fallback — synchronous, used by queue when batch fails
+// The single function used by the queue worker to process one resume file.
+// Handles multi-person PDFs by splitting and saving each person separately.
 // ─────────────────────────────────────────────────────────────────────────────
 async function processOneResumeFile(filePath: string, jobId: string): Promise<FileResult> {
   const fileName = path.basename(filePath);
   const ext      = path.extname(filePath).toLowerCase();
 
   try {
+    // For PDFs: extract text first to check if multi-person
     if (ext === ".pdf") {
       const pdfParseModule = require("pdf-parse");
-      const pdfParse = pdfParseModule.default ?? pdfParseModule;
-      const { text } = await pdfParse(fs.readFileSync(filePath));
-      const emailCount = (text?.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/g) || []).length;
+      const pdfParse       = pdfParseModule.default ?? pdfParseModule;
+      const buffer         = fs.readFileSync(filePath);
+      const { text }       = await pdfParse(buffer);
 
-      if (emailCount >= 2) {
-        console.log(`📋 Multi-person PDF: ${fileName} (${emailCount} emails)`);
-        const profiles = await parseMultiPersonPDF(text || "", fileName);
-        if (profiles.length > 1) {
-          let firstResult: FileResult | null = null;
-          for (let i = 0; i < profiles.length; i++) {
-            const { applicant, isNew } = await linkApplicantToJob(profiles[i], jobId);
-            if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
-            if (i === 0) firstResult = toFileResult(`${fileName} (${profiles.length} found)`, applicant, !isNew);
+      const { blocks, wasMulti } = splitMultiPersonPDF(text || "");
+
+      if (wasMulti && blocks.length > 1) {
+        // Multi-person PDF — parse and save each block separately
+        console.log(`📋 Multi-person PDF detected: ${fileName} — ${blocks.length} candidates`);
+        let firstResult: FileResult | null = null;
+        let newCount = 0;
+
+        for (let i = 0; i < blocks.length; i++) {
+          const blockText = blocks[i];
+          // Write block to a temp file so parseResumeFile can process it
+          const tmpPath = filePath.replace(ext, `_person${i + 1}${ext}`);
+          // Use parseResumeUrl which accepts raw text directly (no file needed)
+          const { parseResumeUrl: parseText } = await import("../services/resume.service");
+          const profile = await parseText(`block_${i}_${fileName}`, blockText);
+          const { applicant, isNew } = await linkApplicantToJob(profile, jobId);
+          if (isNew) {
+            newCount++;
+            await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
           }
-          cleanupFile(filePath);
-          return firstResult || emptyResult(fileName);
+          if (i === 0) {
+            firstResult = {
+              fileName:      `${fileName} (person ${i + 1} of ${blocks.length})`,
+              candidateName: `${applicant.firstName || ""} ${applicant.lastName || ""}`.trim() || "Unknown",
+              email:         applicant.email || "",
+              headline:      applicant.headline || "",
+              location:      applicant.location || "",
+              skillsCount:   (applicant.skills        || []).length,
+              expCount:      (applicant.experience     || []).length,
+              projectCount:  (applicant.projects       || []).length,
+              eduCount:      (applicant.education      || []).length,
+              certCount:     (applicant.certifications || []).length,
+              isExisting:    !isNew,
+            };
+          }
         }
+
+        cleanupFile(filePath);
+        return firstResult || {
+          fileName, candidateName: fileName, email: "", headline: "",
+          location: "", skillsCount: 0, expCount: 0, projectCount: 0,
+          eduCount: 0, certCount: 0, isExisting: false,
+        };
       }
     }
 
+    // Single-person file — normal flow
     const profile = await parseResumeFile(filePath);
     const { applicant, isNew } = await linkApplicantToJob(profile, jobId);
-    if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
-    return toFileResult(fileName, applicant, !isNew);
+
+    if (isNew) {
+      await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+    }
+
+    return {
+      fileName,
+      candidateName: `${applicant.firstName || ""} ${applicant.lastName || ""}`.trim() || "Unknown",
+      email:         applicant.email || "",
+      headline:      applicant.headline || "",
+      location:      applicant.location || "",
+      skillsCount:   (applicant.skills        || []).length,
+      expCount:      (applicant.experience     || []).length,
+      projectCount:  (applicant.projects       || []).length,
+      eduCount:      (applicant.education      || []).length,
+      certCount:     (applicant.certifications || []).length,
+      isExisting:    !isNew,
+    };
   } catch (err: any) {
     cleanupFile(filePath);
     throw err;
   }
 }
 
-function toFileResult(fileName: string, applicant: any, isExisting: boolean): FileResult {
-  return {
-    fileName,
-    candidateName: `${applicant.firstName||""} ${applicant.lastName||""}`.trim() || "Unknown",
-    email:         applicant.email || "",
-    headline:      applicant.headline || "",
-    location:      applicant.location || "",
-    skillsCount:   (applicant.skills        || []).length,
-    expCount:      (applicant.experience     || []).length,
-    projectCount:  (applicant.projects       || []).length,
-    eduCount:      (applicant.education      || []).length,
-    certCount:     (applicant.certifications || []).length,
-    isExisting,
-  };
-}
-
-function emptyResult(fileName: string): FileResult {
-  return { fileName, candidateName: fileName, email: "", headline: "", location: "", skillsCount: 0, expCount: 0, projectCount: 0, eduCount: 0, certCount: 0, isExisting: false };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Route handlers
+// GET /api/applicants/:jobId
 // ─────────────────────────────────────────────────────────────────────────────
-
 export const getApplicants = async (req: any, res: Response): Promise<void> => {
   try {
     const applicants = await Applicant.find({ jobIds: req.params.jobId });
     res.json({ success: true, count: applicants.length, applicants });
-  } catch { res.status(500).json({ success: false, message: "Failed to get applicants" }); }
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to get applicants" });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/profile/:id
+// ─────────────────────────────────────────────────────────────────────────────
 export const getApplicantById = async (req: any, res: Response): Promise<void> => {
   try {
     const applicant = await Applicant.findById(req.params.id);
-    if (!applicant) { res.status(404).json({ success: false, message: "Applicant not found" }); return; }
+    if (!applicant) {
+      res.status(404).json({ success: false, message: "Applicant not found" });
+      return;
+    }
     res.json({ success: true, applicant });
-  } catch { res.status(500).json({ success: false, message: "Failed to get applicant" }); }
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: "Failed to get applicant" });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/umurava
+// ─────────────────────────────────────────────────────────────────────────────
 export const getUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const profiles = await Applicant.find({ source: "umurava" }).limit(200);
     res.json({ success: true, count: profiles.length, profiles });
-  } catch { res.status(500).json({ success: false, message: "Failed to get Umurava profiles" }); }
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Failed to get Umurava profiles" });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/applicants/queue/:queueId
+// Frontend polls this to get live progress on batch uploads
+// ─────────────────────────────────────────────────────────────────────────────
 export const getQueueStatus = async (req: any, res: Response): Promise<void> => {
   try {
     const job = getQueueJob(req.params.queueId);
-    if (!job) { res.status(404).json({ success: false, message: "Queue job not found or expired" }); return; }
+    if (!job) {
+      res.status(404).json({ success: false, message: "Queue job not found" });
+      return;
+    }
     res.json({ success: true, ...job });
-  } catch { res.status(500).json({ success: false, message: "Failed to get queue status" }); }
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: "Failed to get queue status" });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/csv
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadCSV = async (req: any, res: Response): Promise<void> => {
   const filePath = req.file?.path;
   try {
-    if (!req.file || !req.body.jobId) { res.status(400).json({ success: false, message: !req.file ? "No file uploaded" : "jobId required" }); return; }
-    const parsed = await parseCSVFile(filePath);
-    if (!parsed.length) { res.status(400).json({ success: false, message: "No valid rows found. Check firstName/lastName/email columns." }); return; }
-    const inserted = await Applicant.insertMany(parsed.map(p => ({ ...p, jobIds: [req.body.jobId] })), { ordered: false }).catch(e => e.code===11000||e.writeErrors ? e.insertedDocs||[] : (() => { throw e; })());
-    const count = Array.isArray(inserted) ? inserted.length : 0;
-    if (count > 0) await Job.findByIdAndUpdate(req.body.jobId, { $inc: { applicantsCount: count } });
-    const updatedJob = await Job.findById(req.body.jobId).lean();
-    res.json({ success: true, count, applicantsCount: (updatedJob as any)?.applicantsCount??0, message: `${count} applicant${count!==1?"s":""} uploaded${parsed.length>count?` (${parsed.length-count} duplicates skipped)`:""}` });
-  } catch (e: any) { res.status(500).json({ success: false, message: "CSV upload failed: "+e.message }); }
-  finally { cleanupFile(filePath); }
-};
-
-// POST /api/applicants/upload/resume — single=sync, multiple=batch queue
-export const uploadResume = async (req: any, res: Response): Promise<void> => {
-  try {
+    if (!req.file) { res.status(400).json({ success: false, message: "No file uploaded" }); return; }
     const { jobId } = req.body;
     if (!jobId) { res.status(400).json({ success: false, message: "jobId is required" }); return; }
 
-    const files: Express.Multer.File[] = req.files
-      ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat() as Express.Multer.File[])
-      : req.file ? [req.file] : [];
-
-    if (!files.length) { res.status(400).json({ success: false, message: "No files uploaded" }); return; }
-
-    if (files.length === 1) {
-      const result = await processOneResumeFile(files[0].path, jobId);
-      const updatedJob = await Job.findById(jobId).lean();
-      res.json({ success: true, count: result.isExisting?0:1, applicantsCount: (updatedJob as any)?.applicantsCount??0, results: [result], message: result.isExisting?"Candidate already exists — linked.":"Resume parsed and candidate saved." });
+    const parsed = await parseCSVFile(filePath);
+    if (parsed.length === 0) {
+      res.status(400).json({ success: false, message: "No valid rows found in CSV. Check that it has firstName/lastName/email columns." });
       return;
     }
 
-    const queueId = await enqueueResumeJob(files.map(f=>f.path), jobId, processOneResumeFile);
-    const batchCalls = Math.ceil(files.length/8);
-    res.json({ success: true, queued: true, queueId, total: files.length, message: `${files.length} files queued — ${batchCalls} Gemini call${batchCalls!==1?"s":""} (batched, not ${files.length} separate calls).` });
-  } catch (e: any) { res.status(500).json({ success: false, message: "Resume upload failed: "+e.message }); }
+    const applicants = parsed.map((p) => ({ ...p, jobIds: [jobId] }));
+    const inserted   = await Applicant.insertMany(applicants, { ordered: false }).catch((e) => {
+      if (e.code === 11000 || e.writeErrors) return e.insertedDocs || [];
+      throw e;
+    });
+
+    const count = Array.isArray(inserted) ? inserted.length : 0;
+    if (count > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: count } });
+
+    const updatedJob = await Job.findById(jobId).lean();
+    res.json({
+      success: true, count,
+      applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
+      message: `${count} applicant${count !== 1 ? "s" : ""} uploaded from CSV${parsed.length > count ? ` (${parsed.length - count} duplicates skipped)` : ""}`,
+    });
+  } catch (error: any) {
+    console.error("❌ CSV upload error:", error);
+    res.status(500).json({ success: false, message: "CSV upload failed: " + error.message });
+  } finally {
+    cleanupFile(filePath);
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/resume  (single OR multiple files)
+//
+// ✅ FIXED: responds IMMEDIATELY with a queueId — no more Railway 30s timeout.
+// Processing happens in the background. Frontend polls /queue/:queueId for progress.
+// ─────────────────────────────────────────────────────────────────────────────
+export const uploadResume = async (req: any, res: Response): Promise<void> => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) {
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
+
+    // Support both single (req.file) and multiple (req.files) uploads
+    const files: Express.Multer.File[] = req.files
+      ? (Array.isArray(req.files) ? req.files : Object.values(req.files).flat())
+      : req.file ? [req.file] : [];
+
+    if (files.length === 0) {
+      res.status(400).json({ success: false, message: "No files uploaded" });
+      return;
+    }
+
+    const filePaths = files.map((f) => f.path);
+
+    if (files.length === 1) {
+      // Single file — process synchronously for instant result (no polling needed)
+      const result = await processOneResumeFile(filePaths[0], jobId);
+      const updatedJob = await Job.findById(jobId).lean();
+      // Also fetch the saved applicant so the frontend can read full profile fields
+      const savedApplicant = result.email
+        ? await Applicant.findOne({ email: result.email }).lean()
+        : null;
+      res.json({
+        success:   true,
+        count:     result.isExisting ? 0 : 1,
+        applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
+        // applicant field for backwards compatibility with existing frontend code
+        applicant: savedApplicant,
+        // results array for new frontend code
+        results:   [{ ...result, status: result.isExisting ? "linked" : "created" }],
+        message:   result.isExisting ? "Candidate already exists — linked to job." : "Resume parsed and candidate added.",
+      });
+      return;
+    }
+
+    // Multiple files — enqueue and return immediately ✅
+    const queueId = await enqueueResumeJob(filePaths, jobId, processOneResumeFile);
+
+    res.json({
+      success:   true,
+      queued:    true,
+      queueId,
+      total:     files.length,
+      message:   `Processing ${files.length} files in the background. Poll /api/applicants/queue/${queueId} for progress.`,
+    });
+
+  } catch (error: any) {
+    console.error("❌ Resume upload error:", error);
+    res.status(500).json({ success: false, message: "Resume upload failed: " + error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/applicants/upload/zip
+//
+// Flow:
+//   1. Recruiter uploads a .zip file containing many CVs
+//   2. We extract all PDFs/DOCXs from the ZIP
+//   3. Enqueue them for background processing
+//   4. Respond immediately with queueId
+//   5. Frontend polls /queue/:queueId for live progress
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadZip = async (req: any, res: Response): Promise<void> => {
   const zipPath = req.file?.path;
   try {
-    if (!req.file || !req.body.jobId) { cleanupFile(zipPath); res.status(400).json({ success: false, message: !req.file?"No ZIP uploaded":"jobId required" }); return; }
+    if (!req.file) {
+      res.status(400).json({ success: false, message: "No ZIP file uploaded" });
+      return;
+    }
+    const { jobId } = req.body;
+    if (!jobId) {
+      cleanupFile(zipPath);
+      res.status(400).json({ success: false, message: "jobId is required" });
+      return;
+    }
+
     console.log(`📦 Extracting ZIP: ${req.file.originalname}`);
-    const { files, skipped } = await extractZip(zipPath, "uploads/");
+    const { files, skipped, total } = await extractZip(zipPath, "uploads/");
+
+    // Delete the ZIP itself — we only keep the extracted files
     cleanupFile(zipPath);
-    if (!files.length) { res.status(400).json({ success: false, message: `No resume files in ZIP. ${skipped.length} skipped.` }); return; }
-    console.log(`📦 ZIP: ${files.length} files to batch-parse`);
-    const queueId   = await enqueueResumeJob(files.map(f=>f.filePath), req.body.jobId, processOneResumeFile);
-    const batchCalls= Math.ceil(files.length/8);
-    res.json({ success: true, queued: true, queueId, total: files.length, skipped: skipped.length, skippedDetail: skipped.slice(0,10), message: `ZIP opened — ${files.length} resume${files.length!==1?"s":""} queued. ${batchCalls} Gemini call${batchCalls!==1?"s":""} instead of ${files.length}.` });
-  } catch (e: any) { cleanupFile(zipPath); res.status(500).json({ success: false, message: "ZIP upload failed: "+e.message }); }
+
+    if (files.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: `No supported resume files found in the ZIP. ${skipped.length} files were skipped (${skipped.map(s => s.reason).join(", ")}).`,
+      });
+      return;
+    }
+
+    console.log(`📦 ZIP extracted: ${files.length} files to process, ${skipped.length} skipped`);
+
+    // Enqueue all extracted file paths for background processing
+    const filePaths = files.map((f) => f.filePath);
+    const queueId   = await enqueueResumeJob(filePaths, jobId, processOneResumeFile);
+
+    res.json({
+      success:       true,
+      queued:        true,
+      queueId,
+      total:         files.length,
+      skipped:       skipped.length,
+      skippedDetail: skipped,
+      message:       `ZIP opened — ${files.length} resume${files.length !== 1 ? "s" : ""} queued for processing. Poll /api/applicants/queue/${queueId} for live progress.`,
+    });
+
+  } catch (error: any) {
+    console.error("❌ ZIP upload error:", error);
+    cleanupFile(zipPath);
+    res.status(500).json({ success: false, message: "ZIP upload failed: " + error.message });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/upload/url
+// ─────────────────────────────────────────────────────────────────────────────
 export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, url } = req.body;
-    if (!jobId||!url) { res.status(400).json({ success: false, message: "jobId and url are required" }); return; }
+    if (!jobId || !url) {
+      res.status(400).json({ success: false, message: "jobId and url are required" });
+      return;
+    }
+
     let parsedUrl: URL;
-    try { parsedUrl = new URL(url); } catch { res.status(400).json({ success: false, message: "Invalid URL" }); return; }
-    if (BLOCKED_DOMAINS.some(d=>parsedUrl.hostname.includes(d))) { res.status(400).json({ success: false, message: "LinkedIn/social media URLs not supported. Please upload the PDF directly." }); return; }
+    try { parsedUrl = new URL(url); }
+    catch {
+      res.status(400).json({ success: false, message: "Invalid URL format. Provide a full URL including https://" });
+      return;
+    }
+
+    const isBlocked = BLOCKED_DOMAINS.some((d) => parsedUrl.hostname.includes(d));
+    if (isBlocked) {
+      res.status(400).json({
+        success: false,
+        message: "LinkedIn and social media URLs cannot be imported automatically. Please download the resume as PDF and upload it directly.",
+      });
+      return;
+    }
+
+    console.log(`🌐 Fetching URL: ${url}`);
     const { buffer, contentType } = await fetchUrl(url);
     const kind = detectKind(contentType, url);
+
+    if (kind === "csv" || kind === "xlsx" || kind === "xls") {
+      const XLSX = require("xlsx");
+      const workbook = kind === "csv"
+        ? XLSX.read(buffer.toString("utf-8"), { type: "string" })
+        : XLSX.read(buffer, { type: "buffer" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      const applicants: any[] = [];
+      for (const row of rows) {
+        const firstName = (row.firstName || row.first_name || (row.name || "").split(" ")[0] || "").toString().trim();
+        const lastName  = (row.lastName  || row.last_name  || (row.name || "").split(" ").slice(1).join(" ") || "").toString().trim();
+        const email     = (row.email || row.Email || "").toString().trim();
+        if (!(firstName || lastName) || !email) continue;
+        applicants.push({
+          firstName, lastName, email,
+          headline: (row.headline || "").toString(),
+          skills: [], languages: [], experience: [], education: [],
+          certifications: [], projects: [],
+          availability: { status: "Available", type: "Full-time", startDate: "" },
+          socialLinks:  { linkedin: "", github: "", portfolio: "" },
+          source: "external", jobIds: [jobId],
+        });
+      }
+
+      if (applicants.length === 0) {
+        res.status(400).json({ success: false, message: "No valid rows found in the spreadsheet URL." });
+        return;
+      }
+
+      const inserted = await Applicant.insertMany(applicants, { ordered: false }).catch((e) => {
+        if (e.code === 11000 || e.writeErrors) return e.insertedDocs || [];
+        throw e;
+      });
+      const count = Array.isArray(inserted) ? inserted.length : 0;
+      if (count > 0) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: count } });
+      const updatedJob = await Job.findById(jobId).lean();
+      res.json({ success: true, count, applicantsCount: (updatedJob as any)?.applicantsCount ?? 0, message: `${count} applicants imported from URL` });
+      return;
+    }
+
     let rawText = "";
-    if (kind==="pdf") { const m=require("pdf-parse"); rawText=(await (m.default??m)(buffer)).text||""; }
-    else if (kind==="docx") { rawText=(await require("mammoth").extractRawText({buffer})).value||""; }
-    else if (kind==="text") rawText=buffer.toString("utf-8");
-    else rawText=htmlToText(buffer.toString("utf-8"));
-    if (rawText.trim().length<50) { res.status(422).json({ success: false, message: "Not enough text at this URL. Upload the file directly." }); return; }
+    if (kind === "pdf") {
+      const pdfParseModule = require("pdf-parse");
+      const pdfParse = pdfParseModule.default ?? pdfParseModule;
+      rawText = (await pdfParse(buffer)).text || "";
+    } else if (kind === "docx") {
+      const mammoth = require("mammoth");
+      rawText = (await mammoth.extractRawText({ buffer })).value || "";
+    } else if (kind === "text") {
+      rawText = buffer.toString("utf-8");
+    } else {
+      rawText = htmlToText(buffer.toString("utf-8"));
+    }
+
+    if (rawText.trim().length < 50) {
+      res.status(422).json({ success: false, message: "Not enough readable text at this URL. Download and upload the file directly." });
+      return;
+    }
+
     const parsed = await parseResumeUrl(url, rawText);
     const { applicant, isNew } = await linkApplicantToJob(parsed, jobId);
     if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
     const updatedJob = await Job.findById(jobId).lean();
-    res.status(isNew?201:200).json({ success: true, count: isNew?1:0, applicant, applicantsCount: (updatedJob as any)?.applicantsCount??0, message: isNew?"Applicant imported from URL":"Already existed — linked to job" });
-  } catch (e: any) { res.status(500).json({ success: false, message: "URL import failed: "+e.message }); }
+    res.status(isNew ? 201 : 200).json({
+      success: true,
+      count: isNew ? 1 : 0,
+      applicant,
+      applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
+      message: isNew ? "Applicant imported from URL" : "Applicant already existed — linked to this job",
+    });
+  } catch (error: any) {
+    console.error("❌ URL import error:", error);
+    res.status(500).json({ success: false, message: "URL import failed: " + error.message });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/manual
+// ─────────────────────────────────────────────────────────────────────────────
 export const submitManualApplicant = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, ...profileData } = req.body;
     if (!jobId) { res.status(400).json({ success: false, message: "jobId is required" }); return; }
-    if (!profileData.firstName||!profileData.lastName||!profileData.email) { res.status(400).json({ success: false, message: "firstName, lastName, and email are required" }); return; }
-    const { applicant, isNew } = await linkApplicantToJob({ ...profileData, source: profileData.source||"external" }, jobId);
+    if (!profileData.firstName || !profileData.lastName || !profileData.email) {
+      res.status(400).json({ success: false, message: "firstName, lastName, and email are required" });
+      return;
+    }
+
+    const { applicant, isNew } = await linkApplicantToJob(
+      { ...profileData, source: profileData.source || "external" },
+      jobId
+    );
     if (isNew) await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: 1 } });
+
     const updatedJob = await Job.findById(jobId).lean();
-    res.status(isNew?201:200).json({ success: true, count: isNew?1:0, applicant, applicantsCount: (updatedJob as any)?.applicantsCount??0, message: isNew?"Applicant added.":"Already exists — linked." });
-  } catch (e: any) { res.status(500).json({ success: false, message: "Manual submit failed: "+e.message }); }
+    res.status(isNew ? 201 : 200).json({
+      success: true, count: isNew ? 1 : 0, applicant,
+      applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
+      message: isNew ? "Applicant added successfully." : "Applicant already exists — linked to this job.",
+    });
+  } catch (error: any) {
+    console.error("❌ Manual applicant error:", error);
+    res.status(500).json({ success: false, message: "Manual applicant submit failed: " + error.message });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/applicants/select
+// ─────────────────────────────────────────────────────────────────────────────
 export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, profileIds } = req.body;
-    if (!jobId||!Array.isArray(profileIds)||!profileIds.length) { res.status(400).json({ success: false, message: "jobId and profileIds[] required" }); return; }
-    const existing    = await Applicant.find({ _id: { $in: profileIds }, jobIds: jobId }).select("_id");
-    const existingIds = new Set(existing.map(p=>String(p._id)));
-    const newIds      = profileIds.filter((id: string)=>!existingIds.has(String(id)));
-    if (!newIds.length) { res.json({ success: true, count: 0, message: "All profiles already linked" }); return; }
+    if (!jobId || !Array.isArray(profileIds) || profileIds.length === 0) {
+      res.status(400).json({ success: false, message: "jobId and profileIds[] are required" });
+      return;
+    }
+
+    const alreadyLinked    = await Applicant.find({ _id: { $in: profileIds }, jobIds: jobId }).select("_id");
+    const alreadyLinkedIds = new Set(alreadyLinked.map((p) => String(p._id)));
+    const newIds           = profileIds.filter((id: string) => !alreadyLinkedIds.has(String(id)));
+
+    if (newIds.length === 0) {
+      res.json({ success: true, count: 0, message: "All selected profiles are already linked to this job" });
+      return;
+    }
+
     await Applicant.updateMany({ _id: { $in: newIds } }, { $addToSet: { jobIds: jobId } });
     await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: newIds.length } });
+
     const updatedJob = await Job.findById(jobId).lean();
-    res.json({ success: true, count: newIds.length, applicantsCount: (updatedJob as any)?.applicantsCount??0, message: `${newIds.length} profile${newIds.length!==1?"s":""} added.` });
-  } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
+    res.json({
+      success: true,
+      count: newIds.length,
+      applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
+      message: `${newIds.length} profile${newIds.length !== 1 ? "s" : ""} added to job.`,
+    });
+  } catch (error: any) {
+    console.error("❌ Umurava profile select error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/applicants/:jobId/applicant/:applicantId
+// ─────────────────────────────────────────────────────────────────────────────
 export const removeApplicantFromJob = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, applicantId } = req.params;
-    if (!jobId||jobId==="undefined"||!applicantId||applicantId==="undefined") { res.status(400).json({ success: false, message: "jobId and applicantId required" }); return; }
+    if (!jobId || jobId === "undefined") { res.status(400).json({ success: false, message: "jobId is required" }); return; }
+    if (!applicantId || applicantId === "undefined") { res.status(400).json({ success: false, message: "applicantId is required" }); return; }
+
     const applicant = await Applicant.findById(applicantId);
     if (!applicant) { res.status(404).json({ success: false, message: "Applicant not found" }); return; }
-    applicant.jobIds = applicant.jobIds.filter(id=>String(id)!==String(jobId));
-    if (!applicant.jobIds.length) await Applicant.findByIdAndDelete(applicantId);
-    else await applicant.save();
+
+    applicant.jobIds = applicant.jobIds.filter((id) => String(id) !== String(jobId));
+    if (applicant.jobIds.length === 0) {
+      await Applicant.findByIdAndDelete(applicantId);
+    } else {
+      await applicant.save();
+    }
+
     await ScreeningResult.updateMany({ jobId }, { $pull: { rankedCandidates: { candidateId: applicant._id } } });
     await Job.findByIdAndUpdate(jobId, { $inc: { applicantsCount: -1 } });
-    const updatedJob = await Job.findById(jobId).lean();
-    res.json({ success: true, message: "Removed successfully", applicantsCount: Math.max(0,(updatedJob as any)?.applicantsCount??0) });
-  } catch (e: any) { res.status(500).json({ success: false, message: "Remove failed: "+e.message }); }
+
+    const updatedJob      = await Job.findById(jobId).lean();
+    const applicantsCount = Math.max(0, (updatedJob as any)?.applicantsCount ?? 0);
+
+    res.json({ success: true, message: "Applicant removed from job successfully", applicantsCount });
+  } catch (error: any) {
+    console.error("❌ Remove applicant error:", error);
+    res.status(500).json({ success: false, message: "Failed to remove applicant: " + error.message });
+  }
 };
