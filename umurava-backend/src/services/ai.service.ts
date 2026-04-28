@@ -1,6 +1,8 @@
 // umurava-backend/src/services/ai.service.ts
-// Fixed: retry logic now handles 429 (rate limit), timeout, network errors,
-//        not just 503. Exponential backoff with jitter.
+// Fixed:
+//   - screenCandidates now accepts topN param (was hardcoded to 10)
+//   - retry logic handles 429/quota/rate-limit errors with proper messages
+//   - exponential backoff: 2s, 4s, 8s ± jitter
 
 import { geminiModel } from "../config/gemini";
 import {
@@ -27,21 +29,17 @@ with formal education degrees over self-taught developers. \
 Skills and project experience should be weighted equally to \
 formal credentials. Final decisions must be made by human recruiters.`;
 
-/**
- * Call Gemini with exponential backoff retry.
- * Fixed to handle:
- *   - 503 Service Unavailable (model overloaded)
- *   - 429 Rate Limited (too many requests)
- *   - ETIMEDOUT / ECONNRESET (network blips)
- *   - Generic server-side errors
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Call Gemini with exponential backoff retry.
+// Handles: 503 overloaded · 429 rate limited · ETIMEDOUT · ECONNRESET
+// ─────────────────────────────────────────────────────────────────────────────
 export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
   let lastError: any;
 
   for (let i = 0; i < retries; i++) {
     try {
       const result = await geminiModel.generateContent(prompt);
-      const text = result.response.text();
+      const text   = result.response.text();
       if (!text || text.trim().length === 0) {
         throw new Error("Gemini returned an empty response");
       }
@@ -49,15 +47,16 @@ export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<
     } catch (error: any) {
       lastError = error;
 
-      const msg = (error.message || "").toLowerCase();
+      const msg    = (error.message || "").toLowerCase();
       const status = error.status || error.code || 0;
 
       const isRetryable =
-        msg.includes("503") || msg.includes("service unavailable") || msg.includes("overloaded") ||
-        msg.includes("429") || msg.includes("rate limit") || msg.includes("quota") ||
-        msg.includes("etimedout") || msg.includes("econnreset") || msg.includes("econnrefused") ||
-        msg.includes("socket hang up") || msg.includes("network") ||
-        status === 503 || status === 429 || status === 502;
+        msg.includes("503")              || msg.includes("service unavailable") || msg.includes("overloaded") ||
+        msg.includes("429")              || msg.includes("rate limit")          || msg.includes("quota")       ||
+        msg.includes("resource_exhausted") ||
+        msg.includes("etimedout")        || msg.includes("econnreset")         || msg.includes("econnrefused") ||
+        msg.includes("socket hang up")   || msg.includes("network")            ||
+        status === 503                   || status === 429                      || status === 502;
 
       if (isRetryable && i < retries - 1) {
         // Exponential backoff with jitter: 2s, 4s, 8s (± 500ms jitter)
@@ -66,13 +65,13 @@ export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<
         const delay     = baseDelay + jitter;
 
         console.log(
-          `⚠️  Gemini error (${error.message?.slice(0, 60)}) — retrying in ${Math.round(delay / 1000)}s (attempt ${i + 1}/${retries})`
+          `⚠️  Gemini error (${error.message?.slice(0, 80)}) — retrying in ${Math.round(delay / 1000)}s (attempt ${i + 1}/${retries})`
         );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
 
-      // Not retryable or out of retries — throw immediately
+      // Not retryable or out of retries
       break;
     }
   }
@@ -82,17 +81,20 @@ export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<
 
 const BATCH_SIZE = 20;
 
-// ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Screen candidates (batched)
-// ─────────────────────────────────────────────────────────────────
+// topN: how many to return — "all" returns every scored candidate
+// ─────────────────────────────────────────────────────────────────────────────
 export async function screenCandidates(
   job: JobInput,
-  applicants: ApplicantInput[]
+  applicants: ApplicantInput[],
+  topN: number | "all" = 10  // ✅ was hardcoded to .slice(0,10) — now configurable
 ): Promise<ScreeningOutput> {
   if (!applicants?.length) throw new Error("No applicants provided for screening");
 
-  console.log(`🤖 Screening ${applicants.length} candidates for: ${job.title}`);
+  console.log(`🤖 Screening ${applicants.length} candidates for: ${job.title} (topN=${topN})`);
 
+  // Split into batches of 20
   const batches: ApplicantInput[][] = [];
   for (let i = 0; i < applicants.length; i += BATCH_SIZE) {
     batches.push(applicants.slice(i, i + BATCH_SIZE));
@@ -131,7 +133,7 @@ export async function screenCandidates(
       }
     } catch (error) {
       console.error(`❌ Batch ${i + 1} failed:`, error);
-      // Continue with other batches — don't fail the whole screening
+      // Continue processing other batches — don't fail the whole screening
     }
   }
 
@@ -139,14 +141,16 @@ export async function screenCandidates(
     throw new Error("AI screening failed — all batches returned errors");
   }
 
-  const normalized    = normalizeScores(allResults);
-  const sorted        = normalized.sort((a, b) => b.score - a.score);
-  const topCandidates = sorted
-    .slice(0, 10)
-    .map((c, index) => ({ ...c, rank: index + 1 }));
+  const normalized = normalizeScores(allResults);
+  const sorted     = normalized.sort((a, b) => b.score - a.score);
+
+  // ✅ Respect topN — "all" returns everything, number slices to that count
+  const topCandidates = (
+    topN === "all" ? sorted : sorted.slice(0, topN)
+  ).map((c, index) => ({ ...c, rank: index + 1 }));
 
   console.log(
-    `✅ Screening complete — ${topCandidates.length} shortlisted from ${applicants.length} total`
+    `✅ Screening complete — ${topCandidates.length} returned from ${applicants.length} total (topN=${topN})`
   );
 
   return {
@@ -159,9 +163,9 @@ export async function screenCandidates(
   };
 }
 
-// ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Compare 2–3 candidates head-to-head
-// ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 export async function compareCandidates(
   job: JobInput,
   candidates: ApplicantInput[]
@@ -184,9 +188,9 @@ export async function compareCandidates(
   return { ...parsed, biasNotice: BIAS_NOTICE, comparedAt: new Date() };
 }
 
-// ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 // Recruiter AI chat
-// ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 export async function chatWithRecruiter(message: string, context: any): Promise<string> {
   const prompt = `
 You are an expert AI recruitment assistant helping a recruiter make better hiring decisions.
@@ -207,7 +211,9 @@ Reply in plain conversational English only.
   return callGeminiWithRetry(prompt, 2);
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Test Gemini connection
+// ─────────────────────────────────────────────────────────────────────────────
 export async function testGeminiConnection(): Promise<boolean> {
   try {
     const result = await geminiModel.generateContent('Reply with "OK" only.');

@@ -3,13 +3,12 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import {
   runScreening,
   getResults,
-  compareApplicants, // ✅ FIXED: was "compareCandidates" which doesn't exist in screeningService
+  compareApplicants,
 } from "../../services/screeningService";
 import type { ScreeningResult } from "../../types";
 import { buildScreeningChatContext } from "../../utils/screeningChatContext";
 
-// ✅ FIXED: now accepts an object { jobId, forceRerun?, topN? }
-// Previously accepted just jobId: string which broke when called with an object
+// ── triggerScreening ──────────────────────────────────────────────────────────
 export const triggerScreening = createAsyncThunk(
   "screening/run",
   async (
@@ -23,27 +22,28 @@ export const triggerScreening = createAsyncThunk(
         result:    body.data as ScreeningResult,
         fromCache: Boolean(body.fromCache),
       };
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { message?: string } }; message?: string };
-      return rejectWithValue(
-        err.response?.data?.message || err.message || "Screening failed"
-      );
+    } catch (error: any) {
+      // error.message is already the classified human-readable message
+      // from screeningService — pass it straight through
+      return rejectWithValue(error.message || "Screening failed");
     }
   }
 );
 
+// ── fetchResults ──────────────────────────────────────────────────────────────
 export const fetchResults = createAsyncThunk(
   "screening/results",
   async (jobId: string, { rejectWithValue }) => {
     try {
       const data = await getResults(jobId);
       return data.data as ScreeningResult;
-    } catch {
-      return rejectWithValue("Failed to get results");
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Failed to get results");
     }
   }
 );
 
+// ── compareSelected ───────────────────────────────────────────────────────────
 export const compareSelected = createAsyncThunk(
   "screening/compare",
   async (
@@ -51,21 +51,20 @@ export const compareSelected = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      // ✅ FIXED: was calling compareCandidates (didn't exist), now uses compareApplicants
       const data = await compareApplicants(jobId, candidateIds);
       return data.data;
-    } catch {
-      return rejectWithValue("Comparison failed");
+    } catch (error: any) {
+      return rejectWithValue(error.message || "Comparison failed");
     }
   }
 );
 
+// ── Slice ─────────────────────────────────────────────────────────────────────
 const screeningSlice = createSlice({
   name: "screening",
   initialState: {
     results:    null as ScreeningResult | null,
     fromCache:  false,
-    /** Last screening snapshot for AI assistant (kept after leaving job page). */
     assistantScreeningContext: null as Record<string, unknown> | null,
     comparison:         null as unknown,
     selectedForCompare: [] as string[],
@@ -90,6 +89,8 @@ const screeningSlice = createSlice({
       state.fromCache         = false;
       state.selectedForCompare = [];
       state.error             = null;
+      // ✅ Do NOT clear assistantScreeningContext here — the AI assistant
+      //    should keep its context even when results reload
     },
     clearAssistantContext: (state) => {
       state.assistantScreeningContext = null;
@@ -97,7 +98,7 @@ const screeningSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ── triggerScreening ───────────────────────────────────────────────────
+      // triggerScreening
       .addCase(triggerScreening.pending, (state) => {
         state.loading = true;
         state.error   = null;
@@ -111,10 +112,11 @@ const screeningSlice = createSlice({
       })
       .addCase(triggerScreening.rejected, (state, action) => {
         state.loading = false;
+        // action.payload is the classified message from rejectWithValue
         state.error   = action.payload as string;
       })
 
-      // ── fetchResults ───────────────────────────────────────────────────────
+      // fetchResults
       .addCase(fetchResults.pending, (state) => {
         state.error = null;
       })
@@ -128,7 +130,7 @@ const screeningSlice = createSlice({
         state.error = action.payload as string;
       })
 
-      // ── compareSelected ────────────────────────────────────────────────────
+      // compareSelected
       .addCase(compareSelected.pending, (state) => {
         state.loading = true;
       })
