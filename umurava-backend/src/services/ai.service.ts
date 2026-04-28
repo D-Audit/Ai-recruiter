@@ -1,8 +1,4 @@
 // umurava-backend/src/services/ai.service.ts
-// Fixed:
-//   - screenCandidates now accepts topN param (was hardcoded to 10)
-//   - retry logic handles 429/quota/rate-limit errors with proper messages
-//   - exponential backoff: 2s, 4s, 8s ± jitter
 
 import { geminiModel } from "../config/gemini";
 import {
@@ -30,10 +26,12 @@ Skills and project experience should be weighted equally to \
 formal credentials. Final decisions must be made by human recruiters.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Call Gemini with exponential backoff retry.
-// Handles: 503 overloaded · 429 rate limited · ETIMEDOUT · ECONNRESET
+// callGeminiWithRetry — exponential backoff, preserves real error type
 // ─────────────────────────────────────────────────────────────────────────────
-export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<string> {
+export async function callGeminiWithRetry(
+  prompt: string,
+  retries = 3
+): Promise<string> {
   let lastError: any;
 
   for (let i = 0; i < retries; i++) {
@@ -48,53 +46,63 @@ export async function callGeminiWithRetry(prompt: string, retries = 3): Promise<
       lastError = error;
 
       const msg    = (error.message || "").toLowerCase();
-      const status = error.status || error.code || 0;
+      const status = error.status || error.httpStatusCode || error.code || 0;
 
-      const isRetryable =
-        msg.includes("503")              || msg.includes("service unavailable") || msg.includes("overloaded") ||
-        msg.includes("429")              || msg.includes("rate limit")          || msg.includes("quota")       ||
-        msg.includes("resource_exhausted") ||
-        msg.includes("etimedout")        || msg.includes("econnreset")         || msg.includes("econnrefused") ||
-        msg.includes("socket hang up")   || msg.includes("network")            ||
-        status === 503                   || status === 429                      || status === 502;
+      // Classify whether this error is worth retrying
+      const isQuota =
+        msg.includes("429") || msg.includes("rate limit") ||
+        msg.includes("quota") || msg.includes("resource_exhausted") ||
+        status === 429;
+
+      const isOverloaded =
+        msg.includes("503") || msg.includes("service unavailable") ||
+        msg.includes("overloaded") || status === 503 || status === 502;
+
+      const isNetwork =
+        msg.includes("etimedout") || msg.includes("econnreset") ||
+        msg.includes("econnrefused") || msg.includes("socket hang up") ||
+        msg.includes("network");
+
+      const isRetryable = isQuota || isOverloaded || isNetwork;
 
       if (isRetryable && i < retries - 1) {
-        // Exponential backoff with jitter: 2s, 4s, 8s (± 500ms jitter)
-        const baseDelay = Math.pow(2, i + 1) * 1000;
+        const baseDelay = Math.pow(2, i + 1) * 1000; // 2s, 4s, 8s
         const jitter    = Math.floor(Math.random() * 500);
         const delay     = baseDelay + jitter;
 
-        console.log(
-          `⚠️  Gemini error (${error.message?.slice(0, 80)}) — retrying in ${Math.round(delay / 1000)}s (attempt ${i + 1}/${retries})`
+        console.warn(
+          `⚠️  Gemini attempt ${i + 1}/${retries} failed — ` +
+          `[${isQuota ? "QUOTA" : isOverloaded ? "OVERLOADED" : "NETWORK"}] ` +
+          `${error.message?.slice(0, 80)} — retrying in ${Math.round(delay / 1000)}s`
         );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
 
-      // Not retryable or out of retries
       break;
     }
   }
 
+  // Re-throw the real last error — NOT a generic wrapper.
+  // The controller reads error.message to classify and show to the recruiter.
   throw lastError || new Error("Gemini failed after all retries");
 }
 
-const BATCH_SIZE = 20;
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Screen candidates (batched)
-// topN: how many to return — "all" returns every scored candidate
+// screenCandidates — batched AI screening
 // ─────────────────────────────────────────────────────────────────────────────
 export async function screenCandidates(
   job: JobInput,
   applicants: ApplicantInput[],
-  topN: number | "all" = 10  // ✅ was hardcoded to .slice(0,10) — now configurable
+  topN?: number | "all"
 ): Promise<ScreeningOutput> {
-  if (!applicants?.length) throw new Error("No applicants provided for screening");
+  if (!applicants?.length) {
+    throw new Error("No applicants provided for screening");
+  }
 
-  console.log(`🤖 Screening ${applicants.length} candidates for: ${job.title} (topN=${topN})`);
+  console.log(`🤖 Screening ${applicants.length} candidates for: ${job.title}`);
 
-  // Split into batches of 20
+  const BATCH_SIZE = 20;
   const batches: ApplicantInput[][] = [];
   for (let i = 0; i < applicants.length; i += BATCH_SIZE) {
     batches.push(applicants.slice(i, i + BATCH_SIZE));
@@ -102,6 +110,8 @@ export async function screenCandidates(
   console.log(`📦 ${batches.length} batch(es) × max ${BATCH_SIZE} candidates`);
 
   let allResults: CandidateResult[] = [];
+  // Keep track of the last real error so we can re-throw it if all batches fail
+  let lastBatchError: any = null;
 
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i];
@@ -109,15 +119,19 @@ export async function screenCandidates(
 
     try {
       const prompt      = buildScreeningPrompt(job, batch);
-      const rawResponse = await callGeminiWithRetry(prompt, 4); // 4 retries for screening
+      const rawResponse = await callGeminiWithRetry(prompt, 4);
 
       let parsed: CandidateResult[];
       try {
         parsed = parseScreeningResponse(rawResponse);
-      } catch (parseErr) {
+      } catch (parseErr: any) {
         console.error(`❌ Batch ${i + 1} parse error:`, parseErr);
-        console.error(`📄 Raw Gemini response (batch ${i + 1}):\n`, rawResponse?.slice(0, 500));
-        throw parseErr;
+        console.error(`📄 Raw Gemini response (first 500 chars):\n`, rawResponse?.slice(0, 500));
+        // Parse errors are not retryable — re-throw immediately so the recruiter
+        // gets a useful message rather than a generic "all batches failed"
+        throw new Error(
+          `AI returned an unexpected response format for batch ${i + 1}. Please try again.`
+        );
       }
 
       const batchIds = batch.map((a) => a.id);
@@ -127,36 +141,66 @@ export async function screenCandidates(
       allResults = [...allResults, ...parsed];
       console.log(`✅ Batch ${i + 1} complete — ${parsed.length} candidates scored`);
 
-      // 1 second gap between batches to respect rate limits
+      // 1s gap between batches — rate limit protection
       if (i < batches.length - 1) {
         await new Promise((r) => setTimeout(r, 1000));
       }
-    } catch (error) {
-      console.error(`❌ Batch ${i + 1} failed:`, error);
-      // Continue processing other batches — don't fail the whole screening
+    } catch (error: any) {
+      lastBatchError = error;
+      console.error(`❌ Batch ${i + 1} failed:`, error.message || error);
+
+      // If this is a quota/auth error, stop immediately — retrying other batches
+      // will fail the same way and waste time
+      const msg = (error.message || "").toLowerCase();
+      const isFatal =
+        msg.includes("429") || msg.includes("quota") ||
+        msg.includes("resource_exhausted") || msg.includes("rate limit") ||
+        msg.includes("401") || msg.includes("api key") ||
+        msg.includes("permission denied") || msg.includes("authentication");
+
+      if (isFatal) {
+        console.error(`🛑 Fatal Gemini error — stopping all batches: ${error.message}`);
+        // Re-throw immediately with the real error message
+        throw error;
+      }
+
+      // Non-fatal (parse error, single batch network blip) — continue to next batch
+      console.warn(`⚠️ Batch ${i + 1} skipped — continuing with remaining batches`);
     }
   }
 
+  // If no batches succeeded at all, throw the real last error
   if (allResults.length === 0) {
-    throw new Error("AI screening failed — all batches returned errors");
+    if (lastBatchError) {
+      // Re-throw the actual Gemini error — not a wrapper
+      throw lastBatchError;
+    }
+    throw new Error(
+      "AI screening returned no results. The AI may be temporarily unavailable. Please try again."
+    );
   }
 
+  // Sort, apply topN, rank
   const normalized = normalizeScores(allResults);
   const sorted     = normalized.sort((a, b) => b.score - a.score);
 
-  // ✅ Respect topN — "all" returns everything, number slices to that count
-  const topCandidates = (
-    topN === "all" ? sorted : sorted.slice(0, topN)
-  ).map((c, index) => ({ ...c, rank: index + 1 }));
+  let topCandidates: CandidateResult[];
+  if (!topN || topN === "all") {
+    topCandidates = sorted;
+  } else {
+    topCandidates = sorted.slice(0, Number(topN));
+  }
+
+  topCandidates = topCandidates.map((c, index) => ({ ...c, rank: index + 1 }));
 
   console.log(
-    `✅ Screening complete — ${topCandidates.length} returned from ${applicants.length} total (topN=${topN})`
+    `✅ Screening complete — ${topCandidates.length} returned from ${applicants.length} total`
   );
 
   return {
     jobId:            job.id,
     totalApplicants:  applicants.length,
-    shortlistedCount: topCandidates.length,
+    shortlistedCount: topCandidates.filter((c) => (c.score ?? 0) >= 60).length,
     rankedCandidates: topCandidates,
     screenedAt:       new Date(),
     biasNotice:       BIAS_NOTICE,
@@ -164,7 +208,7 @@ export async function screenCandidates(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Compare 2–3 candidates head-to-head
+// compareCandidates — head-to-head comparison
 // ─────────────────────────────────────────────────────────────────────────────
 export async function compareCandidates(
   job: JobInput,
@@ -182,16 +226,19 @@ export async function compareCandidates(
   } catch (parseErr) {
     console.error("❌ Comparison parse error:", parseErr);
     console.error("📄 Raw Gemini response:\n", text?.slice(0, 500));
-    throw parseErr;
+    throw new Error("AI returned an unexpected response for comparison. Please try again.");
   }
 
   return { ...parsed, biasNotice: BIAS_NOTICE, comparedAt: new Date() };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Recruiter AI chat
+// chatWithRecruiter — AI assistant chat
 // ─────────────────────────────────────────────────────────────────────────────
-export async function chatWithRecruiter(message: string, context: any): Promise<string> {
+export async function chatWithRecruiter(
+  message: string,
+  context: any
+): Promise<string> {
   const prompt = `
 You are an expert AI recruitment assistant helping a recruiter make better hiring decisions.
 
@@ -212,7 +259,7 @@ Reply in plain conversational English only.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test Gemini connection
+// testGeminiConnection — health check
 // ─────────────────────────────────────────────────────────────────────────────
 export async function testGeminiConnection(): Promise<boolean> {
   try {
