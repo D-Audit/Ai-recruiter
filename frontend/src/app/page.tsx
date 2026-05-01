@@ -289,7 +289,7 @@ export default function LandingPage() {
           {/* Logo */}
           <div style={{ display:"flex", alignItems:"center", gap:10, marginRight:"auto" }}>
             <div className="lp-logo-icon"><Brain size={20} color="white" /></div>
-            <p style={{ fontSize:16, fontWeight:800, fontFamily:"var(--font-display,sans-serif)", letterSpacing:"-0.4px", color:"#fff" }}>Umurava AI</p>
+            <p style={{ fontSize:16, fontWeight:800, fontFamily:"var(--font-display,sans-serif)", letterSpacing:"-0.4px", color:"#fff" }}>ScreenAI</p>
           </div>
           {/* Links */}
           <div className="lp-hide-m" style={{ display:"flex", alignItems:"center" }}>
