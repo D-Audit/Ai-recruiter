@@ -37,6 +37,7 @@ const inp: React.CSSProperties = {
   color: "var(--text-primary)", background: "var(--surface-input)", fontFamily: "inherit",
   transition: "border-color 0.15s",
 };
+
 const lbl: React.CSSProperties = {
   display: "block", fontSize: "12px", fontWeight: "700",
   color: "var(--text-secondary)", marginBottom: "5px",
@@ -65,7 +66,7 @@ const emptyForm = () => ({
   socialLinks:    { linkedin: "", github: "", portfolio: "" },
 });
 
-// ── Types ────────────────────────────────────────────────────────────────────
+
 type FileProgress = { name: string; pct: number; status: "idle"|"uploading"|"done"|"error"; count?: number; errorLabel?: string };
 type CSVPreview   = { file: File; totalCandidates: number; columnsDetected: number; sampleRows: string[][]; headers: string[] };
 type ResumeResult = { fileName: string; candidateName: string; email: string; skillsCount: number; hasExp: boolean; isExisting?: boolean };
