@@ -5,6 +5,8 @@ import {
   register,
   login,
   googleLogin,
+  forgotPassword,
+  resetPassword,
   getMe,
   updateProfile,
   changePassword,
@@ -13,11 +15,13 @@ import { protect } from "../middleware/auth.middleware";
 
 const router = Router();
 
-router.post("/register",  register);
-router.post("/login",     login);
-router.post("/google",    googleLogin);       // Google OAuth — no auth needed
-router.get( "/me",        protect, getMe);
-router.put( "/profile",   protect, updateProfile);
-router.put( "/password",  protect, changePassword); // ✅ was missing — used by settings page
+router.post("/register", register);
+router.post("/login", login);
+router.post("/google", googleLogin);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
+router.get("/me", protect, getMe);
+router.put("/profile", protect, updateProfile);
+router.put("/password", protect, changePassword);
 
 export default router;

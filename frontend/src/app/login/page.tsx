@@ -353,7 +353,7 @@ export default function LoginPage() {
                 </div>
               </div>
               <div className="ln-forgot-row">
-                <a href="#" className="ln-forgot">Forgot password?</a>
+                <Link href="/forgot-password" className="ln-forgot">Forgot password?</Link>
               </div>
               <button type="submit" className="ln-btn" disabled={loading}>
                 {loading

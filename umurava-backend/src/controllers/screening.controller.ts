@@ -1,5 +1,3 @@
-// umurava-backend/src/controllers/screening.controller.ts
-// Fixed: exact error messages propagated to frontend, not just "Screening failed"
 
 import { Response } from "express";
 import Job from "../models/Job.model";
@@ -14,9 +12,6 @@ import {
 
 const WEIGHTS = { skills: 0.4, experience: 0.25, education: 0.2, other: 0.15 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: extract a human-friendly error message from any thrown value
-// ─────────────────────────────────────────────────────────────────────────────
 function extractErrorMessage(error: unknown): string {
   if (!error) return "An unknown error occurred";
 
@@ -25,7 +20,6 @@ function extractErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const msg = error.message || "";
 
-    // Gemini / Google API specific
     if (msg.includes("503") || msg.toLowerCase().includes("service unavailable") || msg.toLowerCase().includes("overloaded")) {
       return "AI service is temporarily overloaded. Please wait a moment and try again.";
     }
@@ -50,11 +44,11 @@ function extractErrorMessage(error: unknown): string {
     if (msg.toLowerCase().includes("empty response")) {
       return "AI returned an empty response. Please try again.";
     }
-    // Return the raw message if it's descriptive enough
+    
     if (msg.length > 5 && msg.length < 300) return msg;
   }
 
-  // Object with message field
+
   if (typeof error === "object" && "message" in (error as object)) {
     return String((error as any).message);
   }
@@ -62,9 +56,7 @@ function extractErrorMessage(error: unknown): string {
   return "An unexpected error occurred during screening";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/screening/run/:jobId
-// ─────────────────────────────────────────────────────────────────────────────
+
 export const runScreening = async (req: any, res: Response): Promise<void> => {
   const { jobId } = req.params;
 

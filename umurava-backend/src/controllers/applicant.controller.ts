@@ -72,7 +72,6 @@ function htmlToText(html: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
-
 type UrlKind = "csv" | "xlsx" | "xls" | "pdf" | "docx" | "text" | "html";
 
 function detectKind(contentType: string, url: string): UrlKind {
@@ -87,9 +86,6 @@ function detectKind(contentType: string, url: string): UrlKind {
   return "html";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper: link an applicant to a job, handling duplicates gracefully
-// ─────────────────────────────────────────────────────────────────────────────
 async function linkApplicantToJob(
   profile: any,
   jobId: string
@@ -118,16 +114,12 @@ async function linkApplicantToJob(
   return { applicant, isNew: true };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// The single function used by the queue worker to process one resume file.
-// Handles multi-person PDFs by splitting and saving each person separately.
-// ─────────────────────────────────────────────────────────────────────────────
 async function processOneResumeFile(filePath: string, jobId: string): Promise<FileResult> {
   const fileName = path.basename(filePath);
   const ext      = path.extname(filePath).toLowerCase();
 
   try {
-    // For PDFs: extract text first to check if multi-person
+  
     if (ext === ".pdf") {
       const pdfParseModule = require("pdf-parse");
       const pdfParse       = pdfParseModule.default ?? pdfParseModule;
@@ -137,16 +129,15 @@ async function processOneResumeFile(filePath: string, jobId: string): Promise<Fi
       const { blocks, wasMulti } = splitMultiPersonPDF(text || "");
 
       if (wasMulti && blocks.length > 1) {
-        // Multi-person PDF — parse and save each block separately
         console.log(`📋 Multi-person PDF detected: ${fileName} — ${blocks.length} candidates`);
         let firstResult: FileResult | null = null;
         let newCount = 0;
 
         for (let i = 0; i < blocks.length; i++) {
           const blockText = blocks[i];
-          // Write block to a temp file so parseResumeFile can process it
+          
           const tmpPath = filePath.replace(ext, `_person${i + 1}${ext}`);
-          // Use parseResumeUrl which accepts raw text directly (no file needed)
+          
           const { parseResumeUrl: parseText } = await import("../services/resume.service");
           const profile = await parseText(`block_${i}_${fileName}`, blockText);
           const { applicant, isNew } = await linkApplicantToJob(profile, jobId);
@@ -180,7 +171,6 @@ async function processOneResumeFile(filePath: string, jobId: string): Promise<Fi
       }
     }
 
-    // Single-person file — normal flow
     const profile = await parseResumeFile(filePath);
     const { applicant, isNew } = await linkApplicantToJob(profile, jobId);
 
@@ -207,9 +197,6 @@ async function processOneResumeFile(filePath: string, jobId: string): Promise<Fi
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/applicants/:jobId
-// ─────────────────────────────────────────────────────────────────────────────
 export const getApplicants = async (req: any, res: Response): Promise<void> => {
   try {
     const applicants = await Applicant.find({ jobIds: req.params.jobId });
@@ -219,9 +206,6 @@ export const getApplicants = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/applicants/profile/:id
-// ─────────────────────────────────────────────────────────────────────────────
 export const getApplicantById = async (req: any, res: Response): Promise<void> => {
   try {
     const applicant = await Applicant.findById(req.params.id);
@@ -235,9 +219,6 @@ export const getApplicantById = async (req: any, res: Response): Promise<void> =
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/applicants/umurava
-// ─────────────────────────────────────────────────────────────────────────────
 export const getUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const profiles = await Applicant.find({ source: "umurava" }).limit(200);
@@ -247,10 +228,6 @@ export const getUmuravaProfiles = async (req: any, res: Response): Promise<void>
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/applicants/queue/:queueId
-// Frontend polls this to get live progress on batch uploads
-// ─────────────────────────────────────────────────────────────────────────────
 export const getQueueStatus = async (req: any, res: Response): Promise<void> => {
   try {
     const job = getQueueJob(req.params.queueId);
@@ -264,9 +241,6 @@ export const getQueueStatus = async (req: any, res: Response): Promise<void> => 
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/upload/csv
-// ─────────────────────────────────────────────────────────────────────────────
 export const uploadCSV = async (req: any, res: Response): Promise<void> => {
   const filePath = req.file?.path;
   try {
@@ -330,10 +304,9 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
     const filePaths = files.map((f) => f.path);
 
     if (files.length === 1) {
-      // Single file — process synchronously for instant result (no polling needed)
       const result = await processOneResumeFile(filePaths[0], jobId);
       const updatedJob = await Job.findById(jobId).lean();
-      // Also fetch the saved applicant so the frontend can read full profile fields
+
       const savedApplicant = result.email
         ? await Applicant.findOne({ email: result.email }).lean()
         : null;
@@ -341,16 +314,14 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
         success:   true,
         count:     result.isExisting ? 0 : 1,
         applicantsCount: (updatedJob as any)?.applicantsCount ?? 0,
-        // applicant field for backwards compatibility with existing frontend code
         applicant: savedApplicant,
-        // results array for new frontend code
+      
         results:   [{ ...result, status: result.isExisting ? "linked" : "created" }],
         message:   result.isExisting ? "Candidate already exists — linked to job." : "Resume parsed and candidate added.",
       });
       return;
     }
 
-    // Multiple files — enqueue and return immediately ✅
     const queueId = await enqueueResumeJob(filePaths, jobId, processOneResumeFile);
 
     res.json({
@@ -367,16 +338,7 @@ export const uploadResume = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/upload/zip
-//
-// Flow:
-//   1. Recruiter uploads a .zip file containing many CVs
-//   2. We extract all PDFs/DOCXs from the ZIP
-//   3. Enqueue them for background processing
-//   4. Respond immediately with queueId
-//   5. Frontend polls /queue/:queueId for live progress
-// ─────────────────────────────────────────────────────────────────────────────
+
 export const uploadZip = async (req: any, res: Response): Promise<void> => {
   const zipPath = req.file?.path;
   try {
@@ -390,11 +352,9 @@ export const uploadZip = async (req: any, res: Response): Promise<void> => {
       res.status(400).json({ success: false, message: "jobId is required" });
       return;
     }
-
     console.log(`📦 Extracting ZIP: ${req.file.originalname}`);
     const { files, skipped, total } = await extractZip(zipPath, "uploads/");
 
-    // Delete the ZIP itself — we only keep the extracted files
     cleanupFile(zipPath);
 
     if (files.length === 0) {
@@ -407,7 +367,6 @@ export const uploadZip = async (req: any, res: Response): Promise<void> => {
 
     console.log(`📦 ZIP extracted: ${files.length} files to process, ${skipped.length} skipped`);
 
-    // Enqueue all extracted file paths for background processing
     const filePaths = files.map((f) => f.filePath);
     const queueId   = await enqueueResumeJob(filePaths, jobId, processOneResumeFile);
 
@@ -428,9 +387,6 @@ export const uploadZip = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/upload/url
-// ─────────────────────────────────────────────────────────────────────────────
 export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, url } = req.body;
@@ -537,9 +493,7 @@ export const uploadFromURL = async (req: any, res: Response): Promise<void> => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/manual
-// ─────────────────────────────────────────────────────────────────────────────
+
 export const submitManualApplicant = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, ...profileData } = req.body;
@@ -567,9 +521,6 @@ export const submitManualApplicant = async (req: any, res: Response): Promise<vo
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/applicants/select
-// ─────────────────────────────────────────────────────────────────────────────
 export const selectUmuravaProfiles = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, profileIds } = req.body;
@@ -603,9 +554,6 @@ export const selectUmuravaProfiles = async (req: any, res: Response): Promise<vo
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DELETE /api/applicants/:jobId/applicant/:applicantId
-// ─────────────────────────────────────────────────────────────────────────────
 export const removeApplicantFromJob = async (req: any, res: Response): Promise<void> => {
   try {
     const { jobId, applicantId } = req.params;

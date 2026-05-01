@@ -359,13 +359,13 @@ export default function DashboardPage() {
             {/* ── Stat cards ── */}
             <div className="dash-stats">
               {[
-                { label: "Total Jobs",    val: totalJobs,       icon: Briefcase,  bg: "rgba(37,99,235,0.1)",  color: "#2563eb", delay: 0 },
-                { label: "Open Jobs",     val: openJobs,        icon: Target,     bg: "rgba(22,163,74,0.1)",  color: "#16a34a", delay: 0.05 },
-                { label: "Candidates",    val: totalCandidates, icon: Users,      bg: "rgba(124,58,237,0.1)", color: "#7c3aed", delay: 0.1 },
-                { label: "In Screening",  val: screeningJobs,   icon: Zap,        bg: "rgba(245,158,11,0.1)", color: "#d97706", delay: 0.15 },
+                { label: "Total Jobs",    val: totalJobs,       icon: Briefcase,   color: "#2563eb", delay: 0 },
+                { label: "Open Jobs",     val: openJobs,        icon: Target,       color: "#16a34a", delay: 0.05 },
+                { label: "Candidates",    val: totalCandidates, icon: Users,      color: "#7c3aed", delay: 0.1 },
+                { label: "In Screening",  val: screeningJobs,   icon: Zap,        color: "#d97706", delay: 0.15 },
               ].map((s, i) => (
                 <div key={i} className="dash-stat" style={{ animationDelay: `${s.delay}s` }}>
-                  <div className="dash-stat-icon" style={{ background: s.bg }}>
+                  <div className="dash-stat-icon" >
                     <s.icon size={20} color={s.color} />
                   </div>
                   <div>
