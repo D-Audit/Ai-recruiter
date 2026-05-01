@@ -246,7 +246,7 @@ export default function RegisterPage() {
                 </svg>
               </div>
               <div>
-                <p className="rn-logo-name">Umurava AI</p>
+                <p className="rn-logo-name">ScreenAI</p>
                 <p className="rn-logo-sub">Talent Screening</p>
               </div>
             </div>

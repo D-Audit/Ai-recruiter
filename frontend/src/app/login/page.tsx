@@ -280,7 +280,7 @@ export default function LoginPage() {
                 </svg>
               </div>
               <div>
-                <p className="ln-logo-name">Umurava AI</p>
+                <p className="ln-logo-name">ScreenAI</p>
                 <p className="ln-logo-sub">Talent Screening</p>
               </div>
             </div>
