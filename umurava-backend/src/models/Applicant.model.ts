@@ -64,20 +64,7 @@ const ApplicantSchema = new Schema<IApplicant>(
         name: { type: String },
         proficiency: {
           type: String,
-          // SET BY: resume prompt (Gemini)
-          // RISK: HIGH — this was the bug. "Proficient" is a real, commonly used
-          // term on resumes and Gemini correctly returns it. The original 4-value
-          // enum was too narrow. All values below are legitimate proficiency
-          // descriptors that appear on real CVs and LinkedIn profiles:
-          //   Basic                          → A1/A2
-          //   Elementary                     → A2
-          //   Limited Working Proficiency    → B1 (standard LinkedIn term)
-          //   Conversational                 → B1/B2
-          //   Proficient                     → B2/C1 (the term that caused the crash)
-          //   Professional Working Proficiency → C1 (standard LinkedIn term)
-          //   Fluent                         → C1/C2
-          //   Bilingual                      → C2 (two native-level languages)
-          //   Native                         → mother tongue
+         
           enum: [
             "Basic",
             "Elementary",
@@ -103,8 +90,7 @@ const ApplicantSchema = new Schema<IApplicant>(
         description:  { type: String, default: "" },
         technologies: { type: [String], default: [] },
         isCurrent:    { type: Boolean, default: false },
-        // SET BY: resume prompt (Gemini) — all free text from the resume.
-        // No enum on any of these fields. Zero risk of enum crash.
+      
       },
     ],
 
@@ -112,10 +98,7 @@ const ApplicantSchema = new Schema<IApplicant>(
       {
         institution:  { type: String, default: "" },
         degree:       { type: String, default: "" },
-        // SET BY: resume prompt (Gemini) — degree returned verbatim from resume.
-        // e.g. "BSc Computer Science", "Licence en Informatique", "HND".
-        // NO ENUM intentionally — forcing one would break non-English or
-        // non-standard degrees. Free text is correct here.
+        
         fieldOfStudy: { type: String, default: "" },
         startYear:    { type: Number },
         endYear:      { type: Number },
@@ -127,7 +110,6 @@ const ApplicantSchema = new Schema<IApplicant>(
         name:      { type: String },
         issuer:    { type: String },
         issueDate: { type: String },
-        // SET BY: resume prompt (Gemini) — all free text. No enum. Zero risk.
       },
     ],
 
@@ -140,26 +122,20 @@ const ApplicantSchema = new Schema<IApplicant>(
         link:         { type: String, default: "" },
         startDate:    { type: String, default: "" },
         endDate:      { type: String, default: "" },
-        // SET BY: resume prompt (Gemini) — all free text. No enum. Zero risk.
+       
       },
     ],
 
     availability: {
       status: {
         type: String,
-        // SET BY: resume prompt (Gemini)
-        // RISK: LOW — prompt explicitly lists the 3 options and says
-        // "If not mentioned → use Available". resume.service.ts also
-        // sanitizes this field as a second safety net.
+        
         enum: ["Available", "Open to Opportunities", "Not Available"],
         default: "Available",
       },
       type: {
         type: String,
-        // SET BY: resume prompt (Gemini)
-        // RISK: MEDIUM — prompt lists 3 values, but real resumes also say
-        // "Freelance" and "Internship". Added both here as a safety measure
-        // since resume.service.ts only checks against the original 3.
+      
         enum: ["Full-time", "Part-time", "Contract", "Freelance", "Internship"],
         default: "Full-time",
       },
@@ -170,17 +146,14 @@ const ApplicantSchema = new Schema<IApplicant>(
       linkedin:  { type: String, default: "" },
       github:    { type: String, default: "" },
       portfolio: { type: String, default: "" },
-      // SET BY: resume prompt (Gemini) — free text URLs. No enum. Zero risk.
+     
     },
 
     aiScore:         { type: Number, default: null },
 
     confidenceLevel: {
       type: String,
-      // SET BY: screening prompt (Gemini) — not the resume prompt.
-      // The screening prompt explicitly defines:
-      //   "High" (score ≥ 70), "Medium" (50–69), "Low" (< 50)
-      // This is tightly controlled and stable. Low risk.
+     
       enum: ["High", "Medium", "Low", null],
       default: null,
     },
@@ -189,9 +162,7 @@ const ApplicantSchema = new Schema<IApplicant>(
 
     source: {
       type: String,
-      // SET BY: application code — not Gemini.
-      // "umurava" for seeded profiles, "external" for uploaded resumes.
-      // Hardcoded in resume.service.ts and seed files. Zero risk.
+      
       enum: ["umurava", "external"],
       default: "umurava",
     },
